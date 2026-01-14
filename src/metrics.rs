@@ -650,8 +650,8 @@ pub async fn refresh_blacklist_cache() -> Result<()> {
     };
 
     let now = chrono::Utc::now().timestamp();
-    // 清理过期
-    sqlx::query(r#"DELETE FROM blacklist WHERE expires_at <= ?"#)
+    // 清理过期（expires_at=0 表示永久拉黑，不能被清理）
+    sqlx::query(r#"DELETE FROM blacklist WHERE expires_at != 0 AND expires_at <= ?"#)
         .bind(now)
         .execute(&*pool)
         .await?;

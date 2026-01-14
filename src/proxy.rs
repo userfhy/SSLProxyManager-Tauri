@@ -419,7 +419,7 @@ fn header_str(headers: &HeaderMap, key: &str) -> String {
         .to_string()
 }
 
-fn client_ip(headers: &HeaderMap) -> String {
+fn client_ip(remote: &SocketAddr, headers: &HeaderMap) -> String {
     // 优先取 X-Forwarded-For 的第一个
     if let Some(v) = headers.get("x-forwarded-for") {
         if let Ok(s) = v.to_str() {
@@ -437,7 +437,9 @@ fn client_ip(headers: &HeaderMap) -> String {
             }
         }
     }
-    "-".to_string()
+
+    // 没有任何转发头：回退到真实 TCP 连接地址
+    remote.ip().to_string()
 }
 
 fn parse_ip(s: &str) -> Option<IpAddr> {
@@ -519,7 +521,14 @@ fn format_access_log(
     status: StatusCode,
     elapsed: f64,
 ) -> String {
-    let ip = client_ip(headers);
+    // access log 仍然优先记录转发头里的 IP；若无则显示 '-'（不影响数据库中的 client_ip）
+    let ip = header_str(headers, "x-forwarded-for");
+    let ip = if ip != "-" {
+        ip.split(',').next().unwrap_or("-").trim().to_string()
+    } else {
+        let real = header_str(headers, "x-real-ip");
+        if real != "-" { real } else { "-".to_string() }
+    };
     let time_local = time_local_string();
     let req_line = request_line(method, uri);
     let referer = header_str(headers, "referer");
@@ -620,7 +629,7 @@ async fn proxy_handler(
             metrics::try_enqueue_request_log(crate::metrics::RequestLogInsert {
                 timestamp: chrono::Utc::now().timestamp(),
                 listen_addr: node.clone(),
-                client_ip: client_ip(&headers_snapshot),
+                client_ip: client_ip(&remote, &headers_snapshot),
                 remote_ip: remote.ip().to_string(),
                 method: method.as_str().to_string(),
                 request_path: path.clone(),
@@ -653,7 +662,7 @@ async fn proxy_handler(
             metrics::try_enqueue_request_log(crate::metrics::RequestLogInsert {
                 timestamp: chrono::Utc::now().timestamp(),
                 listen_addr: node.clone(),
-                client_ip: client_ip(&headers_snapshot),
+                client_ip: client_ip(&remote, &headers_snapshot),
                 remote_ip: remote.ip().to_string(),
                 method: method.as_str().to_string(),
                 request_path: path.clone(),
@@ -692,7 +701,7 @@ async fn proxy_handler(
         metrics::try_enqueue_request_log(crate::metrics::RequestLogInsert {
             timestamp: chrono::Utc::now().timestamp(),
             listen_addr: node.clone(),
-            client_ip: client_ip(&headers_snapshot),
+            client_ip: client_ip(&remote, &headers_snapshot),
             remote_ip: remote.ip().to_string(),
             method: method.as_str().to_string(),
             request_path: path.clone(),
@@ -722,7 +731,7 @@ async fn proxy_handler(
         metrics::try_enqueue_request_log(crate::metrics::RequestLogInsert {
             timestamp: chrono::Utc::now().timestamp(),
             listen_addr: node.clone(),
-            client_ip: client_ip(&headers_snapshot),
+            client_ip: client_ip(&remote, &headers_snapshot),
             remote_ip: remote.ip().to_string(),
             method: method.as_str().to_string(),
             request_path: path.clone(),
@@ -759,7 +768,7 @@ async fn proxy_handler(
                     metrics::try_enqueue_request_log(crate::metrics::RequestLogInsert {
                         timestamp: chrono::Utc::now().timestamp(),
                         listen_addr: node.clone(),
-                        client_ip: client_ip(&headers_snapshot),
+                        client_ip: client_ip(&remote, &headers_snapshot),
                         remote_ip: remote.ip().to_string(),
                         method: method.as_str().to_string(),
                         request_path: path.clone(),
@@ -803,7 +812,7 @@ async fn proxy_handler(
                         metrics::try_enqueue_request_log(crate::metrics::RequestLogInsert {
                             timestamp: chrono::Utc::now().timestamp(),
                             listen_addr: node.clone(),
-                            client_ip: client_ip(&headers_snapshot),
+                            client_ip: client_ip(&remote, &headers_snapshot),
                             remote_ip: remote.ip().to_string(),
                             method: method.as_str().to_string(),
                             request_path: path.clone(),
@@ -842,7 +851,7 @@ async fn proxy_handler(
         metrics::try_enqueue_request_log(crate::metrics::RequestLogInsert {
             timestamp: chrono::Utc::now().timestamp(),
             listen_addr: node.clone(),
-            client_ip: client_ip(&headers_snapshot),
+            client_ip: client_ip(&remote, &headers_snapshot),
             remote_ip: remote.ip().to_string(),
             method: method.as_str().to_string(),
             request_path: path.clone(),
@@ -877,7 +886,7 @@ async fn proxy_handler(
                 metrics::try_enqueue_request_log(crate::metrics::RequestLogInsert {
                     timestamp: chrono::Utc::now().timestamp(),
                     listen_addr: node.clone(),
-                    client_ip: client_ip(&headers_snapshot),
+                    client_ip: client_ip(&remote, &headers_snapshot),
                     remote_ip: remote.ip().to_string(),
                     method: method.as_str().to_string(),
                     request_path: path.clone(),
@@ -950,7 +959,7 @@ async fn proxy_handler(
         metrics::try_enqueue_request_log(crate::metrics::RequestLogInsert {
             timestamp: chrono::Utc::now().timestamp(),
             listen_addr: node.clone(),
-            client_ip: client_ip(&headers_snapshot),
+            client_ip: client_ip(&remote, &headers_snapshot),
             remote_ip: remote.ip().to_string(),
             method: method.as_str().to_string(),
             request_path: path.clone(),

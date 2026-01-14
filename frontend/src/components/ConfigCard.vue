@@ -27,12 +27,12 @@
           </div>
         </template>
 
-        <el-form :model="rule" label-width="140px" class="form-grid">
+        <el-form :model="rule" label-width="120px" class="form-grid">
           <el-form-item label="监听地址">
-            <el-input v-model="rule.ListenAddr" placeholder="0.0.0.0:8888" />
+            <el-input v-model="rule.ListenAddr" placeholder="0.0.0.0:8888" style="width: 260px;"/>
           </el-form-item>
 
-          <el-form-item label="路由（按 Host / Path 匹配）" required>
+          <el-form-item label="路由规则" required>
             <div class="routes-section">
               <el-card 
                 v-for="(rt, routeIndex) in rule.Routes" 
