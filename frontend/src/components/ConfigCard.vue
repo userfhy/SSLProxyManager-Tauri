@@ -68,7 +68,7 @@
                     </el-col>
                   </el-row>
 
-                  <el-row :gutter="20">
+                  <el-row :gutter="22">
                     <el-col :span="10">
                       <el-form-item label="proxy_pass_path（可选）">
                         <el-input v-model="rt.ProxyPassPath" placeholder="/v1 （留空表示不重写）" />
@@ -81,14 +81,16 @@
                       <el-form-item label="静态文件目录（可选）">
                         <div class="file-selector">
                           <el-input v-model="rt.StaticDir" placeholder="./frontend/dist 或绝对路径" readonly />
-                          <el-button @click="selectDirectory(ruleIndex, routeIndex)" type="primary" :icon="Folder">
-                            选择目录
-                          </el-button>
                         </div>
                         <el-text type="info" size="small" class="mini-hint">
                           优先提供静态文件，不存在时回退到上游服务器
                         </el-text>
                       </el-form-item>
+                    </el-col>
+                    <el-col :span="2">
+                      <el-button @click="selectDirectory(ruleIndex, routeIndex)" size="small" type="primary" :icon="Folder">
+                            选择目录
+                          </el-button>
                     </el-col>
                   </el-row>
 

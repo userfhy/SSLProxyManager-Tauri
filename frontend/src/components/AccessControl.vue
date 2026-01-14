@@ -118,7 +118,7 @@
       <el-dialog
         v-model="showAddDialog"
         title="添加黑名单"
-        width="500px"
+        width="520px"
         :close-on-click-modal="false"
       >
         <el-form :model="addForm" label-width="120px" :rules="addRules" ref="addFormRef">
@@ -132,6 +132,7 @@
               支持IPv4和IPv6地址
             </el-text>
           </el-form-item>
+
           <el-form-item label="拉黑原因" prop="reason">
             <el-input
               v-model="addForm.reason"
@@ -141,29 +142,37 @@
               clearable
             />
           </el-form-item>
+
           <el-form-item label="拉黑时长">
             <el-radio-group v-model="addForm.durationType">
               <el-radio label="permanent">永久</el-radio>
               <el-radio label="temporary">临时</el-radio>
             </el-radio-group>
           </el-form-item>
+
           <el-form-item
             v-if="addForm.durationType === 'temporary'"
-            label="时长（小时）"
-            prop="durationHours"
+            label="过期时间"
+            prop="expiresAt"
           >
-            <el-input-number
-              v-model="addForm.durationHours"
-              :min="1"
-              :max="8760"
-              placeholder="请输入小时数"
-              style="width: 100%;"
-            />
+            <el-config-provider :locale="zhCn">
+              <el-date-picker
+                v-model="addForm.expiresAt"
+                type="datetime"
+                format="YYYY-MM-DD HH:mm:ss"
+                value-format="x"
+                :shortcuts="dateShortcuts"
+                placeholder="选择过期日期和时间"
+                :disabled-date="disabledDate"
+                style="width: 100%;"
+              />
+            </el-config-provider>
             <el-text type="info" size="small" class="hint">
-              范围：1-8760小时（1年）
+              只允许选择未来时间
             </el-text>
           </el-form-item>
         </el-form>
+
         <template #footer>
           <el-button @click="showAddDialog = false">取消</el-button>
           <el-button type="primary" @click="handleAdd" :loading="adding">确定</el-button>
@@ -176,7 +185,8 @@
 <script setup lang="ts">
 import { ref, watch, onMounted } from 'vue'
 import { Plus, Refresh, RefreshRight, Delete } from '@element-plus/icons-vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage, ElMessageBox, ElConfigProvider } from 'element-plus'
+import zhCn from 'element-plus/dist/locale/zh-cn.mjs'
 // @ts-ignore
 import { AddBlacklistEntry, RemoveBlacklistEntry, GetBlacklistEntries, RefreshBlacklistCache, GetMetricsDBStatus } from '../api'
 
@@ -208,8 +218,48 @@ const addForm = ref({
   ip: '',
   reason: '',
   durationType: 'permanent' as 'permanent' | 'temporary',
-  durationHours: 24,
+  // el-date-picker value-format="x" 返回毫秒时间戳字符串
+  expiresAt: null as string | null,
 })
+
+const dateShortcuts = [
+  {
+    text: '1小时',
+    value: () => new Date(Date.now() + 1 * 60 * 60 * 1000),
+  },
+  {
+    text: '6小时',
+    value: () => new Date(Date.now() + 6 * 60 * 60 * 1000),
+  },
+  {
+    text: '1天',
+    value: () => new Date(Date.now() + 24 * 60 * 60 * 1000),
+  },
+  {
+    text: '1个月',
+    value: () => {
+      const d = new Date()
+      d.setMonth(d.getMonth() + 1)
+      return d
+    },
+  },
+  {
+    text: '6个月',
+    value: () => {
+      const d = new Date()
+      d.setMonth(d.getMonth() + 6)
+      return d
+    },
+  },
+  {
+    text: '1年',
+    value: () => {
+      const d = new Date()
+      d.setFullYear(d.getFullYear() + 1)
+      return d
+    },
+  },
+]
 
 const addRules = {
   ip: [
@@ -231,22 +281,36 @@ const addRules = {
       trigger: 'blur',
     },
   ],
-  durationHours: [
+  expiresAt: [
     {
-      validator: (rule: any, value: number, callback: Function) => {
+      validator: (rule: any, value: any, callback: Function) => {
         if (addForm.value.durationType === 'permanent') {
           callback()
           return
         }
-        if (!value || value < 1 || value > 8760) {
-          callback(new Error('时长范围：1-8760小时'))
+        if (!value) {
+          callback(new Error('请选择过期时间'))
+          return
+        }
+        const ms = Number(value)
+        if (!Number.isFinite(ms)) {
+          callback(new Error('过期时间格式无效'))
+          return
+        }
+        if (ms <= Date.now()) {
+          callback(new Error('过期时间必须大于当前时间'))
           return
         }
         callback()
       },
-      trigger: 'blur',
+      trigger: 'change',
     },
   ],
+}
+
+const disabledDate = (time: Date) => {
+  // 禁用今天之前的日期（今天可以选，但还会被 expiresAt 校验限制必须大于当前时间）
+  return time.getTime() < new Date().setHours(0, 0, 0, 0)
 }
 
 watch(
@@ -355,9 +419,20 @@ const handleAdd = async () => {
 
   adding.value = true
   try {
-    const durationHours = addForm.value.durationType === 'permanent' ? 0 : addForm.value.durationHours
+    let durationSeconds = 0
+    if (addForm.value.durationType === 'temporary') {
+      const ms = Number(addForm.value.expiresAt)
+      const now = Date.now()
+      durationSeconds = Math.ceil((ms - now) / 1000)
+      if (durationSeconds <= 0) {
+        ElMessage.warning('过期时间必须大于当前时间')
+        adding.value = false
+        return
+      }
+    }
+
     // @ts-ignore
-    await AddBlacklistEntry(addForm.value.ip, addForm.value.reason || '', durationHours)
+    await AddBlacklistEntry(addForm.value.ip, addForm.value.reason || '', durationSeconds)
     ElMessage.success('黑名单已添加')
     showAddDialog.value = false
 
@@ -365,7 +440,7 @@ const handleAdd = async () => {
       ip: '',
       reason: '',
       durationType: 'permanent',
-      durationHours: 24,
+      expiresAt: null,
     }
 
     if (addFormRef.value) {

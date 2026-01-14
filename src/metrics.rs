@@ -4,7 +4,8 @@ use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePool, SqlitePoolOptions};
 use sqlx::ConnectOptions;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
+use std::time::{Duration, Instant};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -12,7 +13,8 @@ static DB_POOL: Lazy<RwLock<Option<Arc<SqlitePool>>>> = Lazy::new(|| RwLock::new
 static DB_PATH: Lazy<RwLock<String>> = Lazy::new(|| RwLock::new(String::new()));
 static DB_ERROR: Lazy<RwLock<Option<String>>> = Lazy::new(|| RwLock::new(None));
 
-static BLACKLIST_CACHE: Lazy<RwLock<HashSet<String>>> = Lazy::new(|| RwLock::new(HashSet::new()));
+static BLACKLIST_CACHE: Lazy<RwLock<HashMap<String, i64>>> = Lazy::new(|| RwLock::new(HashMap::new()));
+static BLACKLIST_LAST_CLEANUP: Lazy<RwLock<Instant>> = Lazy::new(|| RwLock::new(Instant::now()));
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct BlacklistEntry {
@@ -134,9 +136,35 @@ fn normalize_ip_key(ip: &str) -> String {
     ip.trim().to_ascii_lowercase()
 }
 
+fn maybe_cleanup_blacklist_cache(now: i64) {
+    // 降低每次请求的开销：最多 10 秒清理一次
+    {
+        let last = *BLACKLIST_LAST_CLEANUP.read();
+        if last.elapsed() < Duration::from_secs(10) {
+            return;
+        }
+    }
+
+    let mut last = BLACKLIST_LAST_CLEANUP.write();
+    if last.elapsed() < Duration::from_secs(10) {
+        return;
+    }
+    *last = Instant::now();
+
+    let mut cache = BLACKLIST_CACHE.write();
+    cache.retain(|_, expires_at| *expires_at == 0 || *expires_at > now);
+}
+
 pub fn is_ip_blacklisted(ip: &str) -> bool {
     let key = normalize_ip_key(ip);
-    BLACKLIST_CACHE.read().contains(&key)
+    let now = chrono::Utc::now().timestamp();
+    maybe_cleanup_blacklist_cache(now);
+
+    let cache = BLACKLIST_CACHE.read();
+    match cache.get(&key) {
+        None => false,
+        Some(expires_at) => *expires_at == 0 || *expires_at > now,
+    }
 }
 
 fn pool() -> Option<Arc<SqlitePool>> {
@@ -335,14 +363,18 @@ pub async fn query_request_logs(req: QueryRequestLogsRequest) -> Result<QueryReq
             Ok(QueryRequestLogsResponse { logs, total })
 }
 
-pub async fn add_blacklist_entry(ip: String, reason: String, duration_hours: i32) -> Result<BlacklistEntry> {
+pub async fn add_blacklist_entry(ip: String, reason: String, duration_seconds: i32) -> Result<BlacklistEntry> {
     let Some(pool) = pool() else {
         return Err(anyhow!("数据库未初始化"));
     };
 
     let ip_key = normalize_ip_key(&ip);
     let now = chrono::Utc::now().timestamp();
-    let expires_at = now + (duration_hours as i64) * 3600;
+    let expires_at = if duration_seconds <= 0 {
+        0
+    } else {
+        now + (duration_seconds as i64)
+    };
 
     // upsert
     let res = sqlx::query(
@@ -364,7 +396,7 @@ pub async fn add_blacklist_entry(ip: String, reason: String, duration_hours: i32
     let id = res.last_insert_rowid();
 
     // 更新缓存
-    BLACKLIST_CACHE.write().insert(ip_key.clone());
+    BLACKLIST_CACHE.write().insert(ip_key.clone(), expires_at);
 
     Ok(BlacklistEntry {
         id,
@@ -416,8 +448,8 @@ pub async fn refresh_blacklist_cache() -> Result<()> {
         .execute(&*pool)
         .await?;
 
-    let ips: Vec<(String,)> = sqlx::query_as(
-        r#"SELECT ip FROM blacklist WHERE expires_at > ?"#,
+    let ips: Vec<(String, i64)> = sqlx::query_as(
+        r#"SELECT ip, expires_at FROM blacklist WHERE expires_at = 0 OR expires_at > ?"#,
     )
     .bind(now)
     .fetch_all(&*pool)
@@ -425,9 +457,11 @@ pub async fn refresh_blacklist_cache() -> Result<()> {
 
     let mut cache = BLACKLIST_CACHE.write();
     cache.clear();
-    for (ip,) in ips {
-        cache.insert(normalize_ip_key(&ip));
+    for (ip, expires_at) in ips {
+        cache.insert(normalize_ip_key(&ip), expires_at);
     }
+
+    *BLACKLIST_LAST_CLEANUP.write() = Instant::now();
     Ok(())
 }
 

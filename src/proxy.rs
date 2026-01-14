@@ -587,7 +587,7 @@ async fn proxy_handler(
         };
 
         if metrics::is_ip_blacklisted(&client_ip_str) {
-            let mut resp = Response::new(Body::from("Forbidden"));
+            let mut resp = Response::new(Body::from("IP Forbidden"));
             *resp.status_mut() = StatusCode::FORBIDDEN;
 
             let elapsed = started_at.elapsed().as_secs_f64();

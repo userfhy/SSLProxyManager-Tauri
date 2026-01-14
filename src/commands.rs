@@ -105,8 +105,8 @@ pub async fn query_request_logs(req: metrics::QueryRequestLogsRequest) -> Result
 }
 
 #[tauri::command]
-pub async fn add_blacklist_entry(ip: String, reason: String, duration_hours: i32) -> Result<metrics::BlacklistEntry, String> {
-    metrics::add_blacklist_entry(ip, reason, duration_hours)
+pub async fn add_blacklist_entry(ip: String, reason: String, duration_seconds: i32) -> Result<metrics::BlacklistEntry, String> {
+    metrics::add_blacklist_entry(ip, reason, duration_seconds)
         .await
         .map_err(|e| e.to_string())
 }
