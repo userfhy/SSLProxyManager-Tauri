@@ -1,5 +1,6 @@
 <template>
   <div class="app-container">
+    <TitleBar />
     <!-- 顶部标题栏 -->
     <el-card class="top-bar" shadow="hover">
       <div class="top-bar-content">
@@ -148,6 +149,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { StartServer, StopServer, GetStatus, QuitApp, OpenURL, EventsOn } from './api'
+import TitleBar from './components/TitleBar.vue'
 import ConfigCard from './components/ConfigCard.vue'
 import LogViewer from './components/LogViewer.vue'
 import Dashboard from './components/Dashboard.vue'

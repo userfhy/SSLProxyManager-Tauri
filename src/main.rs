@@ -7,6 +7,7 @@ mod config;
 mod metrics;
 mod proxy;
 mod single_instance;
+mod tray;
 mod update;
 
 fn main() {
@@ -23,11 +24,6 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
-        .setup(|app| {
-            // 初始化应用
-            app::init(app.handle())?;
-            Ok(())
-        })
         .invoke_handler(tauri::generate_handler![
             commands::get_config,
             commands::save_config,
@@ -54,12 +50,20 @@ fn main() {
             commands::hide_to_tray,
             commands::quit_app,
         ])
+        .setup(|app| {
+            // 初始化应用
+            app::init(app.handle())?;
+
+            // 初始化托盘
+            tray::init_tray(app.handle())?;
+
+            Ok(())
+        })
         .on_window_event(|window, event| {
-            if let tauri::WindowEvent::CloseRequested { .. } = event {
-                // 窗口关闭时隐藏到托盘，而不是退出
-                window.hide().unwrap();
-                // 在 Tauri v2 中，阻止关闭的逻辑通常在前端或通过其他方式处理，
-                // 这里我们先专注于编译通过。如果需要阻止关闭，需要不同的实现。
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                // 点击关闭按钮时不退出，改为隐藏到托盘
+                let _ = window.hide();
             }
         })
         .run(tauri::generate_context!())

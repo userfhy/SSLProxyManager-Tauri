@@ -1,6 +1,6 @@
 <template>
-  <div ref="titleBarRef" class="title-bar" :class="{ 'is-maximized': isMaximized, 'is-dragging': isDragging }">
-    <div class="title-bar-drag-region">
+  <div class="title-bar" :class="{ 'is-maximized': isMaximized }">
+    <div class="title-bar-drag-region" @dblclick="handleMaximize" @mousedown="handleStartDragging">
       <div class="title-bar-left">
         <div class="app-icon">
           <el-icon><Setting /></el-icon>
@@ -9,35 +9,41 @@
       </div>
       <div class="title-bar-right">
         <div class="window-controls">
-          <button 
-            class="window-control-btn minimize-btn" 
+          <button
+            class="window-control-btn minimize-btn"
             @click="handleMinimize"
             title="最小化"
           >
             <svg width="12" height="12" viewBox="0 0 12 12">
-              <path d="M 0 6 L 12 6" stroke="currentColor" stroke-width="1.5" fill="none"/>
+              <path d="M 0 6 L 12 6" stroke="currentColor" stroke-width="1.5" fill="none" />
             </svg>
           </button>
-          <button 
-            class="window-control-btn maximize-btn" 
+          <button
+            class="window-control-btn maximize-btn"
             @click="handleMaximize"
             :title="isMaximized ? '还原' : '最大化'"
           >
             <svg v-if="!isMaximized" width="12" height="12" viewBox="0 0 12 12">
-              <path d="M 1 1 L 11 1 L 11 11 L 1 11 Z" stroke="currentColor" stroke-width="1.5" fill="none"/>
+              <path d="M 1 1 L 11 1 L 11 11 L 1 11 Z" stroke="currentColor" stroke-width="1.5" fill="none" />
             </svg>
             <svg v-else width="12" height="12" viewBox="0 0 12 12">
-              <path d="M 2 4 L 10 4 L 10 10 L 2 10 Z" stroke="currentColor" stroke-width="1.5" fill="none"/>
-              <path d="M 4 2 L 10 2 L 10 8" stroke="currentColor" stroke-width="1.5" fill="none"/>
+              <path d="M 2 4 L 10 4 L 10 10 L 2 10 Z" stroke="currentColor" stroke-width="1.5" fill="none" />
+              <path d="M 4 2 L 10 2 L 10 8" stroke="currentColor" stroke-width="1.5" fill="none" />
             </svg>
           </button>
-          <button 
-            class="window-control-btn close-btn" 
+          <button
+            class="window-control-btn close-btn"
             @click="handleClose"
             title="关闭"
           >
             <svg width="12" height="12" viewBox="0 0 12 12">
-              <path d="M 1 1 L 11 11 M 11 1 L 1 11" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+              <path
+                d="M 1 1 L 11 11 M 11 1 L 1 11"
+                stroke="currentColor"
+                stroke-width="1.5"
+                fill="none"
+                stroke-linecap="round"
+              />
             </svg>
           </button>
         </div>
@@ -53,15 +59,7 @@ import { HideToTray } from '../api'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 
 const isMaximized = ref(false)
-const titleBarRef = ref<HTMLElement | null>(null)
-const isDragging = ref(false)
 
-// 双击相关变量
-let clickTimer: number | null = null
-let clickCount = 0
-const DOUBLE_CLICK_DELAY = 300 // 双击间隔时间（毫秒）
-
-// 检查窗口是否最大化
 const checkMaximized = async () => {
   try {
     const appWindow = getCurrentWindow()
@@ -71,32 +69,64 @@ const checkMaximized = async () => {
   }
 }
 
-// 最小化窗口
-const handleMinimize = async () => {
-  const appWindow = getCurrentWindow()
-  await appWindow.minimize()
+const getAppWindow = () => {
+  return getCurrentWindow()
 }
 
-// 最大化/还原窗口
-const handleMaximize = async () => {
-  const appWindow = getCurrentWindow()
-  if (await appWindow.isMaximized()) {
-    await appWindow.unmaximize()
-  } else {
-    await appWindow.maximize()
+const handleMinimize = async (e?: MouseEvent) => {
+  e?.preventDefault()
+  e?.stopPropagation()
+  try {
+    const appWindow = getAppWindow()
+    await appWindow.minimize()
+  } catch (err) {
+    console.error('最小化失败:', err)
   }
-  // 等待一下再检查状态
-  setTimeout(() => {
-    checkMaximized()
-  }, 100)
 }
 
-// 关闭窗口（隐藏到托盘）
+const handleMaximize = async (e?: MouseEvent) => {
+  e?.preventDefault()
+  e?.stopPropagation()
+  try {
+    const appWindow = getAppWindow()
+    if (typeof (appWindow as any).toggleMaximize === 'function') {
+      await (appWindow as any).toggleMaximize()
+    } else {
+      if (await appWindow.isMaximized()) {
+        await appWindow.unmaximize()
+      } else {
+        await appWindow.maximize()
+      }
+    }
+
+    setTimeout(() => {
+      checkMaximized()
+    }, 100)
+  } catch (err) {
+    console.error('最大化/还原失败:', err)
+  }
+}
+
 const handleClose = () => {
   HideToTray()
 }
 
-// 监听窗口大小变化（用于检测最大化状态变化）
+const handleStartDragging = async (e: MouseEvent) => {
+  const target = e.target as HTMLElement
+  if (target.closest('.window-controls')) {
+    return
+  }
+
+  try {
+    const appWindow = getCurrentWindow()
+    await appWindow.startDragging()
+  } catch (err) {
+    // Linux/X11 下 CSS 的 -webkit-app-region 可能不生效，这里用 startDragging 兜底。
+    // 失败时不阻塞其它交互。
+    console.error('startDragging 失败:', err)
+  }
+}
+
 let resizeTimer: number | null = null
 const handleResize = () => {
   if (resizeTimer) {
@@ -107,112 +137,17 @@ const handleResize = () => {
   }, 200)
 }
 
-// 监听窗口显示事件（当窗口从最小化恢复时）
 const handleWindowFocus = () => {
-  // 窗口获得焦点时，重新检查最大化状态
   setTimeout(() => {
     checkMaximized()
   }, 100)
 }
 
-// 监听窗口可见性变化（当窗口从最小化恢复时）
 const handleVisibilityChange = () => {
   if (!document.hidden) {
-    // 窗口变为可见时，重新检查最大化状态
     setTimeout(() => {
       checkMaximized()
     }, 100)
-  }
-}
-
-// 处理鼠标按下并拖动（用于检测拖拽）
-let mouseMoveHandler: ((e: MouseEvent) => void) | null = null
-let mouseUpHandler: (() => void) | null = null
-
-const handleMouseDown = (e: MouseEvent) => {
-  // 如果点击的是按钮区域，不处理
-  const target = e.target as HTMLElement
-  if (target.closest('.window-controls')) {
-    return
-  }
-  
-  // 清理之前的事件监听器（如果存在）
-  if (mouseMoveHandler) {
-    window.removeEventListener('mousemove', mouseMoveHandler)
-  }
-  if (mouseUpHandler) {
-    window.removeEventListener('mouseup', mouseUpHandler)
-  }
-  
-  // 定义鼠标移动处理函数（只有在移动时才显示移动光标）
-  mouseMoveHandler = () => {
-    isDragging.value = true
-  }
-  
-  // 定义鼠标释放处理函数（清理监听器，状态由 mouseleave 处理）
-  mouseUpHandler = () => {
-    if (mouseMoveHandler) {
-      window.removeEventListener('mousemove', mouseMoveHandler)
-      mouseMoveHandler = null
-    }
-    if (mouseUpHandler) {
-      window.removeEventListener('mouseup', mouseUpHandler)
-      mouseUpHandler = null
-    }
-  }
-  
-  window.addEventListener('mousemove', mouseMoveHandler)
-  window.addEventListener('mouseup', mouseUpHandler)
-}
-
-// 处理鼠标进入标题栏（确保光标状态正确）
-const handleTitleBarMouseEnter = () => {
-  if (!mouseMoveHandler) {
-    isDragging.value = false
-  }
-}
-
-// 处理鼠标离开标题栏
-const handleTitleBarMouseLeave = () => {
-  // 鼠标离开标题栏时，立即重置为默认光标
-  isDragging.value = false
-  
-  // 清理事件监听器
-  if (mouseMoveHandler) {
-    window.removeEventListener('mousemove', mouseMoveHandler)
-    mouseMoveHandler = null
-  }
-  if (mouseUpHandler) {
-    window.removeEventListener('mouseup', mouseUpHandler)
-    mouseUpHandler = null
-  }
-}
-
-// 处理标题栏点击（用于双击最大化/还原）
-const handleTitleBarClick = (e: MouseEvent) => {
-  const target = e.target as HTMLElement
-  if (target.closest('.window-controls')) {
-    return
-  }
-  
-  // 重置光标状态
-  isDragging.value = false
-  
-  clickCount++
-  
-  if (clickCount === 1) {
-    clickTimer = window.setTimeout(() => {
-      clickCount = 0
-      clickTimer = null
-    }, DOUBLE_CLICK_DELAY)
-  } else if (clickCount === 2) {
-    if (clickTimer) {
-      clearTimeout(clickTimer)
-      clickTimer = null
-    }
-    clickCount = 0
-    handleMaximize()
-    e.stopPropagation()
   }
 }
 
@@ -221,47 +156,16 @@ onMounted(() => {
   window.addEventListener('resize', handleResize)
   window.addEventListener('focus', handleWindowFocus)
   document.addEventListener('visibilitychange', handleVisibilityChange)
-  
-  // 添加事件监听
-  if (titleBarRef.value) {
-    titleBarRef.value.addEventListener('click', handleTitleBarClick)
-    titleBarRef.value.addEventListener('mousedown', handleMouseDown)
-    titleBarRef.value.addEventListener('mouseenter', handleTitleBarMouseEnter)
-    titleBarRef.value.addEventListener('mouseleave', handleTitleBarMouseLeave)
-  }
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', handleResize)
   window.removeEventListener('focus', handleWindowFocus)
   document.removeEventListener('visibilitychange', handleVisibilityChange)
-  
+
   if (resizeTimer) {
     clearTimeout(resizeTimer)
   }
-  
-  // 清理事件监听
-  if (titleBarRef.value) {
-    titleBarRef.value.removeEventListener('click', handleTitleBarClick)
-    titleBarRef.value.removeEventListener('mousedown', handleMouseDown)
-    titleBarRef.value.removeEventListener('mouseenter', handleTitleBarMouseEnter)
-    titleBarRef.value.removeEventListener('mouseleave', handleTitleBarMouseLeave)
-  }
-  
-  if (clickTimer) {
-    clearTimeout(clickTimer)
-  }
-  
-  // 清理拖拽相关的事件监听器
-  if (mouseMoveHandler) {
-    window.removeEventListener('mousemove', mouseMoveHandler)
-  }
-  if (mouseUpHandler) {
-    window.removeEventListener('mouseup', mouseUpHandler)
-  }
-  
-  // 强制重置状态
-  isDragging.value = false
 })
 </script>
 
@@ -273,16 +177,11 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   user-select: none;
-  /* 使用 Wails 原生的拖拽支持，比 -webkit-app-region 更流畅 */
-  --wails-draggable: drag;
+  -webkit-app-region: drag;
   position: relative;
   z-index: 1000;
   flex-shrink: 0;
-  cursor: default; /* 默认光标 */
-}
-
-.title-bar.is-dragging {
-  cursor: move !important; /* 拖拽时显示移动光标 */
+  cursor: default;
 }
 
 .title-bar-drag-region {
@@ -292,7 +191,7 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: space-between;
   padding: 0 8px;
-  --wails-draggable: drag;
+  -webkit-app-region: drag;
 }
 
 .title-bar-left {
@@ -301,7 +200,7 @@ onBeforeUnmount(() => {
   gap: 8px;
   flex: 1;
   min-width: 0;
-  --wails-draggable: drag;
+  -webkit-app-region: drag;
 }
 
 .app-icon {
@@ -312,7 +211,7 @@ onBeforeUnmount(() => {
   height: 20px;
   color: var(--primary, #3b82f6);
   flex-shrink: 0;
-  --wails-draggable: drag;
+  -webkit-app-region: drag;
   pointer-events: none;
 }
 
@@ -323,7 +222,7 @@ onBeforeUnmount(() => {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  --wails-draggable: drag;
+  -webkit-app-region: drag;
   pointer-events: none;
 }
 
@@ -331,13 +230,13 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   flex-shrink: 0;
-  --wails-draggable: no-drag;
+  -webkit-app-region: no-drag;
 }
 
 .window-controls {
   display: flex;
   align-items: center;
-  --wails-draggable: no-drag;
+  -webkit-app-region: no-drag;
   gap: 2px;
 }
 
@@ -355,7 +254,7 @@ onBeforeUnmount(() => {
   padding: 0;
   margin: 0;
   outline: none;
-  --wails-draggable: no-drag;
+  -webkit-app-region: no-drag;
 }
 
 .window-control-btn:hover {
@@ -380,7 +279,6 @@ onBeforeUnmount(() => {
   pointer-events: none;
 }
 
-/* 暗色主题适配 */
 .light-mode .title-bar {
   background: var(--card-bg, #ffffff);
   border-bottom-color: var(--border, rgba(0, 0, 0, 0.1));
