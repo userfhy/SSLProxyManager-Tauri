@@ -505,7 +505,7 @@ fn is_access_allowed(remote: &SocketAddr, headers: &HeaderMap, cfg: &config::Con
 fn time_local_string() -> String {
     // 形如 13/Jan/2026:23:07:40 +0800
     let now = chrono::Local::now();
-    now.format("%d/%b/%Y:%H:%M:%S %z").to_string()
+    now.format("%y.%m.%d %H:%M:%S").to_string()
 }
 
 fn request_line(method: &Method, uri: &Uri) -> String {
