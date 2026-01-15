@@ -4,10 +4,14 @@ use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePool, SqlitePoolOptions};
 use sqlx::ConnectOptions;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+
+const DB_FLUSH_BATCH_SIZE: usize = 1000;
+const DB_FLUSH_INTERVAL: Duration = Duration::from_secs(10);
+
 
 static DB_POOL: Lazy<RwLock<Option<Arc<SqlitePool>>>> = Lazy::new(|| RwLock::new(None));
 static DB_PATH: Lazy<RwLock<String>> = Lazy::new(|| RwLock::new(String::new()));
@@ -16,6 +20,12 @@ static DB_ERROR: Lazy<RwLock<Option<String>>> = Lazy::new(|| RwLock::new(None));
 static BLACKLIST_CACHE: Lazy<RwLock<HashMap<String, i64>>> =
     Lazy::new(|| RwLock::new(HashMap::new()));
 static BLACKLIST_LAST_CLEANUP: Lazy<RwLock<Instant>> = Lazy::new(|| RwLock::new(Instant::now()));
+
+const REALTIME_WINDOW_SECS: i64 = 43200; // 12h
+const REALTIME_MINUTE_WINDOW_SECS: i64 = 86400; // 24h
+
+static REALTIME_AGG: Lazy<RwLock<RealtimeAgg>> = Lazy::new(|| RwLock::new(RealtimeAgg::new()));
+
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct BlacklistEntry {
@@ -176,6 +186,184 @@ pub struct MetricsPayload {
     pub minute_window_seconds: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none", rename = "byListenMinute")]
     pub by_listen_minute: Option<HashMap<String, MetricsSeries>>,
+}
+
+#[derive(Debug, Clone, Default)]
+struct RtBucket {
+    ts: i64,
+    count: i64,
+    s2xx: i64,
+    s3xx: i64,
+    s4xx: i64,
+    s5xx: i64,
+    s0: i64,
+    latency_sum_ms: f64,
+    latency_max_ms: f64,
+}
+
+impl RtBucket {
+    fn add(&mut self, status_code: i32, latency_ms: f64) {
+        self.count += 1;
+        if (200..300).contains(&status_code) {
+            self.s2xx += 1;
+        } else if (300..400).contains(&status_code) {
+            self.s3xx += 1;
+        } else if (400..500).contains(&status_code) {
+            self.s4xx += 1;
+        } else if status_code >= 500 {
+            self.s5xx += 1;
+        } else {
+            self.s0 += 1;
+        }
+
+        if latency_ms.is_finite() {
+            let v = latency_ms.max(0.0);
+            self.latency_sum_ms += v;
+            if v > self.latency_max_ms {
+                self.latency_max_ms = v;
+            }
+        }
+    }
+
+    fn avg_latency_ms(&self) -> f64 {
+        if self.count <= 0 {
+            0.0
+        } else {
+            self.latency_sum_ms / (self.count as f64)
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+struct RtSeriesAgg {
+    // 按时间排序，方便导出给前端绘图
+    buckets: BTreeMap<i64, RtBucket>,
+}
+
+impl RtSeriesAgg {
+    fn add(&mut self, ts: i64, status_code: i32, latency_ms: f64) {
+        let b = self.buckets.entry(ts).or_insert_with(|| RtBucket {
+            ts,
+            ..Default::default()
+        });
+        b.add(status_code, latency_ms);
+    }
+
+    fn trim_older_than(&mut self, min_ts: i64) {
+        while let Some((&k, _)) = self.buckets.iter().next() {
+            if k < min_ts {
+                self.buckets.remove(&k);
+            } else {
+                break;
+            }
+        }
+    }
+
+    fn to_metrics_series(&self) -> MetricsSeries {
+        let mut timestamps = Vec::with_capacity(self.buckets.len());
+        let mut counts = Vec::with_capacity(self.buckets.len());
+        let mut s2xx = Vec::with_capacity(self.buckets.len());
+        let mut s3xx = Vec::with_capacity(self.buckets.len());
+        let mut s4xx = Vec::with_capacity(self.buckets.len());
+        let mut s5xx = Vec::with_capacity(self.buckets.len());
+        let mut s0 = Vec::with_capacity(self.buckets.len());
+        let mut avg_latency_ms = Vec::with_capacity(self.buckets.len());
+        let mut max_latency_ms = Vec::with_capacity(self.buckets.len());
+
+        for (_, b) in self.buckets.iter() {
+            timestamps.push(b.ts);
+            counts.push(b.count);
+            s2xx.push(b.s2xx);
+            s3xx.push(b.s3xx);
+            s4xx.push(b.s4xx);
+            s5xx.push(b.s5xx);
+            s0.push(b.s0);
+            avg_latency_ms.push(((b.avg_latency_ms() * 10000.0).round()) / 10000.0);
+            max_latency_ms.push(((b.latency_max_ms * 10000.0).round()) / 10000.0);
+        }
+
+        MetricsSeries {
+            timestamps,
+            counts,
+            s2xx,
+            s3xx,
+            s4xx,
+            s5xx,
+            s0,
+            avg_latency_ms,
+            max_latency_ms,
+            p95: None,
+            p99: None,
+            upstream_dist: None,
+            top_route_err: None,
+            top_up_err: None,
+            latency_dist: None,
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+struct RealtimeAgg {
+    per_sec: HashMap<String, RtSeriesAgg>,
+    per_min: HashMap<String, RtSeriesAgg>,
+}
+
+impl RealtimeAgg {
+    fn new() -> Self {
+        Self::default()
+    }
+
+    fn add(&mut self, listen_addr: &str, ts_sec: i64, status_code: i32, latency_ms: f64) {
+        // 全局
+        self.add_one("全局", ts_sec, status_code, latency_ms);
+        // listen_addr
+        let la = listen_addr.trim();
+        if !la.is_empty() {
+            self.add_one(la, ts_sec, status_code, latency_ms);
+        }
+    }
+
+    fn add_one(&mut self, key: &str, ts_sec: i64, status_code: i32, latency_ms: f64) {
+        let sec_ts = ts_sec;
+        let min_ts = (ts_sec / 60) * 60;
+
+        let sec = self.per_sec.entry(key.to_string()).or_default();
+        sec.add(sec_ts, status_code, latency_ms);
+        sec.trim_older_than(ts_sec - REALTIME_WINDOW_SECS);
+
+        let min = self.per_min.entry(key.to_string()).or_default();
+        min.add(min_ts, status_code, latency_ms);
+        min.trim_older_than(ts_sec - REALTIME_MINUTE_WINDOW_SECS);
+    }
+
+    fn to_payload(&self) -> MetricsPayload {
+        let mut listen_addrs: Vec<String> = self
+            .per_sec
+            .keys()
+            .filter(|k| k.as_str() != "全局")
+            .cloned()
+            .collect();
+        listen_addrs.sort();
+        listen_addrs.insert(0, "全局".to_string());
+
+        let mut by_listen_addr = HashMap::new();
+        for (k, v) in self.per_sec.iter() {
+            by_listen_addr.insert(k.clone(), v.to_metrics_series());
+        }
+
+        let mut by_listen_minute = HashMap::new();
+        for (k, v) in self.per_min.iter() {
+            by_listen_minute.insert(k.clone(), v.to_metrics_series());
+        }
+
+        MetricsPayload {
+            window_seconds: REALTIME_WINDOW_SECS as i32,
+            listen_addrs,
+            by_listen_addr,
+            minute_window_seconds: Some(REALTIME_MINUTE_WINDOW_SECS as i32),
+            by_listen_minute: Some(by_listen_minute),
+        }
+    }
 }
 
 fn default_db_path() -> Result<PathBuf> {
@@ -537,19 +725,22 @@ pub async fn init_request_log_writer() {
     *REQUEST_LOG_TX.write() = Some(tx);
 
     tauri::async_runtime::spawn(async move {
-        let mut buf: Vec<RequestLogInsert> = Vec::with_capacity(256);
+        let mut buf: Vec<RequestLogInsert> = Vec::with_capacity(DB_FLUSH_BATCH_SIZE);
+        let mut last_flush = Instant::now();
 
         loop {
             tokio::select! {
                 Some(item) = rx.recv() => {
                     buf.push(item);
-                    if buf.len() >= 256 {
+                    if buf.len() >= DB_FLUSH_BATCH_SIZE {
                         flush_request_logs(&mut buf).await;
+                        last_flush = Instant::now();
                     }
                 }
-                _ = tokio::time::sleep(Duration::from_millis(500)) => {
-                    if !buf.is_empty() {
+                _ = tokio::time::sleep(Duration::from_millis(200)) => {
+                    if !buf.is_empty() && last_flush.elapsed() >= DB_FLUSH_INTERVAL {
                         flush_request_logs(&mut buf).await;
+                        last_flush = Instant::now();
                     }
                 }
             }
@@ -558,6 +749,12 @@ pub async fn init_request_log_writer() {
 }
 
 pub fn try_enqueue_request_log(log: RequestLogInsert) {
+    // 实时聚合（不依赖 DB）
+    {
+        let mut agg = REALTIME_AGG.write();
+        agg.add(&log.listen_addr, log.timestamp, log.status_code, log.latency_ms);
+    }
+
     if let Some(tx) = REQUEST_LOG_TX.read().as_ref() {
         let _ = tx.try_send(log);
     }
@@ -745,13 +942,7 @@ pub async fn query_request_logs(req: QueryRequestLogsRequest) -> Result<QueryReq
 }
 
 pub fn get_metrics() -> MetricsPayload {
-    MetricsPayload {
-        window_seconds: 21600,
-        listen_addrs: vec![],
-        by_listen_addr: HashMap::new(),
-        minute_window_seconds: Some(86400),
-        by_listen_minute: Some(HashMap::new()),
-    }
+    REALTIME_AGG.read().to_payload()
 }
 
 pub async fn get_distinct_listen_addrs() -> Result<Vec<String>> {
