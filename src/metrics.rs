@@ -831,12 +831,32 @@ pub fn query_historical_metrics(req: QueryMetricsRequest) -> Result<QueryMetrics
 
     // Top upstream 分布
     let mut up_sql = String::from(
-        "SELECT upstream AS k, COUNT(1) AS c FROM request_logs WHERE timestamp>=? AND timestamp<=?",
+        r#"
+        SELECT
+            CASE
+                WHEN instr(h, '/') > 0 THEN substr(h, 1, instr(h, '/') - 1)
+                ELSE h
+            END AS k,
+            COUNT(1) AS c
+        FROM (
+            SELECT
+                replace(
+                    replace(
+                        replace(upstream, 'https://', ''),
+                        'http://', ''
+                    ),
+                    'www.', ''
+                ) AS h
+            FROM request_logs
+            WHERE timestamp >= ? AND timestamp <= ?
+        ) AS t
+        "#,
     );
+
     if listen_addr.is_some() {
         up_sql.push_str(" AND listen_addr=?");
     }
-    up_sql.push_str(" GROUP BY upstream ORDER BY c DESC LIMIT 20");
+    up_sql.push_str(" GROUP BY k ORDER BY c DESC LIMIT 20");
 
     let mut q = sqlx::query_as::<_, (String, i64)>(&up_sql).bind(start).bind(end);
     if let Some(v) = listen_addr {
