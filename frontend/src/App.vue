@@ -40,14 +40,22 @@
             >
               {{ status === 'running' ? '停止服务' : '启动服务' }}
             </el-button>
-            <el-button 
-              @click="handleSaveConfig" 
-              :loading="saving"
-              type="primary"
-              class="save-btn"
-            >
-              <el-icon><Check /></el-icon> {{ saving ? '保存中...' : '保存配置' }}
-            </el-button>
+            <el-tooltip 
+              content="请先停止服务再保存配置" 
+              placement="top" 
+              :disabled="status==='stopped'">
+              <span>
+                <el-button 
+                  @click="handleSaveConfig" 
+                  :loading="saving"
+                  :disabled="status!=='stopped' || saving || starting"
+                  type="primary"
+                  class="save-btn"
+                >
+                  <el-icon><Check /></el-icon> {{ saving ? '保存中...' : '保存配置' }}
+                </el-button>
+              </span>
+            </el-tooltip>
           </div>
         </div>
       </div>
@@ -167,7 +175,6 @@ import About from './components/About.vue'
 import { Setting, DataAnalysis, Document, Sunny, Moon, Lock, Check, Search, Fold, Expand, InfoFilled } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox, ElNotification } from 'element-plus'
 import { GetConfig, SaveConfig } from './api'
-import { relaunch } from '@tauri-apps/plugin-process'
 
 const activeTab = ref<'base' | 'config' | 'logs' | 'dashboard' | 'access' | 'storage' | 'requestLogs' | 'about'>('config')
 const status = ref('stopped')
@@ -528,12 +535,17 @@ const handleSaveConfig = async () => {
       // ignore
     }
 
-    ElMessage.success('配置已保存，程序将自动重启以应用新配置...')
+    ElMessage.success('配置已保存，正在重启服务以应用新配置...')
 
-    // 等待消息显示，然后重启应用
-    setTimeout(() => {
-      relaunch()
-    }, 1500)
+    // 后端已负责重启，等待状态事件更新即可
+    // 如需立即刷新配置，可稍后主动重新读取配置
+    setTimeout(async () => {
+      try {
+        const refreshedCfg = await GetConfig();
+        globalConfig.value = refreshedCfg;
+      } catch {}
+    }, 1000)
+
   } catch (e: any) {
     ElMessage.error(`保存失败: ${e?.message || String(e)}`)
   } finally {

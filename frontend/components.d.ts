@@ -48,6 +48,7 @@ declare module 'vue' {
     ElTableColumn: typeof import('element-plus/es')['ElTableColumn']
     ElTag: typeof import('element-plus/es')['ElTag']
     ElText: typeof import('element-plus/es')['ElText']
+    ElTooltip: typeof import('element-plus/es')['ElTooltip']
     LicenseDialog: typeof import('./src/components/LicenseDialog.vue')['default']
     LogViewer: typeof import('./src/components/LogViewer.vue')['default']
     MetricsStorage: typeof import('./src/components/MetricsStorage.vue')['default']
