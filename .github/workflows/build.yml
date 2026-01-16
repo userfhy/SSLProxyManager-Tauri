@@ -5,17 +5,6 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
-    inputs:
-      only:
-        description: "只构建指定平台（留空=全部）"
-        required: false
-        default: ""
-        type: choice
-        options:
-          - ""
-          - macos
-          - windows
-          - linux
 
 permissions:
   contents: write
@@ -26,28 +15,23 @@ env:
 jobs:
   build:
     name: Build ${{ matrix.name }}
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.only == '' || inputs.only == matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - platform: ubuntu-22.04
-            os: linux
             name: linux-amd64
             tauri_target: x86_64-unknown-linux-gnu
             bundles: deb
           - platform: windows-latest
-            os: windows
             name: windows-x64
             tauri_target: x86_64-pc-windows-msvc
             bundles: nsis
           - platform: macos-latest
-            os: macos
             name: macos-arm64
             tauri_target: aarch64-apple-darwin
             bundles: dmg
           - platform: macos-latest
-            os: macos
             name: macos-x64
             tauri_target: x86_64-apple-darwin
             bundles: dmg
