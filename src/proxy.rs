@@ -965,10 +965,25 @@ async fn proxy_handler(
             builder = builder.header(axum::http::header::AUTHORIZATION, "");
         }
 
-        // 处理请求体：流式转发（避免把整个 body 读入内存）
-        // reqwest 的流式 body 构造需要启用 feature `stream`。
-        let body_stream = req.into_body().into_data_stream();
-        let req_body = reqwest::Body::wrap_stream(body_stream);
+                // 根据配置决定是否流式转发请求体
+        let req_body = if crate::config::get_config().stream_proxy {
+            // 流式：避免把整个 body 读入内存
+            let body_stream = req.into_body().into_data_stream();
+            reqwest::Body::wrap_stream(body_stream)
+        } else {
+            // 非流式：先整块读取到内存
+            let bytes = match axum::body::to_bytes(req.into_body(), usize::MAX).await {
+                Ok(b) => b,
+                Err(e) => {
+                    return (
+                        StatusCode::BAD_REQUEST,
+                        format!("read request body failed: {e}"),
+                    )
+                        .into_response();
+                }
+            };
+            reqwest::Body::from(bytes)
+        };
 
         // 发送请求并返回响应（流式）
         let resp = match builder.body(req_body).send().await {
@@ -1020,9 +1035,24 @@ async fn proxy_handler(
             out.headers_mut().insert(k.clone(), v.clone());
         }
 
-        // 响应体：流式返回（避免把整个响应读入内存）
-        let stream = resp.bytes_stream();
-        *out.body_mut() = Body::from_stream(stream);
+        // 根据配置决定是否流式转发响应体
+        if crate::config::get_config().stream_proxy {
+            let stream = resp.bytes_stream();
+            *out.body_mut() = Body::from_stream(stream);
+        } else {
+            match resp.bytes().await {
+                Ok(b) => {
+                    *out.body_mut() = Body::from(b);
+                }
+                Err(e) => {
+                    return (
+                        StatusCode::BAD_GATEWAY,
+                        format!("read upstream body failed: {e}"),
+                    )
+                        .into_response();
+                }
+            }
+        }
 
         // 仅在错误时记录反代细节，降低高 QPS 下日志/锁开销
         if !status.is_success() {

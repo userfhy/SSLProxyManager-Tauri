@@ -24,7 +24,19 @@
         <el-text type="info" size="small" class="mini-hint" style="margin-left: 10px;">
           开启后仅实时推送错误相关日志，降低高并发下的 UI/日志开销。
         </el-text>
+        <el-switch v-model="realtimeLogsOnlyErrors" />
+        <el-text type="info" size="small" class="mini-hint" style="margin-left: 10px;">
+          开启后仅实时推送错误相关日志，降低高并发下的 UI/日志开销。
+        </el-text>
       </el-form-item>
+
+        <el-form-item label="代理流式转发">
+        <el-switch v-model="streamProxy" active-text="开启" inactive-text="关闭" />
+        <el-text type="info" size="small" class="mini-hint" style="margin-left: 10px;">
+          关闭后，请求/响应将在内存中整块读取，可能占用更多内存。
+        </el-text>
+      </el-form-item>
+
     </el-form>
   </el-card>
 </template>
@@ -36,6 +48,7 @@ import { GetConfig } from '../api'
 const autoStart = ref(false)
 const showRealtimeLogs = ref(true)
 const realtimeLogsOnlyErrors = ref(false)
+const streamProxy = ref(true)
 
 onMounted(async () => {
   try {
@@ -43,6 +56,7 @@ onMounted(async () => {
     autoStart.value = !!configData.auto_start
     showRealtimeLogs.value = configData.show_realtime_logs !== false
     realtimeLogsOnlyErrors.value = !!configData.realtime_logs_only_errors
+    streamProxy.value = configData.stream_proxy !== false
   } catch {
     // ignore
   }
@@ -59,6 +73,7 @@ const getConfig = () => {
     auto_start: !!autoStart.value,
     show_realtime_logs: !!showRealtimeLogs.value,
     realtime_logs_only_errors: !!realtimeLogsOnlyErrors.value,
+    stream_proxy: !!streamProxy.value,
   }
 }
 

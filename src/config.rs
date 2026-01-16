@@ -2,6 +2,10 @@ use anyhow::{Context, Result};
 use once_cell::sync::Lazy;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
+
+// 默认 true 帮助函数，供 serde 使用
+fn default_true() -> bool { true }
+
 use std::fs;
 use std::path::PathBuf;
 
@@ -90,6 +94,9 @@ pub struct Config {
     #[serde(default)]
     pub realtime_logs_only_errors: bool,
 
+    #[serde(default = "default_true")]
+    pub stream_proxy: bool,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metrics_storage: Option<MetricsStorage>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -104,6 +111,7 @@ static CONFIG: Lazy<RwLock<Config>> = Lazy::new(|| {
         auto_start: false,
         show_realtime_logs: true,
         realtime_logs_only_errors: false,
+        stream_proxy: true,
         metrics_storage: None,
         update: None,
     })
@@ -117,6 +125,7 @@ fn default_config() -> Config {
         auto_start: false,
         show_realtime_logs: true,
         realtime_logs_only_errors: false,
+        stream_proxy: true,
         metrics_storage: None,
         update: None,
     }
