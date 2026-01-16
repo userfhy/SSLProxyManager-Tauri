@@ -21,7 +21,7 @@ pub fn init_tray(app: &AppHandle) -> tauri::Result<()> {
 
     // 直接把图标编译进二进制，避免 dev 模式下 BaseDirectory::Resource 找不到文件导致崩溃。
     // 注意：include_bytes 路径是相对 crate 根目录（Cargo.toml 所在目录）。
-    let icon_bytes = include_bytes!("../icon/trayicon_64.png");
+    let icon_bytes = include_bytes!("../icons/64x64.png");
     let icon = Image::from_bytes(icon_bytes)?;
 
     let _tray = TrayIconBuilder::new()
