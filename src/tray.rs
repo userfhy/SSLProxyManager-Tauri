@@ -1,5 +1,4 @@
 use tauri::{
-    image::Image,
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, TrayIconBuilder, TrayIconEvent},
     AppHandle, Emitter, Manager,
@@ -19,18 +18,26 @@ pub fn init_tray(app: &AppHandle) -> tauri::Result<()> {
         &[&show, &hide, &PredefinedMenuItem::separator(app)?, &quit],
     )?;
 
-    // 直接把图标编译进二进制，避免 dev 模式下 BaseDirectory::Resource 找不到文件导致崩溃。
-    // 注意：include_bytes 路径是相对 crate 根目录（Cargo.toml 所在目录）。
-    let icon_bytes = include_bytes!("../icons/64x64.png");
-    let icon = Image::from_bytes(icon_bytes)?;
+    // 官方推荐：使用默认窗口图标作为托盘图标；拿不到图标则跳过托盘创建，不阻止程序启动
+    let Some(icon) = app.default_window_icon().cloned() else {
+        eprintln!("Tray init skipped: default_window_icon not found");
+        return Ok(());
+    };
 
-    let _tray = TrayIconBuilder::new()
+    // 构造托盘图标，macOS 需要开启模板模式以便系统自动适配深浅色
+    #[allow(unused_mut)]
+    let mut builder = TrayIconBuilder::new()
         .menu(&menu)
         .icon(icon)
         .show_menu_on_left_click(false)
-        .tooltip("SSL 代理管理工具")
-        .on_menu_event(|app, event| match event.id().as_ref() {
-            MENU_ID_SHOW => {
+        .tooltip("SSL 代理管理工具");
+    #[cfg(target_os = "macos")]
+    {
+        builder = builder.icon_as_template(true);
+    }
+
+    let builder = builder.on_menu_event(|app, event| match event.id().as_ref() {
+        MENU_ID_SHOW => {
                 if let Some(window) = app.get_webview_window("main") {
                     let _ = window.unminimize();
                     let _ = window.show();
@@ -87,8 +94,13 @@ pub fn init_tray(app: &AppHandle) -> tauri::Result<()> {
                     }
                 }
             }
-        })
-        .build(app)?;
+        });
+
+    // 构建托盘可能会因桌面环境缺少协议而失败；若失败仅记录错误，不阻止程序启动
+    if let Err(e) = builder.build(app) {
+        eprintln!("Tray build failed: {e}");
+    }
+
 
     Ok(())
 }
