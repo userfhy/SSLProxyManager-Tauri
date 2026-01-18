@@ -1,6 +1,6 @@
 {
   "productName": "SSLProxyManager",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "identifier": "com.sslproxy.manager",
   "build": {
     "beforeDevCommand": "node ./sync-version.mjs && cd frontend && npm run dev",
