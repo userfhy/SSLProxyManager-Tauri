@@ -25,12 +25,6 @@ jobs:
             bundles: deb,appimage,rpm
             archive_suffix: linux-amd64
             bin_name: SSLProxyManager
-          - platform: ubuntu-22.04
-            name: linux-arm64
-            tauri_target: aarch64-unknown-linux-gnu
-            bundles: deb,appimage,rpm
-            archive_suffix: linux-arm64
-            bin_name: SSLProxyManager
           - platform: windows-latest
             name: windows-x64
             tauri_target: x86_64-pc-windows-msvc

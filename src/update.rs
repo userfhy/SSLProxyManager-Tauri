@@ -23,17 +23,11 @@ pub struct CheckResult {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-struct GithubAsset {
-    browser_download_url: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
 struct GithubRelease {
     tag_name: String,
     prerelease: bool,
     body: Option<String>,
     html_url: Option<String>,
-    assets: Option<Vec<GithubAsset>>,
 }
 
 fn normalize_github_tag(tag: &str) -> Result<Version> {
@@ -43,16 +37,8 @@ fn normalize_github_tag(tag: &str) -> Result<Version> {
 }
 
 fn pick_download_url(rel: &GithubRelease) -> String {
-    if let Some(assets) = rel.assets.as_ref() {
-        if let Some(a) = assets
-            .iter()
-            .find(|a| !a.browser_download_url.trim().is_empty())
-        {
-            return a.browser_download_url.clone();
-        }
-    }
-
-    // 没有资产时退化到 release 页面
+    // 统一返回 GitHub Release 页面（tag 对应的 release 页）
+    // 例如：https://github.com/userfhy/SSLProxyManager-Tauri/releases/tag/v1.0.6
     rel.html_url.clone().unwrap_or_default()
 }
 
