@@ -58,7 +58,7 @@
                   <el-row :gutter="20" class="route-match">
                     <el-col :span="10">
                       <el-form-item label="Host（可选）">
-                        <el-input v-model="rt.Host" placeholder="api.example.com（留空表示任意）" />
+                        <el-input v-model="rt.Host" placeholder="Host 匹配未实现；如需修改上游 Host 请在 proxy_set_header 中设置 Host" />
                       </el-form-item>
                     </el-col>
                     <el-col :span="10">
@@ -74,6 +74,13 @@
                         <el-input v-model="rt.ProxyPassPath" placeholder="/v1 （留空表示不重写）" />
                         <el-text type="info" size="small" class="mini-hint">
                           等价 nginx: proxy_pass http://upstream&lt;这里&gt;;
+                        </el-text>
+                      </el-form-item>
+
+                      <el-form-item label="follow_redirects" style="margin-top: 10px;">
+                        <el-switch v-model="rt.FollowRedirects" />
+                        <el-text type="info" size="small" class="mini-hint">
+                          开启：由代理端跟随上游 30x 并返回最终响应（客户端通常不会再跳转）；关闭：直接把 30x 原样返回给客户端（浏览器会自动跳转）。网站类反代建议关闭，API 如需可开启
                         </el-text>
                       </el-form-item>
                     </el-col>
@@ -250,6 +257,7 @@ interface Route {
   Path: string
 
   ProxyPassPath?: string
+  FollowRedirects?: boolean
   SetHeaders?: Record<string, string>
   SetHeadersList?: HeaderKV[]
 
@@ -309,6 +317,7 @@ onMounted(async () => {
         Host: rt.host || '',
         Path: rt.path || '/',
         ProxyPassPath: rt.proxy_pass_path || '',
+        FollowRedirects: !!rt.follow_redirects,
         SetHeaders: rt.set_headers || {},
         SetHeadersList: Object.entries(rt.set_headers || {}).map(([Key, Value]) => ({
           Key,
@@ -536,6 +545,7 @@ const getConfig = () => {
         Host: (rt.Host || '').trim(),
         Path: normalizePath(rt.Path),
         ProxyPassPath: rt.ProxyPassPath ? normalizePath(rt.ProxyPassPath) : '',
+        FollowRedirects: !!rt.FollowRedirects,
         SetHeaders: setHeaders,
         StaticDir: (rt.StaticDir || '').trim(),
         ExcludeBasicAuth: !!rt.ExcludeBasicAuth,
@@ -592,6 +602,7 @@ const getConfig = () => {
       host: rt.Host || undefined,
       path: rt.Path,
       proxy_pass_path: rt.ProxyPassPath || undefined,
+      follow_redirects: !!rt.FollowRedirects,
       set_headers: rt.SetHeaders || {},
       static_dir: rt.StaticDir || undefined,
       exclude_basic_auth: !!rt.ExcludeBasicAuth,

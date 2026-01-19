@@ -4,18 +4,38 @@ use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 
 // 默认 true 帮助函数，供 serde 使用
-fn default_true() -> bool { true }
+fn default_true() -> bool {
+    true
+}
 
-fn default_max_body_size() -> usize { 10 * 1024 * 1024 }
+fn default_max_body_size() -> usize {
+    10 * 1024 * 1024
+}
 
-fn default_enable_http2() -> bool { true }
+fn default_enable_http2() -> bool {
+    true
+}
 
 // 新增的默认值函数
-fn default_upstream_connect_timeout_ms() -> u64 { 5000 }
-fn default_upstream_read_timeout_ms() -> u64 { 30000 }
-fn default_upstream_pool_max_idle() -> usize { 100 }
-fn default_upstream_pool_idle_timeout_sec() -> u64 { 60 }
-fn default_max_response_body_size() -> usize { 10 * 1024 * 1024 }
+fn default_upstream_connect_timeout_ms() -> u64 {
+    5000
+}
+fn default_upstream_read_timeout_ms() -> u64 {
+    30000
+}
+fn default_upstream_pool_max_idle() -> usize {
+    100
+}
+fn default_upstream_pool_idle_timeout_sec() -> u64 {
+    60
+}
+fn default_max_response_body_size() -> usize {
+    10 * 1024 * 1024
+}
+
+fn default_follow_redirects() -> bool {
+    false
+}
 
 use std::fs;
 use std::path::PathBuf;
@@ -55,6 +75,10 @@ pub struct Route {
     pub basic_auth_password: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub basic_auth_forward_header: Option<bool>,
+
+    #[serde(default = "default_follow_redirects")]
+    pub follow_redirects: bool,
+
     pub upstreams: Vec<Upstream>,
 }
 

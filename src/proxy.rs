@@ -63,7 +63,8 @@ static UPSTREAM_LB: once_cell::sync::Lazy<RwLock<HashMap<String, SmoothLbState>>
 #[derive(Clone)]
 struct AppState {
     rule: config::ListenRule,
-    client: reqwest::Client,
+    client_follow: reqwest::Client,
+    client_nofollow: reqwest::Client,
     app: tauri::AppHandle,
 }
 
@@ -71,7 +72,10 @@ struct AppState {
 struct RuleState(Arc<config::ListenRule>);
 
 #[derive(Clone)]
-struct HttpClient(reqwest::Client);
+struct HttpClientFollow(reqwest::Client);
+
+#[derive(Clone)]
+struct HttpClientNoFollow(reqwest::Client);
 
 impl FromRef<AppState> for RuleState {
     fn from_ref(input: &AppState) -> Self {
@@ -79,9 +83,15 @@ impl FromRef<AppState> for RuleState {
     }
 }
 
-impl FromRef<AppState> for HttpClient {
+impl FromRef<AppState> for HttpClientFollow {
     fn from_ref(input: &AppState) -> Self {
-        Self(input.client.clone())
+        Self(input.client_follow.clone())
+    }
+}
+
+impl FromRef<AppState> for HttpClientNoFollow {
+    fn from_ref(input: &AppState) -> Self {
+        Self(input.client_nofollow.clone())
     }
 }
 
@@ -108,8 +118,6 @@ pub fn start_server(app: tauri::AppHandle) -> Result<()> {
             return Ok(());
         }
     }
-
-
 
     // 标记启动中，并初始化启动计数
     *STARTING.write() = true;
@@ -349,12 +357,13 @@ async fn precheck_rule(rule: &config::ListenRule) -> Result<()> {
 async fn start_rule_server(
     app: tauri::AppHandle,
     rule: config::ListenRule,
-    shutdown_rx: tokio::sync::oneshot::Receiver<()>,) -> Result<()> {
+    shutdown_rx: tokio::sync::oneshot::Receiver<()>,
+) -> Result<()> {
     let addr = parse_listen_addr(&rule.listen_addr)?;
 
     let cfg = crate::config::get_config();
 
-    let mut client_builder = reqwest::Client::builder()
+    let mut follow_builder = reqwest::Client::builder()
         .redirect(Policy::limited(10))
         .danger_accept_invalid_certs(true)
         .pool_max_idle_per_host(cfg.upstream_pool_max_idle)
@@ -363,17 +372,32 @@ async fn start_rule_server(
         .connect_timeout(Duration::from_millis(cfg.upstream_connect_timeout_ms))
         .timeout(Duration::from_millis(cfg.upstream_read_timeout_ms));
 
+    let mut nofollow_builder = reqwest::Client::builder()
+        .redirect(Policy::none())
+        .danger_accept_invalid_certs(true)
+        .pool_max_idle_per_host(cfg.upstream_pool_max_idle)
+        .pool_idle_timeout(Duration::from_secs(cfg.upstream_pool_idle_timeout_sec))
+        .tcp_keepalive(Duration::from_secs(60))
+        .connect_timeout(Duration::from_millis(cfg.upstream_connect_timeout_ms))
+        .timeout(Duration::from_millis(cfg.upstream_read_timeout_ms));
+
     if !cfg.enable_http2 {
-        client_builder = client_builder.http1_only();
+        follow_builder = follow_builder.http1_only();
+        nofollow_builder = nofollow_builder.http1_only();
     }
 
-    let client = client_builder
+    let client_follow = follow_builder
+        .build()
+        .context("创建上游 HTTP client 失败")?;
+
+    let client_nofollow = nofollow_builder
         .build()
         .context("创建上游 HTTP client 失败")?;
 
     let state = AppState {
         rule: rule.clone(),
-        client,
+        client_follow,
+        client_nofollow,
         app: app.clone(),
     };
 
@@ -720,7 +744,8 @@ fn push_log(app: &tauri::AppHandle, line: String) {
 async fn proxy_handler(
     ConnectInfo(remote): ConnectInfo<SocketAddr>,
     State(RuleState(rule)): State<RuleState>,
-    State(HttpClient(client)): State<HttpClient>,
+    State(HttpClientFollow(client_follow)): State<HttpClientFollow>,
+    State(HttpClientNoFollow(client_nofollow)): State<HttpClientNoFollow>,
     State(AppHandleState(app)): State<AppHandleState>,
     req: Request<Body>,
 ) -> Response {
@@ -1021,8 +1046,12 @@ async fn proxy_handler(
 
     // 3. 处理反代逻辑（如果有 upstream）
     if let Some(upstream_url) = pick_upstream_smooth(route) {
-        let target = match build_upstream_url(&upstream_url, route.proxy_pass_path.as_deref(), &uri)
-        {
+        let target = match build_upstream_url(
+            &upstream_url,
+            route.path.as_deref(),
+            route.proxy_pass_path.as_deref(),
+            &uri,
+        ) {
             Ok(u) => u,
             Err(e) => {
                 let elapsed = started_at.elapsed().as_secs_f64();
@@ -1055,13 +1084,34 @@ async fn proxy_handler(
             }
         };
 
-        let target = target;
+        let client = if route.follow_redirects {
+            client_follow
+        } else {
+            client_nofollow
+        };
+
         let mut builder = client.request(req.method().clone(), target.clone());
 
-        // 复制请求头
+        // 复制请求头（跳过 hop-by-hop 以及 Host：Host 需要按上游重建，否则容易导致上游 400）
         for (k, v) in req.headers().iter() {
-            if !is_hop_header(k.as_str()) {
-                builder = builder.header(k, v);
+            if is_hop_header(k.as_str()) {
+                continue;
+            }
+            if k.as_str().eq_ignore_ascii_case("host") {
+                continue;
+            }
+            builder = builder.header(k, v);
+        }
+
+        // 默认按上游 URL 设置 Host（与 Go 版本 req.Host=req.URL.Host 的行为一致）
+        if let Ok(url) = reqwest::Url::parse(&target) {
+            if let Some(host) = url.host_str() {
+                let host_header = if let Some(port) = url.port() {
+                    format!("{}:{}", host, port)
+                } else {
+                    host.to_string()
+                };
+                builder = builder.header(axum::http::header::HOST, host_header);
             }
         }
 
@@ -1183,7 +1233,7 @@ async fn proxy_handler(
         // 仅在错误时记录反代细节，降低高 QPS 下日志/锁开销
         if !status.is_success() {
             send_log(format!(
-                "反代错误: {} {} -> {} status={}",
+                "反代错误: {} {} -> {} status={} ",
                 method.as_str(),
                 uri,
                 target,
@@ -1204,25 +1254,51 @@ async fn proxy_handler(
 
 fn build_upstream_url(
     upstream_base: &str,
+    route_path: Option<&str>,
     proxy_pass_path: Option<&str>,
     uri: &Uri,
 ) -> Result<String> {
     let mut base = upstream_base.trim_end_matches('/').to_string();
-    let mut path = uri.path().to_string();
 
+    let orig_path = uri.path();
+    let route_path = route_path.unwrap_or("/");
+
+    let mut new_path = orig_path.to_string();
     if let Some(pp) = proxy_pass_path {
-        if pp == "/" {
-            if let Some(rest) = path.strip_prefix('/') {
-                if let Some((_, remain)) = rest.split_once('/') {
-                    path = format!("/{}", remain);
-                } else {
-                    path = "/".to_string();
-                }
+        let from = if route_path.is_empty() { "/" } else { route_path };
+        let to = if pp.trim().is_empty() { "/" } else { pp };
+
+        if new_path.starts_with(from) {
+            let suffix = &new_path[from.len()..];
+
+            let mut out_path = to.to_string();
+            if out_path.is_empty() {
+                out_path = "/".to_string();
             }
+
+            // 拼接时处理斜杠，避免出现 // 或缺少 /
+            let suffix = suffix.strip_prefix('/').unwrap_or(suffix);
+            if out_path.ends_with('/') {
+                new_path = if suffix.is_empty() {
+                    out_path
+                } else {
+                    format!("{}{}", out_path, suffix)
+                };
+            } else {
+                new_path = if suffix.is_empty() {
+                    out_path
+                } else {
+                    format!("{}/{}", out_path, suffix)
+                };
+            }
+        }
+
+        if !new_path.starts_with('/') {
+            new_path = format!("/{}", new_path);
         }
     }
 
-    base.push_str(&path);
+    base.push_str(&new_path);
     if let Some(q) = uri.query() {
         base.push('?');
         base.push_str(q);
