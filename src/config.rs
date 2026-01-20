@@ -18,6 +18,10 @@ fn default_enable_http2() -> bool {
     true
 }
 
+fn default_ws_proxy_enabled() -> bool {
+    true
+}
+
 // 新增的默认值函数
 fn default_upstream_connect_timeout_ms() -> u64 {
     5000
@@ -117,11 +121,92 @@ pub struct UpdateConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StreamUpstreamServer {
+    pub addr: String,
+    #[serde(default = "default_stream_weight")]
+    pub weight: i32,
+    #[serde(default = "default_stream_max_fails")]
+    pub max_fails: i32,
+    #[serde(default = "default_stream_fail_timeout")]
+    pub fail_timeout: String,
+}
+
+fn default_stream_weight() -> i32 {
+    1
+}
+
+fn default_stream_max_fails() -> i32 {
+    1
+}
+
+fn default_stream_fail_timeout() -> String {
+    "30s".to_string()
+}
+
+fn default_stream_hash_key() -> String {
+    "$remote_addr".to_string()
+}
+
+fn default_stream_consistent() -> bool {
+    true
+}
+
+fn default_stream_proxy_connect_timeout() -> String {
+    "300s".to_string()
+}
+
+fn default_stream_proxy_timeout() -> String {
+    "600s".to_string()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StreamUpstream {
+    pub name: String,
+    #[serde(default = "default_stream_hash_key")]
+    pub hash_key: String,
+    #[serde(default = "default_stream_consistent")]
+    pub consistent: bool,
+    pub servers: Vec<StreamUpstreamServer>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StreamServer {
+    pub enabled: bool,
+    pub listen_port: u16,
+    pub proxy_pass: String,
+
+    #[serde(default = "default_stream_proxy_connect_timeout")]
+    pub proxy_connect_timeout: String,
+
+    #[serde(default = "default_stream_proxy_timeout")]
+    pub proxy_timeout: String,
+
+    #[serde(default)]
+    pub udp: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct StreamProxyConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub upstreams: Vec<StreamUpstream>,
+    #[serde(default)]
+    pub servers: Vec<StreamServer>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     pub rules: Vec<ListenRule>,
 
+    #[serde(default = "default_ws_proxy_enabled")]
+    pub ws_proxy_enabled: bool,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ws_proxy: Option<Vec<ws_proxy::WsListenRule>>,
+
+    #[serde(default)]
+    pub stream: StreamProxyConfig,
 
     pub allow_all_lan: bool,
     pub whitelist: Vec<WhitelistEntry>,
@@ -168,7 +253,9 @@ pub struct Config {
 static CONFIG: Lazy<RwLock<Config>> = Lazy::new(|| {
     RwLock::new(Config {
         rules: vec![],
+        ws_proxy_enabled: default_ws_proxy_enabled(),
         ws_proxy: None,
+        stream: StreamProxyConfig::default(),
         allow_all_lan: true,
         whitelist: vec![],
         auto_start: false,
@@ -190,7 +277,9 @@ static CONFIG: Lazy<RwLock<Config>> = Lazy::new(|| {
 fn default_config() -> Config {
     Config {
         rules: vec![],
+        ws_proxy_enabled: default_ws_proxy_enabled(),
         ws_proxy: None,
+        stream: StreamProxyConfig::default(),
         allow_all_lan: true,
         whitelist: vec![],
         auto_start: false,

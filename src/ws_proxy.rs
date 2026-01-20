@@ -77,6 +77,11 @@ impl FromRef<WsAppState> for AppHandleState {
 
 pub fn start_ws_servers(app: tauri::AppHandle) -> Result<()> {
     let cfg = config::get_config();
+
+    if !cfg.ws_proxy_enabled {
+        return Ok(());
+    }
+
     let Some(ws_rules) = cfg.ws_proxy.clone() else {
         return Ok(());
     };

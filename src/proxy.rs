@@ -1,4 +1,4 @@
-use crate::{config, metrics, ws_proxy};
+use crate::{config, metrics, ws_proxy, stream_proxy};
 use anyhow::{anyhow, Context, Result};
 use axum::{
     body::Body,
@@ -115,6 +115,20 @@ pub fn start_server(app: tauri::AppHandle) -> Result<()> {
     // WS 的启动/失败目前不参与 HTTP rules 的启动汇总逻辑；如果端口占用，会在日志中提示。
     if let Err(e) = ws_proxy::start_ws_servers(app.clone()) {
         send_log(format!("启动 WS 监听器失败: {e}"));
+    }
+
+    // 启动 Stream(TCP/UDP) 代理监听（如果启用）。
+    // Stream 的启动同样不参与 HTTP rules 的启动汇总逻辑；如果端口占用，会在日志中提示。
+    // 注意：async_runtime::spawn 要求 Future 是 Send；因此这里只捕获 stream 配置的 clone，
+    // 避免把整个 Config（可能间接携带 !Send 状态）带进异步任务。
+    {
+        let stream_cfg = config::get_config().stream.clone();
+        let app2 = app.clone();
+        tauri::async_runtime::spawn(async move {
+            if let Err(e) = stream_proxy::start_stream_servers(&stream_cfg).await {
+                send_log_with_app(&app2, format!("启动 Stream 监听器失败: {e}"));
+            }
+        });
     }
     // 如果正在启动，直接返回（避免重复点击并发启动）
     {
@@ -246,6 +260,11 @@ pub fn start_server(app: tauri::AppHandle) -> Result<()> {
 pub fn stop_server(app: tauri::AppHandle) -> Result<()> {
     // 停止 WS 独立监听
     ws_proxy::stop_ws_servers();
+
+    // 停止 Stream(TCP/UDP) 代理监听
+    tauri::async_runtime::spawn(async {
+        stream_proxy::stop_stream_servers().await;
+    });
 
     // 无论当前状态如何，停止都要尽量清理启动中的状态
     *STARTING.write() = false;
@@ -1235,7 +1254,7 @@ async fn proxy_handler(
             final_headers.remove(axum::http::header::AUTHORIZATION);
         }
 
-        let after_remove_has_auth = final_headers.contains_key(axum::http::header::AUTHORIZATION);
+        let _after_remove_has_auth = final_headers.contains_key(axum::http::header::AUTHORIZATION);
 
         // 3) 构造并发送上游请求（build 后清空并写入 final_headers，彻底去重）
         let mut builder = client.request(method_up, target.clone());

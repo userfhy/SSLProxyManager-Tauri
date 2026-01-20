@@ -7,6 +7,7 @@ mod config;
 mod metrics;
 mod proxy;
 mod ws_proxy;
+mod stream_proxy;
 
 use tauri::Manager;
 

@@ -93,6 +93,10 @@
               <el-icon><Setting /></el-icon>
               <template #title>WS 代理配置</template>
             </el-menu-item>
+            <el-menu-item index="stream">
+              <el-icon><Setting /></el-icon>
+              <template #title>Stream 配置</template>
+            </el-menu-item>
             <el-menu-item index="access">
               <el-icon><Lock /></el-icon>
               <template #title>访问控制</template>
@@ -145,6 +149,7 @@
           ref="configCardRef"
         />
         <WsProxyConfig v-show="activeTab === 'ws'" ref="wsProxyConfigRef" />
+        <StreamProxyConfig v-show="activeTab === 'stream'" ref="streamProxyConfigRef" />
         <Dashboard :is-active="activeTab === 'dashboard'" v-show="activeTab === 'dashboard'" />
         <AccessControl 
           v-show="activeTab === 'access'"
@@ -172,6 +177,7 @@ import TitleBar from './components/TitleBar.vue'
 import BaseConfig from './components/BaseConfig.vue'
 import ConfigCard from './components/ConfigCard.vue'
 import WsProxyConfig from './components/WsProxyConfig.vue'
+import StreamProxyConfig from './components/StreamProxyConfig.vue'
 import LogViewer from './components/LogViewer.vue'
 import Dashboard from './components/Dashboard.vue'
 import AccessControl from './components/AccessControl.vue'
@@ -182,13 +188,14 @@ import { Setting, DataAnalysis, Document, Sunny, Moon, Lock, Check, Search, Fold
 import { ElMessage, ElMessageBox, ElNotification } from 'element-plus'
 import { GetConfig, SaveConfig } from './api'
 
-const activeTab = ref<'base' | 'config' | 'ws' | 'logs' | 'dashboard' | 'access' | 'storage' | 'requestLogs' | 'about'>('config')
+const activeTab = ref<'base' | 'config' | 'ws' | 'stream' | 'logs' | 'dashboard' | 'access' | 'storage' | 'requestLogs' | 'about'>('config')
 const status = ref('stopped')
 const starting = ref(false)
 const saving = ref(false)
 const baseConfigRef = ref<InstanceType<typeof BaseConfig> | null>(null)
 const configCardRef = ref<InstanceType<typeof ConfigCard> | null>(null)
 const wsProxyConfigRef = ref<InstanceType<typeof WsProxyConfig> | null>(null)
+const streamProxyConfigRef = ref<InstanceType<typeof StreamProxyConfig> | null>(null)
 const accessControlRef = ref<InstanceType<typeof AccessControl> | null>(null)
 const metricsStorageRef = ref<InstanceType<typeof MetricsStorage> | null>(null)
 const aboutRef = ref<InstanceType<typeof About> | null>(null)
@@ -453,6 +460,15 @@ const handleSaveConfig = async () => {
         configCardConfig = {
           ...configCardConfig,
           ...wsCfg,
+        }
+      }
+
+      // 从 StreamProxyConfig 获取配置
+      if (streamProxyConfigRef.value) {
+        const streamCfg = streamProxyConfigRef.value.getConfig() || {}
+        configCardConfig = {
+          ...configCardConfig,
+          ...streamCfg,
         }
       }
 

@@ -53,6 +53,7 @@ declare module 'vue' {
     LogViewer: typeof import('./src/components/LogViewer.vue')['default']
     MetricsStorage: typeof import('./src/components/MetricsStorage.vue')['default']
     RequestLogs: typeof import('./src/components/RequestLogs.vue')['default']
+    StreamProxyConfig: typeof import('./src/components/StreamProxyConfig.vue')['default']
     TitleBar: typeof import('./src/components/TitleBar.vue')['default']
     WsProxyConfig: typeof import('./src/components/WsProxyConfig.vue')['default']
   }

@@ -1,7 +1,12 @@
 <template>
   <el-card class="config-card config-page" shadow="hover">
     <template #header>
-      <h3>WebSocket 反向代理配置</h3>
+      <div class="header-row">
+        <h3>WebSocket 反向代理配置</h3>
+        <div class="header-actions">
+          <el-switch v-model="wsProxyEnabled" active-text="启用" inactive-text="禁用" />
+        </div>
+      </div>
     </template>
 
     <el-form label-width="140px">
@@ -127,6 +132,8 @@ interface WsListenRule {
   routes: WsRoute[]
 }
 
+const wsProxyEnabled = ref(true)
+
 const rules = ref<WsListenRule[]>([
   {
     enabled: false,
@@ -141,6 +148,8 @@ const rules = ref<WsListenRule[]>([
 onMounted(async () => {
   try {
     const cfg: any = await GetConfig()
+    wsProxyEnabled.value = cfg?.ws_proxy_enabled !== false
+
     const ws = cfg?.ws_proxy
     if (Array.isArray(ws) && ws.length > 0) {
       rules.value = ws.map((r: any) => ({
@@ -255,6 +264,7 @@ const getConfig = () => {
   }
 
   return {
+    ws_proxy_enabled: !!wsProxyEnabled.value,
     ws_proxy: cleaned,
   }
 }
@@ -265,6 +275,19 @@ defineExpose({
 </script>
 
 <style scoped>
+.header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
 .rules-section {
   display: flex;
   flex-direction: column;
