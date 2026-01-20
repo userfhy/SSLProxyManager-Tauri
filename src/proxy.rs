@@ -1093,58 +1093,28 @@ async fn proxy_handler(
         };
 
         let client = if route.follow_redirects {
-            client_follow
+            client_follow.clone()
         } else {
-            client_nofollow
+            client_nofollow.clone()
         };
 
-        let mut builder = client.request(req.method().clone(), target.clone());
+        // 0) 拆分 request，避免 into_body 后再使用 req
+        let (req_parts, req_body_axum) = req.into_parts();
+        let inbound_headers = req_parts.headers.clone();
+        let method_up = req_parts.method.clone();
 
-        // 复制请求头（跳过 hop-by-hop 以及 Host：Host 需要按上游重建，否则容易导致上游 400）
-        for (k, v) in req.headers().iter() {
-            if is_hop_header(k.as_str()) {
-                continue;
-            }
-            if k.as_str().eq_ignore_ascii_case("host") {
-                continue;
-            }
-            builder = builder.header(k, v);
-        }
-
-        // 默认按上游 URL 设置 Host（与 Go 版本 req.Host=req.URL.Host 的行为一致）
-        if let Ok(url) = reqwest::Url::parse(&target) {
-            if let Some(host) = url.host_str() {
-                let host_header = if let Some(port) = url.port() {
-                    format!("{}:{}", host, port)
-                } else {
-                    host.to_string()
-                };
-                builder = builder.header(axum::http::header::HOST, host_header);
-            }
-        }
-
-        // 应用 set_headers（覆盖同名 header，语义对齐 nginx proxy_set_header）
-        builder = apply_set_headers(builder, route, &remote, req.headers(), rule.ssl_enable);
-
-        // 处理 Basic Auth 转发
-        if !rule.basic_auth_forward_header {
-            builder = builder.header(axum::http::header::AUTHORIZATION, "");
-        }
-
+        // 1) 读取请求体（用于 req_body_size & 避免 req move 问题）
         // 热路径只读一次配置（避免频繁 clone 整个 Config）
         let cfg = crate::config::get_config();
         let stream_proxy = cfg.stream_proxy;
         let max_body_size = cfg.max_body_size;
         let max_response_body_size = cfg.max_response_body_size;
 
-        // 根据配置决定是否流式转发请求体
-        let req_body = if stream_proxy {
-            // 流式：避免把整个 body 读入内存
-            let body_stream = req.into_body().into_data_stream();
-            reqwest::Body::wrap_stream(body_stream)
+        let (reqwest_body, req_body_size) = if stream_proxy {
+            let body_stream = req_body_axum.into_data_stream();
+            (reqwest::Body::wrap_stream(body_stream), None)
         } else {
-            // 非流式：先整块读取到内存
-            let bytes = match axum::body::to_bytes(req.into_body(), max_body_size).await {
+            let bytes = match axum::body::to_bytes(req_body_axum, max_body_size).await {
                 Ok(b) => b,
                 Err(e) => {
                     return (
@@ -1154,11 +1124,147 @@ async fn proxy_handler(
                         .into_response();
                 }
             };
-            reqwest::Body::from(bytes)
+            let len = bytes.len();
+            (reqwest::Body::from(bytes), Some(len))
         };
 
-        // 发送请求并返回响应（流式）
-        let resp = match builder.body(req_body).send().await {
+        // 2) 构造最终 headers（覆盖语义，避免重复 header 导致上游 400）
+        let mut final_headers = HeaderMap::new();
+
+        // 2.1) 先复制入站 headers（跳过 hop-by-hop；跳过将由代理统一控制/覆盖的头）
+        for (k, v) in inbound_headers.iter() {
+            let lower = k.as_str().to_ascii_lowercase();
+            if is_hop_header(&lower) {
+                continue;
+            }
+            if matches!(
+                lower.as_str(),
+                "host"
+                    | "connection"
+                    | "accept-encoding"
+                    | "x-real-ip"
+                    | "x-forwarded-for"
+                    | "x-forwarded-proto"
+            ) {
+                continue;
+            }
+            final_headers.append(k.clone(), v.clone());
+        }
+
+        // 2.2) Host：默认沿用入站 Host（如需改 Host 请在 set_headers 里显式设置 Host）
+        if let Some(h) = inbound_headers.get(axum::http::header::HOST) {
+            final_headers.insert(axum::http::header::HOST, h.clone());
+        }
+
+        // 2.3) 常用转发头
+        {
+            let remote_ip = remote.ip().to_string();
+            if let Ok(v) = HeaderValue::from_str(&remote_ip) {
+                final_headers.insert(HeaderName::from_static("x-real-ip"), v);
+            }
+
+            let prior = inbound_headers
+                .get("x-forwarded-for")
+                .and_then(|v| v.to_str().ok())
+                .map(|s| s.trim())
+                .filter(|s| !s.is_empty());
+
+            let combined = match prior {
+                Some(p) => format!("{}, {}", p, remote_ip),
+                None => remote_ip,
+            };
+
+            if let Ok(v) = HeaderValue::from_str(&combined) {
+                final_headers.insert(HeaderName::from_static("x-forwarded-for"), v);
+            }
+        }
+
+        final_headers.insert(
+            HeaderName::from_static("x-forwarded-proto"),
+            HeaderValue::from_static(if rule.ssl_enable { "https" } else { "http" }),
+        );
+
+        // 2.4) 对齐 nginx 常见实践：禁用压缩、短连接
+        final_headers.insert(axum::http::header::ACCEPT_ENCODING, HeaderValue::from_static(""));
+        final_headers.insert(axum::http::header::CONNECTION, HeaderValue::from_static("close"));
+
+        // 2.5) Content-Type：若入站有且 set_headers 未覆盖，则保留
+        if !final_headers.contains_key(axum::http::header::CONTENT_TYPE) {
+            if let Some(ct) = inbound_headers.get(axum::http::header::CONTENT_TYPE) {
+                final_headers.insert(axum::http::header::CONTENT_TYPE, ct.clone());
+            }
+        }
+
+        // 2.6) 应用 set_headers（覆盖语义：insert）
+        if let Some(map) = route.set_headers.as_ref() {
+            for (k, v) in map {
+                let key = k.trim();
+                if key.is_empty() {
+                    continue;
+                }
+                if is_hop_header(key) {
+                    continue;
+                }
+
+                let expanded = expand_proxy_header_value(v, &remote, &inbound_headers, rule.ssl_enable);
+
+                let name = match HeaderName::from_bytes(key.as_bytes()) {
+                    Ok(n) => n,
+                    Err(_) => continue,
+                };
+
+                if expanded.is_empty() {
+                    final_headers.insert(name, HeaderValue::from_static(""));
+                    continue;
+                }
+
+                let value = match HeaderValue::from_str(&expanded) {
+                    Ok(v) => v,
+                    Err(_) => continue,
+                };
+
+                final_headers.insert(name, value);
+            }
+        }
+
+        // 2.7) BasicAuth 不转发：移除 Authorization（避免误伤业务 token）
+        if !rule.basic_auth_forward_header {
+            final_headers.remove(axum::http::header::AUTHORIZATION);
+        }
+
+        // 3) 构造并发送上游请求（build 后清空并写入 final_headers，彻底去重）
+        let mut builder = client.request(method_up, target.clone());
+        builder = builder.body(reqwest_body);
+
+        let mut upstream_req = match builder.build() {
+            Ok(r) => r,
+            Err(e) => {
+                return (
+                    StatusCode::BAD_GATEWAY,
+                    format!("build upstream request failed: {e}"),
+                )
+                    .into_response();
+            }
+        };
+
+        upstream_req.headers_mut().clear();
+        upstream_req.headers_mut().extend(final_headers.clone());
+
+        let outbound_headers_snapshot = upstream_req.headers().clone();
+
+        let inbound_headers_line = inbound_headers
+            .iter()
+            .map(|(k, v)| format!("{}: {}", k, v.to_str().unwrap_or("[invalid utf8]")))
+            .collect::<Vec<_>>()
+            .join(" ## ");
+
+        let outbound_headers_line = outbound_headers_snapshot
+            .iter()
+            .map(|(k, v)| format!("{}: {}", k, v.to_str().unwrap_or("[invalid utf8]")))
+            .collect::<Vec<_>>()
+            .join(" ## ");
+
+        let resp = match client.execute(upstream_req).await {
             Ok(r) => r,
             Err(e) => {
                 return (
@@ -1241,11 +1347,22 @@ async fn proxy_handler(
         // 仅在错误时记录反代细节，降低高 QPS 下日志/锁开销
         if !status.is_success() {
             send_log(format!(
-                "反代错误: {} {} -> {} status={} ",
+                "反代错误(IN): {} {} -> {} status={} | inbound_headers=[{}]",
                 method.as_str(),
                 uri,
                 target,
-                status.as_u16()
+                status.as_u16(),
+                inbound_headers_line
+            ));
+
+            send_log(format!(
+                "反代错误(OUT): {} {} -> {} status={} | outbound_headers=[{}] | req_body_size={}",
+                method.as_str(),
+                uri,
+                target,
+                status.as_u16(),
+                outbound_headers_line,
+                req_body_size.map(|n| n.to_string()).unwrap_or_else(|| "stream".to_string())
             ));
         }
 
@@ -1366,54 +1483,3 @@ fn expand_proxy_header_value(
     out
 }
 
-fn apply_set_headers(
-    mut builder: reqwest::RequestBuilder,
-    route: &config::Route,
-    remote: &SocketAddr,
-    inbound_headers: &HeaderMap,
-    is_tls: bool,
-) -> reqwest::RequestBuilder {
-    let Some(map) = route.set_headers.as_ref() else {
-        return builder;
-    };
-
-    for (k, v) in map {
-        let key = k.trim();
-        if key.is_empty() {
-            continue;
-        }
-
-        // 避免覆盖 hop-by-hop 头（与前面复制逻辑保持一致）
-        if is_hop_header(key) {
-            continue;
-        }
-
-        let expanded = expand_proxy_header_value(v, remote, inbound_headers, is_tls);
-
-        // 空值：按“覆盖同名 header”为目标，这里采用显式设置空字符串
-        //（与现有 BasicAuth 处理方式一致）
-        if expanded.is_empty() {
-            builder = builder.header(key, "");
-            continue;
-        }
-
-        let name = match HeaderName::from_bytes(key.as_bytes()) {
-            Ok(n) => n,
-            Err(_) => {
-                // 非法 header name：忽略
-                continue;
-            }
-        };
-        let value = match HeaderValue::from_str(&expanded) {
-            Ok(v) => v,
-            Err(_) => {
-                // 非法 header value：忽略
-                continue;
-            }
-        };
-
-        builder = builder.header(name, value);
-    }
-
-    builder
-}
