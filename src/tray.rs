@@ -152,7 +152,7 @@ pub fn init_tray(app: &AppHandle) -> tauri::Result<()> {
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {
-            if let TrayIconEvent::Click {
+            if let TrayIconEvent::DoubleClick {
                 button: MouseButton::Left,
                 ..
             } = event

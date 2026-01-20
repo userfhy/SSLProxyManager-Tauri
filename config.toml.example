@@ -10,6 +10,29 @@ upstream_read_timeout_ms = 30000
 upstream_pool_max_idle = 100
 upstream_pool_idle_timeout_sec = 60
 enable_http2 = true
+ws_proxy_enabled = true
+
+[stream]
+enabled = true
+
+[[stream.upstreams]]
+name = "sendimage"
+hash_key = "$remote_addr"
+consistent = true
+
+[[stream.upstreams.servers]]
+addr = "59.227.155.134:8089"
+weight = 1
+max_fails = 1
+fail_timeout = "30s"
+
+[[stream.servers]]
+enabled = true
+listen_port = 50002
+proxy_pass = "sendimage"
+proxy_connect_timeout = "300s"
+proxy_timeout = "600s"
+udp = false
 
 [[rules]]
 id = "7d401c55-327d-4a88-956b-b751d8f66f25"

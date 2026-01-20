@@ -13,7 +13,7 @@
       type="info"
       :closable="false"
       title="说明"
-      description="Stream 为四层(TCP/UDP)转发：监听端口 -> upstream。hash_key 目前仅支持 $remote_addr（客户端 IP），其它值会回退轮询。"
+      description="Stream 为四层(TCP/UDP)转发：监听端口 -> upstream。hash_key 目前仅支持 $remote_addr（客户端 IP）。consistent=true 时启用一致性哈希环（更接近 nginx: hash $remote_addr consistent）。"
       style="margin-bottom: 12px;"
     />
 
@@ -90,7 +90,7 @@
           </div>
 
           <el-text type="info" size="small" class="mini-hint">
-            字段说明：addr=host:port；weight 暂不参与 hash；max_fails/fail_timeout 暂不生效（后续可增强）。
+            字段说明：addr=host:port；weight 当前不参与 hash；max_fails/fail_timeout 已用于 TCP 连接失败熔断。
           </el-text>
         </el-card>
       </el-card>
@@ -217,14 +217,15 @@ onMounted(async () => {
         name: u?.name || '',
         hash_key: u?.hash_key || '$remote_addr',
         consistent: u?.consistent !== false,
-        servers: Array.isArray(u?.servers) && u.servers.length > 0
-          ? u.servers.map((s: any) => ({
-              addr: s?.addr || '',
-              weight: Number(s?.weight ?? 1),
-              max_fails: Number(s?.max_fails ?? 1),
-              fail_timeout: String(s?.fail_timeout ?? '30s'),
-            }))
-          : [defaultUpstreamServer()],
+        servers:
+          Array.isArray(u?.servers) && u.servers.length > 0
+            ? u.servers.map((s: any) => ({
+                addr: s?.addr || '',
+                weight: Number(s?.weight ?? 1),
+                max_fails: Number(s?.max_fails ?? 1),
+                fail_timeout: String(s?.fail_timeout ?? '30s'),
+              }))
+            : [defaultUpstreamServer()],
       }))
     : []
 
@@ -266,8 +267,22 @@ const removeServer = (idx: number) => {
   servers.value.splice(idx, 1)
 }
 
+const isValidHostPort = (v: string): boolean => {
+  const s = (v || '').trim()
+  if (!s) return false
+
+  // 简单校验：允许域名 / IPv4；IPv6（带冒号）不做严格支持（可后续增强）
+  const idx = s.lastIndexOf(':')
+  if (idx <= 0 || idx === s.length - 1) return false
+  const host = s.slice(0, idx).trim()
+  const portStr = s.slice(idx + 1).trim()
+  if (!host) return false
+  const port = Number(portStr)
+  return Number.isInteger(port) && port >= 1 && port <= 65535
+}
+
 const getConfig = () => {
-  // 基础校验（只做必填项，避免阻塞；更严格校验可按需加）
+  // 更严格校验（TCP 优先）
   const cleanedUpstreams = upstreams.value.map((u) => ({
     name: (u.name || '').trim(),
     hash_key: (u.hash_key || '$remote_addr').trim() || '$remote_addr',
@@ -290,6 +305,77 @@ const getConfig = () => {
     proxy_timeout: (s.proxy_timeout || '600s').trim() || '600s',
     udp: !!s.udp,
   }))
+
+  // 仅当启用 stream 时做强校验
+  if (enabled.value) {
+    // 1) upstream name
+    if (cleanedUpstreams.length === 0) {
+      throw new Error('Stream：请至少配置一个 upstream')
+    }
+    const names = new Set<string>()
+    for (let i = 0; i < cleanedUpstreams.length; i++) {
+      const u = cleanedUpstreams[i]
+      if (!u.name) {
+        throw new Error(`Stream Upstream ${i + 1}：name 不能为空`)
+      }
+      if (names.has(u.name)) {
+        throw new Error(`Stream：upstream name 重复：${u.name}`)
+      }
+      names.add(u.name)
+
+      if (!u.servers || u.servers.length === 0) {
+        throw new Error(`Stream Upstream ${i + 1}（${u.name}）：请至少配置一个 server addr`) 
+      }
+      for (let j = 0; j < u.servers.length; j++) {
+        const sv = u.servers[j]
+        if (!sv.addr) {
+          throw new Error(`Stream Upstream ${i + 1}（${u.name}）/ Server ${j + 1}：addr 不能为空`) 
+        }
+        if (!isValidHostPort(sv.addr)) {
+          throw new Error(`Stream Upstream ${i + 1}（${u.name}）/ Server ${j + 1}：addr 格式错误（需要 host:port）：${sv.addr}`)
+        }
+      }
+    }
+
+    // 2) listen servers
+    if (cleanedServers.length === 0) {
+      throw new Error('Stream：请至少配置一个监听 server')
+    }
+
+    const usedPorts = new Set<string>()
+    for (let i = 0; i < cleanedServers.length; i++) {
+      const sv = cleanedServers[i]
+      if (!sv.enabled) {
+        continue
+      }
+      if (!sv.listen_port || sv.listen_port < 1 || sv.listen_port > 65535) {
+        throw new Error(`Stream Server ${i + 1}：listen_port 必须为 1-65535`) 
+      }
+      if (!sv.proxy_pass) {
+        throw new Error(`Stream Server ${i + 1}：proxy_pass 不能为空`) 
+      }
+      if (!names.has(sv.proxy_pass)) {
+        throw new Error(`Stream Server ${i + 1}：proxy_pass 引用了不存在的 upstream：${sv.proxy_pass}`)
+      }
+
+      const portKey = `${sv.listen_port}/${sv.udp ? 'udp' : 'tcp'}`
+      if (usedPorts.has(portKey)) {
+        throw new Error(`Stream：监听端口冲突：${portKey}`)
+      }
+      usedPorts.add(portKey)
+
+      // TCP 优先：如果是 TCP，强校验 timeout 字符串是否像 "300s/5m/1h" 这种
+      if (!sv.udp) {
+        const okTimeout = (v: string) => /^\d+\s*[smh]?$/.test((v || '').trim())
+        if (!okTimeout(sv.proxy_connect_timeout)) {
+          throw new Error(`Stream Server ${i + 1}：proxy_connect_timeout 格式不正确：${sv.proxy_connect_timeout}`)
+        }
+        if (!okTimeout(sv.proxy_timeout)) {
+          throw new Error(`Stream Server ${i + 1}：proxy_timeout 格式不正确：${sv.proxy_timeout}`)
+        }
+      }
+    }
+  }
 
   return {
     stream: {

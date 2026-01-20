@@ -1,12 +1,11 @@
 use anyhow::{anyhow, Context, Result};
 use parking_lot::RwLock;
 use std::collections::hash_map::DefaultHasher;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::io;
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use tokio::sync::{mpsc, Mutex};
@@ -22,6 +21,15 @@ struct StreamServerHandle {
     shutdown_tx: mpsc::Sender<()>,
 }
 
+#[derive(Debug, Clone)]
+struct FailState {
+    fails: u32,
+    down_until: Option<Instant>,
+}
+
+static FAIL_MAP: once_cell::sync::Lazy<RwLock<HashMap<String, FailState>>> =
+    once_cell::sync::Lazy::new(|| RwLock::new(HashMap::new()));
+
 pub async fn start_stream_servers(config: &StreamProxyConfig) -> Result<()> {
     stop_stream_servers().await;
 
@@ -29,7 +37,9 @@ pub async fn start_stream_servers(config: &StreamProxyConfig) -> Result<()> {
         return Ok(());
     }
 
-    let mut servers = Vec::new();
+    validate_stream_config(config)?;
+
+    let mut handles = Vec::new();
 
     for server in &config.servers {
         if !server.enabled {
@@ -39,16 +49,8 @@ pub async fn start_stream_servers(config: &StreamProxyConfig) -> Result<()> {
         let upstream = config
             .upstreams
             .iter()
-            .find(|u| u.name == server.proxy_pass);
-
-        let Some(upstream) = upstream else {
-            tracing::error!(
-                "Stream server on port {}: upstream '{}' not found",
-                server.listen_port,
-                server.proxy_pass
-            );
-            continue;
-        };
+            .find(|u| u.name == server.proxy_pass)
+            .expect("validate_stream_config should ensure upstream exists");
 
         let connect_timeout = parse_duration(&server.proxy_connect_timeout)
             .unwrap_or_else(|_| Duration::from_secs(300));
@@ -56,13 +58,100 @@ pub async fn start_stream_servers(config: &StreamProxyConfig) -> Result<()> {
             parse_duration(&server.proxy_timeout).unwrap_or_else(|_| Duration::from_secs(600));
 
         if server.udp {
-            start_udp_server(server, upstream, connect_timeout, proxy_timeout, &mut servers).await?;
+            start_udp_server(server, upstream, connect_timeout, proxy_timeout, &mut handles).await?;
         } else {
-            start_tcp_server(server, upstream, connect_timeout, proxy_timeout, &mut servers).await?;
+            start_tcp_server(server, upstream, connect_timeout, proxy_timeout, &mut handles).await?;
         }
     }
 
-    *STREAM_SERVERS.write() = servers;
+    *STREAM_SERVERS.write() = handles;
+    Ok(())
+}
+
+fn validate_stream_config(cfg: &StreamProxyConfig) -> Result<()> {
+    // 1) listen_port 去重（仅针对 enabled=true 的 server）
+    let mut ports = HashSet::<(u16, bool)>::new();
+    for s in &cfg.servers {
+        if !s.enabled {
+            continue;
+        }
+        let key = (s.listen_port, s.udp);
+        if !ports.insert(key) {
+            return Err(anyhow!(
+                "stream server listen_port duplicated: port={} udp={}",
+                s.listen_port,
+                s.udp
+            ));
+        }
+    }
+
+    // 2) upstream name 唯一 & 非空
+    let mut up_names = HashSet::<String>::new();
+    for u in &cfg.upstreams {
+        let name = u.name.trim();
+        if name.is_empty() {
+            return Err(anyhow!("stream upstream name cannot be empty"));
+        }
+        if !up_names.insert(name.to_string()) {
+            return Err(anyhow!("stream upstream name duplicated: {}", name));
+        }
+        if u.servers.is_empty() {
+            return Err(anyhow!("stream upstream '{}' has no servers", name));
+        }
+        for sv in &u.servers {
+            if sv.addr.trim().is_empty() {
+                return Err(anyhow!("stream upstream '{}' has empty server addr", name));
+            }
+            // 简单校验：host:port，且端口为数字
+            // 注意：这里不强制必须是 IP；允许域名
+            let parts: Vec<&str> = sv.addr.split(':').collect();
+            if parts.len() < 2 {
+                return Err(anyhow!("invalid stream server addr (need host:port): {}", sv.addr));
+            }
+            let port_str = parts.last().unwrap().trim();
+            if port_str.parse::<u16>().is_err() {
+                return Err(anyhow!("invalid stream server addr port: {}", sv.addr));
+            }
+            // fail_timeout 解析校验（失败就给明确错误）
+            let _ = parse_duration(&sv.fail_timeout)
+                .map_err(|e| anyhow!("invalid fail_timeout for {}: {}", sv.addr, e))?;
+        }
+    }
+
+    // 3) proxy_pass 引用存在 + 被引用 upstream 有 server
+    for s in &cfg.servers {
+        if !s.enabled {
+            continue;
+        }
+        let pp = s.proxy_pass.trim();
+        if pp.is_empty() {
+            return Err(anyhow!(
+                "stream server (listen_port={}) proxy_pass cannot be empty",
+                s.listen_port
+            ));
+        }
+        let Some(u) = cfg.upstreams.iter().find(|u| u.name == pp) else {
+            return Err(anyhow!(
+                "stream server (listen_port={}) proxy_pass references missing upstream: {}",
+                s.listen_port,
+                pp
+            ));
+        };
+        if u.servers.is_empty() {
+            return Err(anyhow!(
+                "stream server (listen_port={}) proxy_pass upstream '{}' has no servers",
+                s.listen_port,
+                pp
+            ));
+        }
+
+        // timeout 字段校验
+        let _ = parse_duration(&s.proxy_connect_timeout)
+            .map_err(|e| anyhow!("invalid proxy_connect_timeout: {} ({})", s.proxy_connect_timeout, e))?;
+        let _ = parse_duration(&s.proxy_timeout)
+            .map_err(|e| anyhow!("invalid proxy_timeout: {} ({})", s.proxy_timeout, e))?;
+    }
+
     Ok(())
 }
 
@@ -76,9 +165,9 @@ async fn start_tcp_server(
     let listen_addr = format!("0.0.0.0:{}", server.listen_port);
     let listener = TcpListener::bind(&listen_addr)
         .await
-        .with_context(|| format!("Failed to bind to {}", listen_addr))?;
+        .with_context(|| format!("Failed to bind stream tcp listener: {}", listen_addr))?;
 
-    tracing::info!("Stream TCP server listening on {}", listen_addr);
+    tracing::info!("Stream TCP server listening on {} -> {}", listen_addr, upstream.name);
 
     let (shutdown_tx, mut shutdown_rx) = mpsc::channel(1);
     let server_task = tokio::spawn({
@@ -119,22 +208,30 @@ async fn start_tcp_server(
 }
 
 async fn handle_tcp_client(
-    mut client_socket: TcpStream,
+    client_socket: TcpStream,
     client_addr: SocketAddr,
     upstream: &StreamUpstream,
     connect_timeout: Duration,
     proxy_timeout: Duration,
 ) -> Result<()> {
-    let server = select_upstream_server(upstream, &client_addr);
-    let server_addr = &server.addr;
+    let Some(server) = select_upstream_server_with_failover(upstream, &client_addr) else {
+        return Err(anyhow!(
+            "no available upstream servers (all down?) upstream={}",
+            upstream.name
+        ));
+    };
 
-    let mut server_socket: TcpStream =
-        match time::timeout(connect_timeout, TcpStream::connect(server_addr)).await {
+    let server_addr = server.addr.clone();
+
+    let server_socket: TcpStream =
+        match time::timeout(connect_timeout, TcpStream::connect(&server_addr)).await {
             Ok(Ok(socket)) => socket,
             Ok(Err(e)) => {
+                record_upstream_failure(&server_addr, server.max_fails, &server.fail_timeout);
                 return Err(anyhow!("Failed to connect to upstream {}: {}", server_addr, e));
             }
             Err(_) => {
+                record_upstream_failure(&server_addr, server.max_fails, &server.fail_timeout);
                 return Err(anyhow!(
                     "Connection to upstream {} timed out after {:?}",
                     server_addr,
@@ -143,31 +240,21 @@ async fn handle_tcp_client(
             }
         };
 
-    let (mut client_reader, mut client_writer) = client_socket.split();
-    let (mut server_reader, mut server_writer) = server_socket.split();
+    record_upstream_success(&server_addr);
 
-    let c_to_u = async {
-        io::copy(&mut client_reader, &mut server_writer).await?;
-        let _ = server_writer;
+    let mut client = client_socket;
+    let mut upstream_conn = server_socket;
+
+    let relay = async {
+        let _ = io::copy_bidirectional(&mut client, &mut upstream_conn).await?;
         Ok::<_, std::io::Error>(())
     };
 
-    let u_to_c = async {
-        io::copy(&mut server_reader, &mut client_writer).await?;
-        let _ = client_writer;
-        Ok::<_, std::io::Error>(())
-    };
-
-    match time::timeout(
-        proxy_timeout,
-        async { tokio::select! { r = c_to_u => r, r = u_to_c => r } },
-    )
-    .await
-    {
+    match time::timeout(proxy_timeout, relay).await {
         Ok(res) => {
             if let Err(e) = res {
                 tracing::debug!(
-                    "TCP stream ended with io error (client={} upstream={}): {}",
+                    "TCP relay io error (client={} upstream={}): {}",
                     client_addr,
                     server_addr,
                     e
@@ -176,7 +263,7 @@ async fn handle_tcp_client(
         }
         Err(_) => {
             tracing::debug!(
-                "TCP stream timeout (client={} upstream={} timeout={:?})",
+                "TCP relay timeout (client={} upstream={} timeout={:?})",
                 client_addr,
                 server_addr,
                 proxy_timeout
@@ -217,10 +304,10 @@ async fn start_udp_server(
 
     tracing::info!("Stream UDP server listening on {}", listen_addr);
 
-    let sessions: Arc<Mutex<HashMap<SocketAddr, UdpSessionEntry>>> =
-        Arc::new(Mutex::new(HashMap::new()));
+    let sessions: std::sync::Arc<Mutex<HashMap<SocketAddr, UdpSessionEntry>>> =
+        std::sync::Arc::new(Mutex::new(HashMap::new()));
 
-    let listen_sock = Arc::new(listen_sock);
+    let listen_sock = std::sync::Arc::new(listen_sock);
 
     let mut upstream_readers: HashMap<SocketAddr, tokio::task::JoinHandle<()>> = HashMap::new();
     for s in &upstream.servers {
@@ -235,7 +322,7 @@ async fn start_udp_server(
 
         let upstream_socket = UdpSocket::bind("0.0.0.0:0").await?;
         upstream_socket.connect(upstream_addr).await?;
-        let upstream_socket = Arc::new(upstream_socket);
+        let upstream_socket = std::sync::Arc::new(upstream_socket);
 
         let sessions2 = sessions.clone();
         let listen2 = listen_sock.clone();
@@ -355,6 +442,119 @@ fn select_upstream_server<'a>(
     static COUNTER: AtomicU64 = AtomicU64::new(0);
     let idx = (COUNTER.fetch_add(1, Ordering::Relaxed) as usize) % servers.len();
     &servers[idx]
+}
+
+fn select_upstream_server_with_failover<'a>(
+    upstream: &'a StreamUpstream,
+    client_addr: &SocketAddr,
+) -> Option<&'a StreamUpstreamServer> {
+    let servers = &upstream.servers;
+    if servers.is_empty() {
+        return None;
+    }
+
+    let key = upstream.hash_key.trim();
+    let use_hash = key == "$remote_addr" || key.is_empty();
+
+    if upstream.consistent && use_hash {
+        let ring = build_ring(servers);
+        let mut hasher = DefaultHasher::new();
+        client_addr.ip().to_string().hash(&mut hasher);
+        let h = hasher.finish();
+
+        if ring.is_empty() {
+            return None;
+        }
+
+        let mut idx = match ring.binary_search_by_key(&h, |(k, _)| *k) {
+            Ok(i) => i,
+            Err(i) => if i >= ring.len() { 0 } else { i },
+        };
+
+        for _ in 0..ring.len() {
+            let (_, sidx) = ring[idx];
+            let s = &servers[sidx];
+            if !is_down(&s.addr) {
+                return Some(s);
+            }
+            idx = (idx + 1) % ring.len();
+        }
+
+        return None;
+    }
+
+    let start_idx = if use_hash {
+        let mut hasher = DefaultHasher::new();
+        client_addr.ip().to_string().hash(&mut hasher);
+        (hasher.finish() as usize) % servers.len()
+    } else {
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
+        (COUNTER.fetch_add(1, Ordering::Relaxed) as usize) % servers.len()
+    };
+
+    for step in 0..servers.len() {
+        let idx = (start_idx + step) % servers.len();
+        let s = &servers[idx];
+        if !is_down(&s.addr) {
+            return Some(s);
+        }
+    }
+
+    None
+}
+
+fn build_ring(servers: &[StreamUpstreamServer]) -> Vec<(u64, usize)> {
+    const VNODES: u32 = 160;
+
+    let mut ring: Vec<(u64, usize)> = Vec::new();
+    for (i, s) in servers.iter().enumerate() {
+        if s.addr.trim().is_empty() {
+            continue;
+        }
+        for v in 0..VNODES {
+            let mut hasher = DefaultHasher::new();
+            format!("{}#{}", s.addr, v).hash(&mut hasher);
+            ring.push((hasher.finish(), i));
+        }
+    }
+
+    ring.sort_by_key(|(k, _)| *k);
+    ring
+}
+
+fn is_down(addr: &str) -> bool {
+    let now = Instant::now();
+    let map = FAIL_MAP.read();
+    let Some(st) = map.get(addr) else {
+        return false;
+    };
+
+    match st.down_until {
+        Some(t) => t > now,
+        None => false,
+    }
+}
+
+fn record_upstream_success(addr: &str) {
+    let mut map = FAIL_MAP.write();
+    map.remove(addr);
+}
+
+fn record_upstream_failure(addr: &str, max_fails: i32, fail_timeout: &str) {
+    let max_fails = if max_fails <= 0 { 1 } else { max_fails as u32 };
+    let ft = parse_duration(fail_timeout).unwrap_or_else(|_| Duration::from_secs(30));
+
+    let mut map = FAIL_MAP.write();
+    let entry = map.entry(addr.to_string()).or_insert(FailState {
+        fails: 0,
+        down_until: None,
+    });
+
+    entry.fails = entry.fails.saturating_add(1);
+
+    if entry.fails >= max_fails {
+        entry.down_until = Some(Instant::now() + ft);
+    }
 }
 
 fn parse_duration(s: &str) -> Result<Duration> {
