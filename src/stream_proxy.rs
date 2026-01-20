@@ -175,10 +175,10 @@ async fn start_tcp_server(
                                 // 访问控制/黑名单：TCP stream 没有 headers，仅按 remote ip 判定
                                 let cfg = config::get_config();
                                 if cfg.stream_access_control_enabled {
-                                    let headers = axum::http::HeaderMap::new();
-                                    if !access_control::is_allowed(&client_addr, &headers, &cfg) {
-                                        tracing::warn!("STREAM TCP forbidden: ip={} upstream={}", client_addr.ip(), upstream.name);
-                                        continue;
+                                let headers = axum::http::HeaderMap::new();
+                                if !access_control::is_allowed(&client_addr, &headers, &cfg) {
+                                    tracing::warn!("STREAM TCP forbidden: ip={} upstream={}", client_addr.ip(), upstream.name);
+                                    continue;
                                     }
                                 }
 
@@ -387,9 +387,9 @@ async fn start_udp_server(
                                 // 访问控制/黑名单：UDP 仅按 remote ip 判定
                                 let cfg = config::get_config();
                                 if cfg.stream_access_control_enabled {
-                                    let headers = axum::http::HeaderMap::new();
-                                    if !access_control::is_allowed(&client_addr, &headers, &cfg) {
-                                        continue;
+                                let headers = axum::http::HeaderMap::new();
+                                if !access_control::is_allowed(&client_addr, &headers, &cfg) {
+                                    continue;
                                     }
                                 }
 

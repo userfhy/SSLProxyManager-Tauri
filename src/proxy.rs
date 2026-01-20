@@ -16,6 +16,14 @@ use std::{
     sync::Arc,
     time::Duration,
 };
+
+const LOG_QUEUE_CAPACITY: usize = 10_000;
+
+static LOG_TX: once_cell::sync::Lazy<RwLock<Option<tokio::sync::mpsc::Sender<String>>>> =
+    once_cell::sync::Lazy::new(|| RwLock::new(None));
+
+static LOG_DROPPED: once_cell::sync::Lazy<std::sync::atomic::AtomicU64> =
+    once_cell::sync::Lazy::new(|| std::sync::atomic::AtomicU64::new(0));
 use tauri::Emitter;
 use tower::util::ServiceExt;
 use tower_http::services::ServeDir;
@@ -57,7 +65,7 @@ struct SmoothLbState {
     upstreams: Vec<SmoothUpstream>,
 }
 
-static UPSTREAM_LB: once_cell::sync::Lazy<RwLock<HashMap<String, SmoothLbState>>> =
+static UPSTREAM_LB: once_cell::sync::Lazy<RwLock<HashMap<String, Arc<RwLock<SmoothLbState>>>>> =
     once_cell::sync::Lazy::new(|| RwLock::new(HashMap::new()));
 
 #[derive(Clone)]
@@ -111,6 +119,9 @@ pub struct RuleStartErrorPayload {
 }
 
 pub fn start_server(app: tauri::AppHandle) -> Result<()> {
+    // 启动 access log 异步写入任务（仅启动一次）
+    init_log_task(app.clone());
+
     // 启动 WS 独立监听（如果启用）。
     // WS 的启动/失败目前不参与 HTTP rules 的启动汇总逻辑；如果端口占用，会在日志中提示。
     if let Err(e) = ws_proxy::start_ws_servers(app.clone()) {
@@ -261,6 +272,9 @@ pub fn stop_server(app: tauri::AppHandle) -> Result<()> {
     // 停止 WS 独立监听
     ws_proxy::stop_ws_servers();
 
+    // 停止 access log 异步任务：drop sender 让后台任务退出；下次 start 会重新 init
+    *LOG_TX.write() = None;
+
     // 停止 Stream(TCP/UDP) 代理监听
     tauri::async_runtime::spawn(async {
         stream_proxy::stop_stream_servers().await;
@@ -390,28 +404,27 @@ async fn start_rule_server(
 
     let cfg = crate::config::get_config();
 
-    let mut follow_builder = reqwest::Client::builder()
-        .redirect(Policy::limited(10))
-        .danger_accept_invalid_certs(true)
-        .pool_max_idle_per_host(cfg.upstream_pool_max_idle)
-        .pool_idle_timeout(Duration::from_secs(cfg.upstream_pool_idle_timeout_sec))
-        .tcp_keepalive(Duration::from_secs(60))
-        .connect_timeout(Duration::from_millis(cfg.upstream_connect_timeout_ms))
-        .timeout(Duration::from_millis(cfg.upstream_read_timeout_ms));
+    let client_builder = || {
+        let mut builder = reqwest::Client::builder()
+            .redirect(Policy::limited(10))
+            .danger_accept_invalid_certs(true)
+            .pool_max_idle_per_host(cfg.upstream_pool_max_idle)
+            .pool_idle_timeout(Duration::from_secs(cfg.upstream_pool_idle_timeout_sec))
+            .tcp_keepalive(Duration::from_secs(60))
+            .tcp_nodelay(true)  // 降低小包延迟
+            .connect_timeout(Duration::from_millis(cfg.upstream_connect_timeout_ms))
+            .timeout(Duration::from_millis(cfg.upstream_read_timeout_ms));
 
-    let mut nofollow_builder = reqwest::Client::builder()
-        .redirect(Policy::none())
-        .danger_accept_invalid_certs(true)
-        .pool_max_idle_per_host(cfg.upstream_pool_max_idle)
-        .pool_idle_timeout(Duration::from_secs(cfg.upstream_pool_idle_timeout_sec))
-        .tcp_keepalive(Duration::from_secs(60))
-        .connect_timeout(Duration::from_millis(cfg.upstream_connect_timeout_ms))
-        .timeout(Duration::from_millis(cfg.upstream_read_timeout_ms));
+        if !cfg.enable_http2 {
+            builder = builder.http1_only();
+        }
 
-    if !cfg.enable_http2 {
-        follow_builder = follow_builder.http1_only();
-        nofollow_builder = nofollow_builder.http1_only();
-    }
+        builder
+    };
+
+    // 创建两个 client 实例：一个跟随重定向，一个不跟随
+    let follow_builder = client_builder();
+    let nofollow_builder = client_builder().redirect(Policy::none());
 
     let client_follow = follow_builder
         .build()
@@ -533,12 +546,27 @@ fn pick_upstream_smooth(route: &config::Route) -> Option<String> {
 
     let sig = upstream_signature(route);
 
-    let mut map = UPSTREAM_LB.write();
-    let entry = map.entry(route_id.to_string()).or_insert_with(|| SmoothLbState {
-        signature: String::new(),
-        total_weight: 0,
-        upstreams: Vec::new(),
-    });
+    // route 粒度锁：map 只保存 Arc<RwLock<State>>，避免每次选 upstream 都拿全局写锁
+    let state_lock: Arc<RwLock<SmoothLbState>> = {
+        // 先尝试读锁命中
+        if let Some(s) = UPSTREAM_LB.read().get(route_id).cloned() {
+            s
+        } else {
+            // 未命中：写锁插入（只在首次出现 route_id 时发生）
+            let mut map = UPSTREAM_LB.write();
+            map.entry(route_id.to_string())
+                .or_insert_with(|| {
+                    Arc::new(RwLock::new(SmoothLbState {
+                        signature: String::new(),
+                        total_weight: 0,
+                        upstreams: Vec::new(),
+                    }))
+                })
+                .clone()
+        }
+    };
+
+    let mut entry = state_lock.write();
 
     if entry.signature != sig || entry.upstreams.len() != route.upstreams.len() {
         let ups: Vec<SmoothUpstream> = route
@@ -678,19 +706,47 @@ fn format_access_log(
     )
 }
 
-fn push_log(app: &tauri::AppHandle, line: String) {
-    // 写入内存
-    {
+fn push_log(_app: &tauri::AppHandle, line: String) {
+    // 异步写入：避免阻塞请求热路径
+    if let Some(tx) = LOG_TX.read().as_ref() {
+        if tx.try_send(line).is_err() {
+            // 队列满：丢弃新日志，避免内存无限增长
+            LOG_DROPPED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
+    } else {
+        // 极少数情况下（例如尚未 init），回退为同步写入内存
         let mut logs = LOGS.write();
-        logs.push(line.clone());
+        logs.push(line);
         if logs.len() > 3000 {
             let over = logs.len() - 3000;
             logs.drain(0..over);
         }
     }
+}
 
-    // 推送到前端
-    let _ = app.emit("log-line", line);
+fn init_log_task(app: tauri::AppHandle) {
+    // 已初始化则跳过
+    if LOG_TX.read().is_some() {
+        return;
+    }
+
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(LOG_QUEUE_CAPACITY);
+    *LOG_TX.write() = Some(tx);
+
+    tauri::async_runtime::spawn(async move {
+        while let Some(line) = rx.recv().await {
+            {
+                let mut logs = LOGS.write();
+                logs.push(line.clone());
+                if logs.len() > 3000 {
+                    let over = logs.len() - 3000;
+                    logs.drain(0..over);
+                }
+            }
+
+            let _ = app.emit("log-line", line);
+        }
+    });
 }
 
 async fn proxy_handler(
@@ -702,6 +758,8 @@ async fn proxy_handler(
     req: Request<Body>,
 ) -> Response {
     let started_at = std::time::Instant::now();
+    let cfg = config::get_config();
+
     let node = rule.listen_addr.clone();
     let headers_snapshot = req.headers().clone();
     let path = req.uri().path().to_string();
@@ -712,76 +770,75 @@ async fn proxy_handler(
     // 0. 访问控制（优先级最高）
     // allow_all_lan 取消勾选时：只有白名单 IP 可以访问
     {
-        let cfg = config::get_config();
 
         if cfg.http_access_control_enabled {
-            // 黑名单优先：命中直接拒绝
-            let client_ip_str = access_control::client_ip_from_headers(&remote, req.headers());
+        // 黑名单优先：命中直接拒绝
+        let client_ip_str = access_control::client_ip_from_headers(&remote, req.headers());
 
-            if metrics::is_ip_blacklisted(&client_ip_str) {
-                let mut resp = Response::new(Body::from("IP Forbidden"));
-                *resp.status_mut() = StatusCode::FORBIDDEN;
+        if metrics::is_ip_blacklisted(&client_ip_str) {
+            let mut resp = Response::new(Body::from("IP Forbidden"));
+            *resp.status_mut() = StatusCode::FORBIDDEN;
 
-                let elapsed = started_at.elapsed().as_secs_f64();
-                let line = format_access_log(
-                    &node,
-                    &headers_snapshot,
-                    &method,
-                    &uri,
-                    StatusCode::FORBIDDEN,
-                    elapsed,
-                );
-                push_log(&app, line);
+            let elapsed = started_at.elapsed().as_secs_f64();
+            let line = format_access_log(
+                &node,
+                &headers_snapshot,
+                &method,
+                &uri,
+                StatusCode::FORBIDDEN,
+                elapsed,
+            );
+            push_log(&app, line);
 
-                metrics::try_enqueue_request_log(crate::metrics::RequestLogInsert {
-                    timestamp: chrono::Utc::now().timestamp(),
-                    listen_addr: node.clone(),
-                    client_ip: client_ip(&remote, &headers_snapshot),
-                    remote_ip: remote.ip().to_string(),
-                    method: method.as_str().to_string(),
-                    request_path: path.clone(),
-                    request_host: header_str(&headers_snapshot, "host"),
-                    status_code: StatusCode::FORBIDDEN.as_u16() as i32,
-                    upstream: "".to_string(),
-                    latency_ms: elapsed * 1000.0,
-                    user_agent: header_str(&headers_snapshot, "user-agent"),
-                    referer: header_str(&headers_snapshot, "referer"),
-                });
+            metrics::try_enqueue_request_log(crate::metrics::RequestLogInsert {
+                timestamp: chrono::Utc::now().timestamp(),
+                listen_addr: node.clone(),
+                client_ip: client_ip(&remote, &headers_snapshot),
+                remote_ip: remote.ip().to_string(),
+                method: method.as_str().to_string(),
+                request_path: path.clone(),
+                request_host: header_str(&headers_snapshot, "host"),
+                status_code: StatusCode::FORBIDDEN.as_u16() as i32,
+                upstream: "".to_string(),
+                latency_ms: elapsed * 1000.0,
+                user_agent: header_str(&headers_snapshot, "user-agent"),
+                referer: header_str(&headers_snapshot, "referer"),
+            });
 
-                return resp;
-            }
+            return resp;
+        }
 
-            if !is_access_allowed(&remote, req.headers(), &cfg) {
-                let mut resp = Response::new(Body::from("Forbidden"));
-                *resp.status_mut() = StatusCode::FORBIDDEN;
+        if !is_access_allowed(&remote, req.headers(), &cfg) {
+            let mut resp = Response::new(Body::from("Forbidden"));
+            *resp.status_mut() = StatusCode::FORBIDDEN;
 
-                let elapsed = started_at.elapsed().as_secs_f64();
-                let line = format_access_log(
-                    &node,
-                    &headers_snapshot,
-                    &method,
-                    &uri,
-                    StatusCode::FORBIDDEN,
-                    elapsed,
-                );
-                push_log(&app, line);
+            let elapsed = started_at.elapsed().as_secs_f64();
+            let line = format_access_log(
+                &node,
+                &headers_snapshot,
+                &method,
+                &uri,
+                StatusCode::FORBIDDEN,
+                elapsed,
+            );
+            push_log(&app, line);
 
-                metrics::try_enqueue_request_log(crate::metrics::RequestLogInsert {
-                    timestamp: chrono::Utc::now().timestamp(),
-                    listen_addr: node.clone(),
-                    client_ip: client_ip(&remote, &headers_snapshot),
-                    remote_ip: remote.ip().to_string(),
-                    method: method.as_str().to_string(),
-                    request_path: path.clone(),
-                    request_host: header_str(&headers_snapshot, "host"),
-                    status_code: StatusCode::FORBIDDEN.as_u16() as i32,
-                    upstream: "".to_string(),
-                    latency_ms: elapsed * 1000.0,
-                    user_agent: header_str(&headers_snapshot, "user-agent"),
-                    referer: header_str(&headers_snapshot, "referer"),
-                });
+            metrics::try_enqueue_request_log(crate::metrics::RequestLogInsert {
+                timestamp: chrono::Utc::now().timestamp(),
+                listen_addr: node.clone(),
+                client_ip: client_ip(&remote, &headers_snapshot),
+                remote_ip: remote.ip().to_string(),
+                method: method.as_str().to_string(),
+                request_path: path.clone(),
+                request_host: header_str(&headers_snapshot, "host"),
+                status_code: StatusCode::FORBIDDEN.as_u16() as i32,
+                upstream: "".to_string(),
+                latency_ms: elapsed * 1000.0,
+                user_agent: header_str(&headers_snapshot, "user-agent"),
+                referer: header_str(&headers_snapshot, "referer"),
+            });
 
-                return resp;
+            return resp;
             }
         }
     }
@@ -1027,7 +1084,6 @@ async fn proxy_handler(
 
         // 1) 读取请求体（用于 req_body_size & 避免 req move 问题）
         // 热路径只读一次配置（避免频繁 clone 整个 Config）
-        let cfg = crate::config::get_config();
         let stream_proxy = cfg.stream_proxy;
         let max_body_size = cfg.max_body_size;
         let max_response_body_size = cfg.max_response_body_size;
@@ -1055,21 +1111,21 @@ async fn proxy_handler(
 
         // 2.1) 先复制入站 headers（跳过 hop-by-hop；跳过将由代理统一控制/覆盖的头）
         for (k, v) in inbound_headers.iter() {
-            let lower = k.as_str().to_ascii_lowercase();
-            if is_hop_header(&lower) {
+            // 这里不要做 to_ascii_lowercase 分配；用 HeaderName 常量比较即可
+            if *k == axum::http::header::HOST
+                || *k == axum::http::header::CONNECTION
+                || *k == axum::http::header::ACCEPT_ENCODING
+                || *k == HeaderName::from_static("x-real-ip")
+                || *k == HeaderName::from_static("x-forwarded-for")
+                || *k == HeaderName::from_static("x-forwarded-proto")
+            {
                 continue;
             }
-            if matches!(
-                lower.as_str(),
-                "host"
-                    | "connection"
-                    | "accept-encoding"
-                    | "x-real-ip"
-                    | "x-forwarded-for"
-                    | "x-forwarded-proto"
-            ) {
+
+            if is_hop_header(k.as_str()) {
                 continue;
             }
+
             final_headers.append(k.clone(), v.clone());
         }
 
@@ -1106,9 +1162,8 @@ async fn proxy_handler(
             HeaderValue::from_static(if rule.ssl_enable { "https" } else { "http" }),
         );
 
-        // 2.4) 对齐 nginx 常见实践：禁用压缩、短连接
+        // 2.4) 对齐 nginx 常见实践：禁用压缩
         final_headers.insert(axum::http::header::ACCEPT_ENCODING, HeaderValue::from_static(""));
-        final_headers.insert(axum::http::header::CONNECTION, HeaderValue::from_static("close"));
 
         // 2.5) Content-Type：若入站有且 set_headers 未覆盖，则保留
         if !final_headers.contains_key(axum::http::header::CONTENT_TYPE) {
@@ -1363,17 +1418,15 @@ fn is_asset_path(path: &str) -> bool {
 }
 
 fn is_hop_header(name: &str) -> bool {
-    matches!(
-        name.to_ascii_lowercase().as_str(),
-        "connection"
-            | "keep-alive"
-            | "proxy-authenticate"
-            | "proxy-authorization"
-            | "te"
-            | "trailer"
-            | "transfer-encoding"
-            | "upgrade"
-    )
+    // 这里是热路径：避免 to_ascii_lowercase 分配
+    name.eq_ignore_ascii_case("connection")
+        || name.eq_ignore_ascii_case("keep-alive")
+        || name.eq_ignore_ascii_case("proxy-authenticate")
+        || name.eq_ignore_ascii_case("proxy-authorization")
+        || name.eq_ignore_ascii_case("te")
+        || name.eq_ignore_ascii_case("trailer")
+        || name.eq_ignore_ascii_case("transfer-encoding")
+        || name.eq_ignore_ascii_case("upgrade")
 }
 
 fn expand_proxy_header_value(

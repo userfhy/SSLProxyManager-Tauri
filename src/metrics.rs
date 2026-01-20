@@ -23,7 +23,31 @@ static BLACKLIST_LAST_CLEANUP: Lazy<RwLock<Instant>> = Lazy::new(|| RwLock::new(
 const REALTIME_WINDOW_SECS: i64 = 43200; // 12h
 const REALTIME_MINUTE_WINDOW_SECS: i64 = 86400; // 24h
 
-static REALTIME_AGG: Lazy<RwLock<RealtimeAgg>> = Lazy::new(|| RwLock::new(RealtimeAgg::new()));
+// RealtimeAgg 写入是热路径：采用分片锁减少竞争
+const REALTIME_SHARDS: usize = 64;
+
+static REALTIME_AGG_SHARDS: Lazy<Vec<RwLock<RealtimeAgg>>> = Lazy::new(|| {
+    let mut v = Vec::with_capacity(REALTIME_SHARDS);
+    for _ in 0..REALTIME_SHARDS {
+        v.push(RwLock::new(RealtimeAgg::new()));
+    }
+    v
+});
+
+fn hash_fnv1a_64(s: &str) -> u64 {
+    const FNV_OFFSET: u64 = 14695981039346656037;
+    const FNV_PRIME: u64 = 1099511628211;
+
+    let mut h = FNV_OFFSET;
+    for &b in s.as_bytes() {
+        h ^= b as u64;
+        h = h.wrapping_mul(FNV_PRIME);
+    }
+    h
+}
+
+const METRICS_CACHE_TTL: Duration = Duration::from_millis(500);
+static METRICS_CACHE: Lazy<RwLock<Option<(Instant, MetricsPayload)>>> = Lazy::new(|| RwLock::new(None));
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct BlacklistEntry {
@@ -750,8 +774,13 @@ pub async fn init_request_log_writer() {
 
 pub fn try_enqueue_request_log(log: RequestLogInsert) {
     // 实时聚合（不依赖 DB）
+    // 采用分片锁：将写竞争从全局写锁降到 shard 粒度
+    let la = log.listen_addr.trim();
+    let shard_key = if la.is_empty() { "全局" } else { la };
+    let idx = (hash_fnv1a_64(shard_key) as usize) % REALTIME_SHARDS;
+
     {
-        let mut agg = REALTIME_AGG.write();
+        let mut agg = REALTIME_AGG_SHARDS[idx].write();
         agg.add(
             &log.listen_addr,
             log.timestamp,
@@ -947,7 +976,73 @@ pub async fn query_request_logs(req: QueryRequestLogsRequest) -> Result<QueryReq
 }
 
 pub fn get_metrics() -> MetricsPayload {
-    REALTIME_AGG.read().to_payload()
+    // 500ms 缓存：Dashboard 默认 2s 刷新，避免每次都合并 64 个 shard
+    {
+        let cache = METRICS_CACHE.read();
+        if let Some((ts, payload)) = cache.as_ref() {
+            if ts.elapsed() < METRICS_CACHE_TTL {
+                return payload.clone();
+            }
+        }
+    }
+
+    // 合并所有 shard 的结果
+    let mut merged = RealtimeAgg::new();
+
+    for shard in REALTIME_AGG_SHARDS.iter() {
+        let guard = shard.read();
+
+        // per_sec
+        for (k, v) in guard.per_sec.iter() {
+            let dst = merged.per_sec.entry(k.clone()).or_default();
+            for (ts, b) in v.buckets.iter() {
+                let out = dst
+                    .buckets
+                    .entry(*ts)
+                    .or_insert_with(|| RtBucket { ts: *ts, ..Default::default() });
+                out.count += b.count;
+                out.s2xx += b.s2xx;
+                out.s3xx += b.s3xx;
+                out.s4xx += b.s4xx;
+                out.s5xx += b.s5xx;
+                out.s0 += b.s0;
+                out.latency_sum_ms += b.latency_sum_ms;
+                if b.latency_max_ms > out.latency_max_ms {
+                    out.latency_max_ms = b.latency_max_ms;
+                }
+            }
+        }
+
+        // per_min
+        for (k, v) in guard.per_min.iter() {
+            let dst = merged.per_min.entry(k.clone()).or_default();
+            for (ts, b) in v.buckets.iter() {
+                let out = dst
+                    .buckets
+                    .entry(*ts)
+                    .or_insert_with(|| RtBucket { ts: *ts, ..Default::default() });
+                out.count += b.count;
+                out.s2xx += b.s2xx;
+                out.s3xx += b.s3xx;
+                out.s4xx += b.s4xx;
+                out.s5xx += b.s5xx;
+                out.s0 += b.s0;
+                out.latency_sum_ms += b.latency_sum_ms;
+                if b.latency_max_ms > out.latency_max_ms {
+                    out.latency_max_ms = b.latency_max_ms;
+                }
+            }
+        }
+    }
+
+    let payload = merged.to_payload();
+
+    {
+        let mut cache = METRICS_CACHE.write();
+        *cache = Some((Instant::now(), payload.clone()));
+    }
+
+    payload
 }
 
 pub async fn get_distinct_listen_addrs() -> Result<Vec<String>> {
