@@ -1,6 +1,6 @@
 [package]
 name = "SSLProxyManager"
-version = "1.0.7"
+version = "1.0.8"
 description = "SSL 代理管理工具"
 repository = "https://github.com/userfhy/SSLProxyManager-Tauri"
 authors = ["fhy"]
