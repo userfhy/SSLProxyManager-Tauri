@@ -38,8 +38,7 @@ export const useDBStatus = () => {
   const checkDBStatus = async (showMessage = false): Promise<DBStatus | null> => {
     loading.value = true
     try {
-      // @ts-ignore
-      const status = await GetMetricsDBStatus()
+      const status = (await GetMetricsDBStatus()) as DBStatus
       // 更新共享状态
       sharedDBStatus.value = status
 

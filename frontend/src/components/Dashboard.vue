@@ -473,8 +473,8 @@ const buildAlignedView = () => {
     topUpErr: all.topUpErr || [],
   }
 
-  const result = { 
-    x, 
+  const result = {
+    x,
     series: view,
     window: selectedWindow.value,
     listen: selectedListen.value
@@ -569,25 +569,14 @@ const loadHistoricalData = async () => {
 
   loadingHistorical.value = true
   try {
-    const useMinute = (endSec - startSec) >= 3600 // 超过1小时使用分钟级数据
     const listenAddr = selectedListen.value === '全局' ? '' : selectedListen.value
-    
-    console.log('查询历史数据:', {
-      startTime: startSec,
-      endTime: endSec,
-      listenAddr: listenAddr,
-      useMinute: useMinute,
-      dateRange: dateRange.value
-    })
-    
+
     // @ts-ignore
     const response = await QueryHistoricalMetrics({
       start_time: startSec,
       end_time: endSec,
       listen_addr: listenAddr,
     })
-    
-    console.log('查询结果:', response)
 
     if (response && response.series) {
       const series: MetricsSeries = {
@@ -605,16 +594,9 @@ const loadHistoricalData = async () => {
         upstreamDist: (response.series.upstreamDist || []).map((kv: any) => ({ key: kv.key || kv.Key || '', value: kv.value || kv.Value || 0 })),
         topRouteErr: (response.series.topRouteErr || []).map((kv: any) => ({ key: kv.key || kv.Key || '', value: kv.value || kv.Value || 0 })),
         topUpErr: (response.series.topUpErr || []).map((kv: any) => ({ key: kv.key || kv.Key || '', value: kv.value || kv.Value || 0 })),
-        latencyDist: (response.series.latencyDist || []).map((kv: any) => ({ key: kv.key || kv.Key || '', value: kv.value || kv.Value || 0 })), 
+        latencyDist: (response.series.latencyDist || []).map((kv: any) => ({ key: kv.key || kv.Key || '', value: kv.value || kv.Value || 0 })),
       }
       historicalData.value = series
-      console.log('历史数据已设置:', {
-        timestampsCount: series.timestamps.length,
-        countsCount: series.counts.length,
-        firstTimestamp: series.timestamps[0],
-        lastTimestamp: series.timestamps[series.timestamps.length - 1],
-        sampleCounts: series.counts.slice(0, 5),
-      })
       ElMessage.success(`历史数据加载成功，共 ${series.timestamps.length} 个数据点`)
     } else {
       ElMessage.warning('未找到历史数据')
@@ -649,95 +631,17 @@ const commonAxis = {
   splitLine: { lineStyle: { color: 'rgba(15, 23, 42, 0.08)' } },
 }
 
-// 合并历史数据和实时数据（按时间戳排序合并）
-const mergeHistoricalData = (realTime: MetricsSeries | null, historical: MetricsSeries | null): MetricsSeries | null => {
-  if (!historical) return realTime
-  if (!realTime) return historical
-
-  // 创建时间戳到数据的映射
-  const timeMap = new Map<number, {
-    counts: number
-    s2xx: number
-    s3xx: number
-    s4xx: number
-    s5xx: number
-    s0: number
-    avgLatencyMs: number
-    maxLatencyMs: number
-    p95: number
-    p99: number
-  }>()
-
-  // 添加历史数据
-  historical.timestamps.forEach((ts, idx) => {
-    timeMap.set(ts, {
-      counts: historical.counts[idx] || 0,
-      s2xx: historical.s2xx[idx] || 0,
-      s3xx: historical.s3xx[idx] || 0,
-      s4xx: historical.s4xx[idx] || 0,
-      s5xx: historical.s5xx[idx] || 0,
-      s0: historical.s0[idx] || 0,
-      avgLatencyMs: historical.avgLatencyMs[idx] || 0,
-      maxLatencyMs: historical.maxLatencyMs[idx] || 0,
-      p95: historical.p95?.[idx] || 0,
-      p99: historical.p99?.[idx] || 0,
-    })
-  })
-
-  // 添加实时数据（如果时间戳相同，实时数据优先）
-  realTime.timestamps.forEach((ts, idx) => {
-    timeMap.set(ts, {
-      counts: realTime.counts[idx] || 0,
-      s2xx: realTime.s2xx[idx] || 0,
-      s3xx: realTime.s3xx[idx] || 0,
-      s4xx: realTime.s4xx[idx] || 0,
-      s5xx: realTime.s5xx[idx] || 0,
-      s0: realTime.s0[idx] || 0,
-      avgLatencyMs: realTime.avgLatencyMs[idx] || 0,
-      maxLatencyMs: realTime.maxLatencyMs[idx] || 0,
-      p95: realTime.p95?.[idx] || 0,
-      p99: realTime.p99?.[idx] || 0,
-    })
-  })
-
-  // 按时间戳排序
-  const sortedTimestamps = Array.from(timeMap.keys()).sort((a, b) => a - b)
-
-  return {
-    timestamps: sortedTimestamps,
-    counts: sortedTimestamps.map(ts => timeMap.get(ts)!.counts),
-    s2xx: sortedTimestamps.map(ts => timeMap.get(ts)!.s2xx),
-    s3xx: sortedTimestamps.map(ts => timeMap.get(ts)!.s3xx),
-    s4xx: sortedTimestamps.map(ts => timeMap.get(ts)!.s4xx),
-    s5xx: sortedTimestamps.map(ts => timeMap.get(ts)!.s5xx),
-    s0: sortedTimestamps.map(ts => timeMap.get(ts)!.s0),
-    avgLatencyMs: sortedTimestamps.map(ts => timeMap.get(ts)!.avgLatencyMs),
-    maxLatencyMs: sortedTimestamps.map(ts => timeMap.get(ts)!.maxLatencyMs),
-    p95: sortedTimestamps.map(ts => timeMap.get(ts)!.p95),
-    p99: sortedTimestamps.map(ts => timeMap.get(ts)!.p99),
-    upstreamDist: (historical.upstreamDist && historical.upstreamDist.length > 0) ? historical.upstreamDist : (realTime.upstreamDist || []),
-    topRouteErr: (historical.topRouteErr && historical.topRouteErr.length > 0) ? historical.topRouteErr : (realTime.topRouteErr || []),
-    topUpErr: (historical.topUpErr && historical.topUpErr.length > 0) ? historical.topUpErr : (realTime.topUpErr || []),
-  }
-}
-
 // 获取对齐后的视图数据（历史数据优先，如果有历史数据则不显示实时数据）
 const alignedView = computed(() => {
   if (!props.isActive) return null
-  
+
   // 如果有历史数据，只显示历史数据
   if (historicalData.value) {
     const histSeries = historicalData.value
-    console.log('alignedView: 使用历史数据', {
-      timestampsLength: histSeries.timestamps.length,
-      countsLength: histSeries.counts.length,
-    })
     if (histSeries.timestamps.length === 0) {
-      console.warn('历史数据时间戳为空')
       return null
     }
-    
-    // 重新构建 x 轴和时间序列
+
     const step = histSeries.timestamps.length > maxPoints ? Math.ceil(histSeries.timestamps.length / maxPoints) : 1
     const idx: number[] = []
     for (let i = 0; i < histSeries.timestamps.length; i += step) idx.push(i)
@@ -760,13 +664,6 @@ const alignedView = computed(() => {
       topUpErr: histSeries.topUpErr || [],
     }
 
-    console.log('alignedView: 历史数据视图构建完成', {
-      xLength: x.length,
-      seriesCountsLength: view.counts.length,
-      firstX: x[0],
-      lastX: x[x.length - 1],
-    })
-
     return {
       x,
       series: view,
@@ -774,17 +671,14 @@ const alignedView = computed(() => {
       listen: selectedListen.value,
     }
   }
-  
+
   // 没有历史数据时，显示实时数据
-  console.log('alignedView: 使用实时数据')
   return buildAlignedView()
 })
 
-// QPS 图表配置
 const qpsOption = computed<EChartsOption>(() => {
   const v = alignedView.value
   if (!v) {
-    console.log('qpsOption: alignedView为空')
     return {
       ...baseOption,
       xAxis: { type: 'category', data: [] },
@@ -792,14 +686,6 @@ const qpsOption = computed<EChartsOption>(() => {
       series: [],
     }
   }
-  const counts = v.series.counts || []
-  console.log('qpsOption: 构建图表', {
-    xLength: v.x.length,
-    countsLength: counts.length,
-    firstCount: counts[0],
-    lastCount: counts[counts.length - 1],
-    hasHistorical: !!historicalData.value,
-  })
   return {
     ...baseOption,
     tooltip: { trigger: 'axis', axisPointer: { type: 'line' } },
@@ -807,15 +693,15 @@ const qpsOption = computed<EChartsOption>(() => {
     xAxis: { type: 'category', data: v.x, boundaryGap: false, ...commonAxis },
     yAxis: { type: 'value', ...commonAxis },
     series: [
-      { 
-        name: 'QPS', 
-        type: 'line', 
+      {
+        name: 'QPS',
+        type: 'line',
         smooth: false,
-        showSymbol: false, 
+        showSymbol: false,
         large: true,
         largeThreshold: 200,
-        lineStyle: { width: 2, color: '#3b82f6' }, 
-        areaStyle: { opacity: 0.18, color: '#93c5fd' }, 
+        lineStyle: { width: 2, color: '#3b82f6' },
+        areaStyle: { opacity: 0.18, color: '#93c5fd' },
         data: v.series.counts || [],
         sampling: 'lttb',
       },
@@ -823,7 +709,6 @@ const qpsOption = computed<EChartsOption>(() => {
   }
 })
 
-// 状态码分布图表配置
 const statusOption = computed<EChartsOption>(() => {
   const v = alignedView.value
   if (!v) {
@@ -852,7 +737,6 @@ const statusOption = computed<EChartsOption>(() => {
   }
 })
 
-// 延迟趋势图表配置
 const latencyOption = computed<EChartsOption>(() => {
   const v = alignedView.value
   if (!v) {
@@ -878,7 +762,6 @@ const latencyOption = computed<EChartsOption>(() => {
   }
 })
 
-// P95/P99 延迟图表配置
 const pOption = computed<EChartsOption>(() => {
   const v = alignedView.value
   if (!v) {
@@ -904,7 +787,6 @@ const pOption = computed<EChartsOption>(() => {
   }
 })
 
-// Upstream 请求分布图表配置
 const upDistOption = computed<EChartsOption>(() => {
   const v = alignedView.value
   if (!v) {
@@ -915,7 +797,6 @@ const upDistOption = computed<EChartsOption>(() => {
       series: [],
     }
   }
-  // 如果有历史数据，使用历史数据的upstreamDist
   const upstreamDist = historicalData.value?.upstreamDist || v.series.upstreamDist || []
   const data = upstreamDist.map(it => ({ name: it.key, value: it.value }))
   return {
@@ -928,7 +809,6 @@ const upDistOption = computed<EChartsOption>(() => {
   }
 })
 
-// 错误率/成功率趋势图表配置
 const rateOption = computed<EChartsOption>(() => {
   const v = alignedView.value
   if (!v) {
@@ -959,9 +839,7 @@ const rateOption = computed<EChartsOption>(() => {
   }
 })
 
-// 状态码分布饼图配置
 const statusPieOption = computed<EChartsOption>(() => {
-  // 如果有历史数据，使用历史数据
   let raw = historicalData.value ? {
     s2xx: historicalData.value.s2xx || [],
     s3xx: historicalData.value.s3xx || [],
@@ -991,7 +869,7 @@ const statusPieOption = computed<EChartsOption>(() => {
   const total5xx = sum(raw.s5xx || [])
   const total0 = sum(raw.s0 || [])
   const total = total2xx + total3xx + total4xx + total5xx + total0
-  
+
   if (total === 0) {
     return {
       ...baseOption,
@@ -1008,14 +886,14 @@ const statusPieOption = computed<EChartsOption>(() => {
       series: [{ type: 'pie', data: [] }],
     }
   }
-  
+
   const data: Array<{ name: string; value: number; itemStyle: { color: string } }> = []
   if (total2xx > 0) data.push({ name: '2xx', value: total2xx, itemStyle: { color: '#22c55e' } })
   if (total3xx > 0) data.push({ name: '3xx', value: total3xx, itemStyle: { color: '#0ea5e9' } })
   if (total4xx > 0) data.push({ name: '4xx', value: total4xx, itemStyle: { color: '#f59e0b' } })
   if (total5xx > 0) data.push({ name: '5xx', value: total5xx, itemStyle: { color: '#ef4444' } })
   if (total0 > 0) data.push({ name: '错误', value: total0, itemStyle: { color: '#6b7280' } })
-  
+
   return {
     ...baseOption,
     tooltip: {
@@ -1065,7 +943,6 @@ const statusPieOption = computed<EChartsOption>(() => {
   }
 })
 
-// 吞吐量趋势（累计请求数）图表配置
 const throughputOption = computed<EChartsOption>(() => {
   const v = alignedView.value
   if (!v) {
@@ -1082,7 +959,7 @@ const throughputOption = computed<EChartsOption>(() => {
     cumulative += Number.isFinite(c) ? c : 0
     return cumulative
   })
-  
+
   return {
     ...baseOption,
     tooltip: { trigger: 'axis', axisPointer: { type: 'line' } },
@@ -1106,7 +983,6 @@ const throughputOption = computed<EChartsOption>(() => {
   }
 })
 
-// 延迟分布对比图表配置
 const latencyDistOption = computed<EChartsOption>(() => {
   const v = alignedView.value
   if (!v) {
@@ -1117,7 +993,6 @@ const latencyDistOption = computed<EChartsOption>(() => {
       series: [],
     }
   }
-  // 延迟分布直方图（使用后端返回的 latencyDist buckets）
   const dist = (historicalData.value?.latencyDist || v.series.latencyDist || [])
   const names = dist.map(d => d.key)
   const vals = dist.map(d => d.value)
@@ -1134,74 +1009,42 @@ const latencyDistOption = computed<EChartsOption>(() => {
   }
 })
 
-// vue-echarts 会自动处理响应式和 resize，无需手动管理
-
-// 改进的订阅管理：支持 EventsOn + 轮询后备
+// ---- 订阅/轮询策略（已按后端推送优化） ----
 let subscribed = false
 let metricsUnlisten: (() => void) | null = null
 let pollingTimer: number | null = null
+let heartbeatCleanup: (() => void) | null = null
+
 let lastEventTime = 0
-let eventReceived = false
-const POLLING_INTERVAL = 3000 // 轮询间隔 3 秒（作为后备）
-const EVENT_TIMEOUT = 6000 // 如果 6 秒没收到事件，切换到轮询
+let eventEverReceived = false
+
+const POLLING_INTERVAL = 3000 // 轮询兜底间隔
+const EVENT_TIMEOUT = 6000 // 6 秒收不到事件则启动轮询兜底
 
 const processMetricsPayload = (payload: MetricsPayload) => {
   if (!props.isActive) return
   latest.value = payload
   lastEventTime = Date.now()
-  eventReceived = true
+  eventEverReceived = true
 
-  // 监听地址列表改为从数据库 request_logs DISTINCT 动态读取（见 GetListenAddrs），不再依赖实时 payload
-  // 这里仅保留 selectedListen 合法性兜底：如果当前选择不在列表里，回退到“全局”
   if (selectedListen.value !== '全局' && !listenAddrs.value.includes(selectedListen.value)) {
     selectedListen.value = '全局'
   }
 
-  // 1小时及以上（>= 3600秒）使用分钟级数据
   const maxWin = selectedWindow.value >= 3600
     ? (payload.minuteWindowSeconds || payload.windowSeconds)
     : payload.windowSeconds
   if (maxWin && selectedWindow.value > maxWin) {
     selectedWindow.value = maxWin
   }
-  // vue-echarts 会自动响应 latest.value 的变化
 }
 
 const onMetrics = (payload: MetricsPayload) => {
   processMetricsPayload(payload)
+  // 收到事件立即停轮询（事件为主）
+  stopPolling()
 }
 
-// 轮询后备机制
-const startPolling = () => {
-  if (pollingTimer) return
-  
-  const poll = async () => {
-    if (!props.isActive) {
-      stopPolling()
-      return
-    }
-    
-    try {
-      const payload = await GetMetrics()
-      const converted: MetricsPayload = {
-        windowSeconds: payload.windowSeconds,
-        listenAddrs: payload.listenAddrs || [],
-        byListenAddr: convertMetricsSeriesMap(payload.byListenAddr),
-        minuteWindowSeconds: payload.minuteWindowSeconds,
-        byListenMinute: convertMetricsSeriesMap(payload.byListenMinute),
-      }
-      processMetricsPayload(converted)
-    } catch (err) {
-      console.error('轮询获取 metrics 失败:', err)
-    }
-    
-    pollingTimer = window.setTimeout(poll, POLLING_INTERVAL)
-  }
-  
-  poll()
-}
-
-// 转换 MetricsSeries 映射
 const convertMetricsSeriesMap = (map: Record<string, any> | undefined): Record<string, MetricsSeries> => {
   if (!map) return {}
   const result: Record<string, MetricsSeries> = {}
@@ -1221,9 +1064,39 @@ const convertMetricsSeriesMap = (map: Record<string, any> | undefined): Record<s
       upstreamDist: (value.upstreamDist || []).map((kv: any) => ({ key: kv.key || kv.Key || '', value: kv.value || kv.Value || 0 })),
       topRouteErr: (value.topRouteErr || []).map((kv: any) => ({ key: kv.key || kv.Key || '', value: kv.value || kv.Value || 0 })),
       topUpErr: (value.topUpErr || []).map((kv: any) => ({ key: kv.key || kv.Key || '', value: kv.value || kv.Value || 0 })),
+      latencyDist: (value.latencyDist || []).map((kv: any) => ({ key: kv.key || kv.Key || '', value: kv.value || kv.Value || 0 })),
     }
   }
   return result
+}
+
+const startPolling = () => {
+  if (pollingTimer) return
+
+  const poll = async () => {
+    if (!props.isActive) {
+      stopPolling()
+      return
+    }
+
+    try {
+      const payload = await GetMetrics()
+      const converted: MetricsPayload = {
+        windowSeconds: payload.windowSeconds,
+        listenAddrs: payload.listenAddrs || [],
+        byListenAddr: convertMetricsSeriesMap(payload.byListenAddr),
+        minuteWindowSeconds: payload.minuteWindowSeconds,
+        byListenMinute: convertMetricsSeriesMap(payload.byListenMinute),
+      }
+      processMetricsPayload(converted)
+    } catch (err) {
+      console.error('轮询获取 metrics 失败:', err)
+    }
+
+    pollingTimer = window.setTimeout(poll, POLLING_INTERVAL)
+  }
+
+  poll()
 }
 
 const stopPolling = () => {
@@ -1233,53 +1106,30 @@ const stopPolling = () => {
   }
 }
 
-// 心跳检测：如果 EventsOn 不工作，切换到轮询
 const startHeartbeat = () => {
-  const checkHeartbeat = () => {
+  const heartbeatInterval = setInterval(() => {
     if (!props.isActive) return
-    
+
     const now = Date.now()
-    // 如果超过 EVENT_TIMEOUT 时间没收到事件，且启用了事件订阅，切换到轮询
-    if (subscribed && now - lastEventTime > EVENT_TIMEOUT && !eventReceived) {
-      console.warn('EventsOn 可能断开，切换到轮询模式')
-      stopPolling()
+
+    // 已经收过事件，但长时间收不到：启用轮询兜底
+    if (subscribed && eventEverReceived && now - lastEventTime > EVENT_TIMEOUT) {
       startPolling()
     }
-    
-    // 如果收到了事件，尝试停止轮询，恢复事件订阅
-    if (eventReceived && pollingTimer) {
-      console.info('收到 EventsOn 数据，停止轮询')
-      stopPolling()
-      eventReceived = false
-      lastEventTime = now
+
+    // 从未收到事件：给一点时间等待后端首次推送，再启用轮询兜底
+    if (subscribed && !eventEverReceived && now - lastEventTime > EVENT_TIMEOUT) {
+      startPolling()
     }
-  }
-  
-  const heartbeatInterval = setInterval(checkHeartbeat, 2000) // 每 2 秒检查一次
-  
-  // 清理函数
-  return () => {
-    clearInterval(heartbeatInterval)
-  }
+  }, 2000)
+
+  return () => clearInterval(heartbeatInterval)
 }
-
-let heartbeatCleanup: (() => void) | null = null
-
-watch([selectedListen, selectedWindow], () => {
-  if (!props.isActive) return
-  // 窗口大小或监听地址变化时，清空缓存视图，避免使用不匹配的旧视图
-  if (lastValidView && (lastValidView.window !== selectedWindow.value || lastValidView.listen !== selectedListen.value)) {
-    lastValidView = null
-  }
-  // vue-echarts 会自动响应数据变化
-})
 
 const refreshListenAddrs = async () => {
   try {
     const addrs = await GetListenAddrs()
-    // 保留“全局”作为首项
     const list = ['全局', ...(Array.isArray(addrs) ? addrs : [])]
-    // 去重（防止后端也返回了“全局”或重复）
     const uniq = Array.from(new Set(list))
     listenAddrs.value = uniq
 
@@ -1288,56 +1138,62 @@ const refreshListenAddrs = async () => {
     }
   } catch (err) {
     console.error('获取监听地址列表失败:', err)
-    // 失败时至少保证有“全局”
     listenAddrs.value = ['全局']
     selectedListen.value = '全局'
   }
 }
 
+const startSubscription = () => {
+  if (subscribed) return
+
+  lastEventTime = Date.now()
+  eventEverReceived = false
+
+  EventsOn('metrics', onMetrics)
+    .then((unlisten) => {
+      metricsUnlisten = unlisten
+      subscribed = true
+    })
+    .catch((err) => {
+      console.error('EventsOn 订阅失败，启用轮询兜底:', err)
+      subscribed = false
+      startPolling()
+    })
+}
+
+const stopSubscription = () => {
+  if (metricsUnlisten) {
+    try {
+      EventsOff(metricsUnlisten)
+    } catch (err) {
+      console.error('EventsOff 失败:', err)
+    }
+    metricsUnlisten = null
+  }
+  subscribed = false
+}
+
+watch([selectedListen, selectedWindow], () => {
+  if (!props.isActive) return
+  if (lastValidView && (lastValidView.window !== selectedWindow.value || lastValidView.listen !== selectedListen.value)) {
+    lastValidView = null
+  }
+})
+
 watch(() => props.isActive, (active) => {
   if (active) {
     refreshListenAddrs()
+    startSubscription()
 
-    // 初始化时同时尝试事件订阅和轮询（事件优先）
-    if (!subscribed) {
-      try {
-        EventsOn('metrics', onMetrics).then((unlisten) => {
-          metricsUnlisten = unlisten
-          subscribed = true
-          lastEventTime = Date.now()
-          eventReceived = false
-        }).catch((err) => {
-          console.error('EventsOn 订阅失败，使用轮询:', err)
-          subscribed = false
-        })
-      } catch (err) {
-        console.error('EventsOn 订阅失败，使用轮询:', err)
-        subscribed = false
-      }
-    }
-    
-    // 启动心跳检测
     if (!heartbeatCleanup) {
       heartbeatCleanup = startHeartbeat()
     }
-    
-    // 如果事件订阅失败或超时，启动轮询
-    if (!subscribed || Date.now() - lastEventTime > EVENT_TIMEOUT) {
-      startPolling()
-    }
+
+    // 首次激活：等事件；若超时 heartbeat 会自动启动轮询
   } else {
-    // 停止订阅和轮询
-    if (subscribed && metricsUnlisten) {
-      try {
-        EventsOff(metricsUnlisten)
-        metricsUnlisten = null
-      } catch (err) {
-        console.error('EventsOff 失败:', err)
-      }
-      subscribed = false
-    }
     stopPolling()
-    
+    stopSubscription()
+
     if (heartbeatCleanup) {
       heartbeatCleanup()
       heartbeatCleanup = null
@@ -1346,49 +1202,17 @@ watch(() => props.isActive, (active) => {
 }, { immediate: true })
 
 onMounted(() => {
-  // vue-echarts 的 autoresize 属性会自动处理窗口 resize
-  if (props.isActive) {
-    if (!subscribed) {
-      try {
-        EventsOn('metrics', onMetrics)
-          .then((unlisten) => {
-            metricsUnlisten = unlisten
-            subscribed = true
-            lastEventTime = Date.now()
-            eventReceived = false
-          })
-          .catch((err) => {
-            console.error('EventsOn 订阅失败，使用轮询:', err)
-            startPolling()
-          })
-      } catch (err) {
-        console.error('EventsOn 订阅失败，使用轮询:', err)
-        startPolling()
-      }
-    }
-
-    if (!heartbeatCleanup) {
-      heartbeatCleanup = startHeartbeat()
-    }
-  }
+  // no-op: 已由 watch(isActive) 统一管理
 })
 
 onBeforeUnmount(() => {
-  if (subscribed) {
-    try {
-      EventsOff('metrics')
-    } catch (err) {
-      console.error('EventsOff 失败:', err)
-    }
-    subscribed = false
-  }
   stopPolling()
-  
+  stopSubscription()
+
   if (heartbeatCleanup) {
     heartbeatCleanup()
     heartbeatCleanup = null
   }
-  // vue-echarts 会自动处理资源清理
 })
 </script>
 

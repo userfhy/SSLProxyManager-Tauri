@@ -76,6 +76,12 @@ fn main() {
                 api.prevent_close();
                 // 点击关闭按钮时不退出，改为隐藏到托盘
                 let _ = window.hide();
+                return;
+            }
+
+            // 窗口销毁：执行清理（停止后台 metrics 推送任务等）
+            if let tauri::WindowEvent::Destroyed = event {
+                crate::app::cleanup();
             }
         })
         .run(tauri::generate_context!())
