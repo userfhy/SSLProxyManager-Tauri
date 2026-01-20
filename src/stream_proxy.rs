@@ -11,6 +11,7 @@ use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use tokio::sync::{mpsc, Mutex};
 use tokio::time;
 
+use crate::{access_control, config};
 use crate::config::{StreamProxyConfig, StreamServer, StreamUpstream, StreamUpstreamServer};
 
 static STREAM_SERVERS: once_cell::sync::Lazy<RwLock<Vec<StreamServerHandle>>> =
@@ -69,7 +70,6 @@ pub async fn start_stream_servers(config: &StreamProxyConfig) -> Result<()> {
 }
 
 fn validate_stream_config(cfg: &StreamProxyConfig) -> Result<()> {
-    // 1) listen_port 去重（仅针对 enabled=true 的 server）
     let mut ports = HashSet::<(u16, bool)>::new();
     for s in &cfg.servers {
         if !s.enabled {
@@ -85,7 +85,6 @@ fn validate_stream_config(cfg: &StreamProxyConfig) -> Result<()> {
         }
     }
 
-    // 2) upstream name 唯一 & 非空
     let mut up_names = HashSet::<String>::new();
     for u in &cfg.upstreams {
         let name = u.name.trim();
@@ -102,8 +101,6 @@ fn validate_stream_config(cfg: &StreamProxyConfig) -> Result<()> {
             if sv.addr.trim().is_empty() {
                 return Err(anyhow!("stream upstream '{}' has empty server addr", name));
             }
-            // 简单校验：host:port，且端口为数字
-            // 注意：这里不强制必须是 IP；允许域名
             let parts: Vec<&str> = sv.addr.split(':').collect();
             if parts.len() < 2 {
                 return Err(anyhow!("invalid stream server addr (need host:port): {}", sv.addr));
@@ -112,13 +109,11 @@ fn validate_stream_config(cfg: &StreamProxyConfig) -> Result<()> {
             if port_str.parse::<u16>().is_err() {
                 return Err(anyhow!("invalid stream server addr port: {}", sv.addr));
             }
-            // fail_timeout 解析校验（失败就给明确错误）
             let _ = parse_duration(&sv.fail_timeout)
                 .map_err(|e| anyhow!("invalid fail_timeout for {}: {}", sv.addr, e))?;
         }
     }
 
-    // 3) proxy_pass 引用存在 + 被引用 upstream 有 server
     for s in &cfg.servers {
         if !s.enabled {
             continue;
@@ -145,7 +140,6 @@ fn validate_stream_config(cfg: &StreamProxyConfig) -> Result<()> {
             ));
         }
 
-        // timeout 字段校验
         let _ = parse_duration(&s.proxy_connect_timeout)
             .map_err(|e| anyhow!("invalid proxy_connect_timeout: {} ({})", s.proxy_connect_timeout, e))?;
         let _ = parse_duration(&s.proxy_timeout)
@@ -178,6 +172,14 @@ async fn start_tcp_server(
                     result = listener.accept() => {
                         match result {
                             Ok((client_socket, client_addr)) => {
+                                // 访问控制/黑名单：TCP stream 没有 headers，仅按 remote ip 判定
+                                let cfg = config::get_config();
+                                let headers = axum::http::HeaderMap::new();
+                                if !access_control::is_allowed(&client_addr, &headers, &cfg) {
+                                    tracing::warn!("STREAM TCP forbidden: ip={} upstream={}", client_addr.ip(), upstream.name);
+                                    continue;
+                                }
+
                                 let upstream = upstream.clone();
                                 tokio::spawn(async move {
                                     if let Err(e) = handle_tcp_client(client_socket, client_addr, &upstream, connect_timeout, proxy_timeout).await {
@@ -273,8 +275,6 @@ async fn handle_tcp_client(
 
     Ok(())
 }
-
-// --- UDP session proxy ---
 
 #[derive(Clone)]
 struct UdpSessionEntry {
@@ -382,6 +382,13 @@ async fn start_udp_server(
                     res = listen.recv_from(&mut buf) => {
                         match res {
                             Ok((n, client_addr)) => {
+                                // 访问控制/黑名单：UDP 仅按 remote ip 判定
+                                let cfg = config::get_config();
+                                let headers = axum::http::HeaderMap::new();
+                                if !access_control::is_allowed(&client_addr, &headers, &cfg) {
+                                    continue;
+                                }
+
                                 let up_server = select_upstream_server(&upstream, &client_addr);
                                 let upstream_addr: SocketAddr = match up_server.addr.parse() {
                                     Ok(a) => a,

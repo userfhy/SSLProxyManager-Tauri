@@ -19,7 +19,7 @@ use std::{net::SocketAddr, sync::Arc};
 use tauri::Emitter;
 use tracing::{error, info};
 
-use crate::config;
+use crate::{access_control, config};
 
 static WS_SERVERS: RwLock<Vec<WsServerHandle>> = RwLock::new(Vec::new());
 
@@ -169,13 +169,21 @@ async fn start_ws_rule_server(
 }
 
 async fn ws_handler(
-    ConnectInfo(_remote): ConnectInfo<SocketAddr>,
+    ConnectInfo(remote): ConnectInfo<SocketAddr>,
     State(WsRuleState(rule)): State<WsRuleState>,
     State(AppHandleState(app)): State<AppHandleState>,
     uri: Uri,
     ws: WebSocketUpgrade,
-    _headers: HeaderMap,
+    headers: HeaderMap,
 ) -> Response {
+    // 访问控制（与 HTTP 代理一致）：黑名单优先，其次白名单，再次 allow_all_lan
+    let cfg = config::get_config();
+    if !access_control::is_allowed(&remote, &headers, &cfg) {
+        let ip = access_control::client_ip_from_headers(&remote, &headers);
+        let _ = app.emit("log-line", format!("WS forbidden: ip={ip} path={}", uri.path()));
+        return (StatusCode::FORBIDDEN, "Forbidden").into_response();
+    }
+
     let path = uri.path().to_string();
 
     let route = match_ws_route(&rule.routes, &path);

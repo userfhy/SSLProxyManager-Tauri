@@ -8,6 +8,7 @@ mod metrics;
 mod proxy;
 mod ws_proxy;
 mod stream_proxy;
+mod access_control;
 
 use tauri::Manager;
 

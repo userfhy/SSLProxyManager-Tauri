@@ -1,4 +1,4 @@
-use crate::{config, metrics, ws_proxy, stream_proxy};
+use crate::{access_control, config, metrics, ws_proxy, stream_proxy};
 use anyhow::{anyhow, Context, Result};
 use axum::{
     body::Body,
@@ -12,7 +12,7 @@ use parking_lot::RwLock;
 use reqwest::redirect::Policy;
 use std::{
     collections::HashMap,
-    net::{IpAddr, SocketAddr},
+    net::SocketAddr,
     sync::Arc,
     time::Duration,
 };
@@ -620,86 +620,11 @@ fn header_str(headers: &HeaderMap, key: &str) -> String {
 }
 
 fn client_ip(remote: &SocketAddr, headers: &HeaderMap) -> String {
-    // 优先取 X-Forwarded-For 的第一个
-    if let Some(v) = headers.get("x-forwarded-for") {
-        if let Ok(s) = v.to_str() {
-            let first = s.split(',').next().unwrap_or("").trim();
-            if !first.is_empty() {
-                return first.to_string();
-            }
-        }
-    }
-    if let Some(v) = headers.get("x-real-ip") {
-        if let Ok(s) = v.to_str() {
-            let s = s.trim();
-            if !s.is_empty() {
-                return s.to_string();
-            }
-        }
-    }
-
-    // 没有任何转发头：回退到真实 TCP 连接地址
-    remote.ip().to_string()
-}
-
-fn parse_ip(s: &str) -> Option<IpAddr> {
-    s.trim().parse::<IpAddr>().ok()
-}
-
-fn is_lan_ip(ip: &IpAddr) -> bool {
-    match ip {
-        IpAddr::V4(v4) => {
-            let o = v4.octets();
-            o[0] == 10
-                || (o[0] == 172 && (16..=31).contains(&o[1]))
-                || (o[0] == 192 && o[1] == 168)
-                || (o[0] == 169 && o[1] == 254)
-        }
-        IpAddr::V6(v6) => v6.is_loopback() || v6.is_unique_local() || v6.is_unicast_link_local(),
-    }
-}
-
-fn is_ip_whitelisted(ip: &IpAddr, cfg: &config::Config) -> bool {
-    cfg.whitelist
-        .iter()
-        .any(|e| parse_ip(&e.ip).as_ref() == Some(ip))
+    access_control::client_ip_from_headers(remote, headers)
 }
 
 fn is_access_allowed(remote: &SocketAddr, headers: &HeaderMap, cfg: &config::Config) -> bool {
-    let mut ip = remote.ip();
-
-    // 如果前面有反代，并且你希望“信任转发头”，可以用 header 覆盖 remote.ip()
-    if let Some(h) = headers
-        .get("x-forwarded-for")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|s| s.split(',').next())
-        .map(|s| s.trim())
-        .filter(|s| !s.is_empty())
-        .and_then(parse_ip)
-    {
-        ip = h;
-    } else if let Some(h) = headers
-        .get("x-real-ip")
-        .and_then(|v| v.to_str().ok())
-        .map(|s| s.trim())
-        .filter(|s| !s.is_empty())
-        .and_then(parse_ip)
-    {
-        ip = h;
-    }
-
-    // 访问控制优先级最高：
-    // 1) 白名单命中 => 允许
-    // 2) 未命中白名单：只有在 allow_all_lan=true 且来源为局域网 IP 才允许
-    if is_ip_whitelisted(&ip, cfg) {
-        return true;
-    }
-
-    if cfg.allow_all_lan && is_lan_ip(&ip) {
-        return true;
-    }
-
-    false
+    access_control::is_allowed(remote, headers, cfg)
 }
 
 fn time_local_string() -> String {
@@ -790,31 +715,7 @@ async fn proxy_handler(
         let cfg = config::get_config();
 
         // 黑名单优先：命中直接拒绝
-        let client_ip_str = {
-            // 与 is_access_allowed 采用相同的 IP 选择逻辑：默认用 remote.ip()，若有转发头则优先用头
-            let mut ip = remote.ip();
-            if let Some(h) = req
-                .headers()
-                .get("x-forwarded-for")
-                .and_then(|v| v.to_str().ok())
-                .and_then(|s| s.split(',').next())
-                .map(|s| s.trim())
-                .filter(|s| !s.is_empty())
-                .and_then(parse_ip)
-            {
-                ip = h;
-            } else if let Some(h) = req
-                .headers()
-                .get("x-real-ip")
-                .and_then(|v| v.to_str().ok())
-                .map(|s| s.trim())
-                .filter(|s| !s.is_empty())
-                .and_then(parse_ip)
-            {
-                ip = h;
-            }
-            ip.to_string()
-        };
+        let client_ip_str = access_control::client_ip_from_headers(&remote, req.headers());
 
         if metrics::is_ip_blacklisted(&client_ip_str) {
             let mut resp = Response::new(Body::from("IP Forbidden"));
