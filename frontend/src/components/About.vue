@@ -66,6 +66,9 @@
               <el-link type="primary" @click.prevent="handleOpenDownload(checkResult.update_info.download_url)">
                 打开下载链接
               </el-link>
+              <el-link style="margin-left: 10px;" @click.prevent="handleCopyDownload(checkResult.update_info.download_url)">
+                复制下载链接
+              </el-link>
             </div>
           </div>
         </template>
@@ -135,6 +138,50 @@ const handleOpenDownload = (url: string) => {
   handleOpenURL(url)
 }
 
+const copyToClipboard = async (text: string) => {
+  // 1) 优先用标准 Clipboard API
+  try {
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      await navigator.clipboard.writeText(text)
+      return true
+    }
+  } catch {
+    // fallback
+  }
+
+  // 2) fallback：execCommand
+  try {
+    const ta = document.createElement('textarea')
+    ta.value = text
+    ta.style.position = 'fixed'
+    ta.style.left = '-9999px'
+    ta.style.top = '-9999px'
+    document.body.appendChild(ta)
+    ta.focus()
+    ta.select()
+    const ok = document.execCommand('copy')
+    document.body.removeChild(ta)
+    return ok
+  } catch {
+    return false
+  }
+}
+
+const handleCopyDownload = async (url: string) => {
+  const u = (url || '').trim()
+  if (!u) {
+    ElMessage.warning('下载链接为空')
+    return
+  }
+
+  const ok = await copyToClipboard(u)
+  if (ok) {
+    ElMessage.success('已复制下载链接')
+  } else {
+    ElMessage.error('复制失败，请手动复制')
+  }
+}
+
 const handleCheckUpdate = async () => {
   if (!updateForm.value.enabled) {
     ElMessage.warning('请先启用更新检查')
@@ -156,7 +203,7 @@ const handleCheckUpdate = async () => {
 // 暴露给父组件，用于保存配置
 const getConfig = () => {
   return {
-    update: { ...updateForm.value }
+    update: { ...updateForm.value },
   }
 }
 
@@ -166,9 +213,13 @@ onMounted(() => {
   loadInfo()
 })
 
-watch(() => updateForm.value, () => {
-  // 仅本地编辑；真正写回配置由主界面的“保存配置”按钮统一处理
-}, { deep: true })
+watch(
+  () => updateForm.value,
+  () => {
+    // 仅本地编辑；真正写回配置由主界面的“保存配置”按钮统一处理
+  },
+  { deep: true }
+)
 </script>
 
 <style scoped>
