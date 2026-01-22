@@ -95,6 +95,7 @@ const handleMenuSelect = (key: string) => {
 
 .sidebar-nav.sidebar-collapsed {
   width: 64px;
+  overflow: hidden; /* 彻底禁止滚动 */
 }
 
 .sidebar-nav :deep(.el-card__body) {
@@ -107,6 +108,7 @@ const handleMenuSelect = (key: string) => {
 
 .sidebar-collapsed :deep(.el-card__body) {
   padding: 12px 4px;
+  overflow: hidden; /* 彻底禁止滚动 */
 }
 
 .sidebar-header {
@@ -164,9 +166,21 @@ const handleMenuSelect = (key: string) => {
 }
 
 .sidebar-collapsed .nav-menu :deep(.el-menu-item) {
-  margin: 4px 4px;
-  padding: 0 12px !important;
+  padding: 0 !important;
   justify-content: center;
+}
+
+/* Target the specific tooltip trigger that Element Plus uses when collapsed */
+.sidebar-collapsed .nav-menu :deep(.el-menu-tooltip__trigger) {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+  padding: 0;
+}
+
+.sidebar-collapsed .nav-menu :deep(.el-menu-item .el-icon) {
+  margin: 0;
 }
 
 .nav-menu :deep(.el-menu-item:hover) {
@@ -207,8 +221,13 @@ const handleMenuSelect = (key: string) => {
   padding: 0 20px !important;
 }
 
+.sidebar-collapsed .nav-menu {
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
 .sidebar-collapsed .nav-menu :deep(.el-menu--collapse .el-menu-item) {
-  padding: 0 12px !important;
+  padding: 0 !important;
 }
 
 /* 折叠时显示 tooltip */
