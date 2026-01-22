@@ -20,11 +20,6 @@ fn is_lan_ip(ip: &IpAddr) -> bool {
     }
 }
 
-fn is_ip_whitelisted(ip: &IpAddr, cfg: &config::Config) -> bool {
-    cfg.whitelist
-        .iter()
-        .any(|e| parse_ip(&e.ip).as_ref() == Some(ip))
-}
 
 pub fn client_ip_from_headers(remote: &SocketAddr, headers: &HeaderMap) -> String {
     if let Some(h) = headers
@@ -50,21 +45,6 @@ pub fn client_ip_from_headers(remote: &SocketAddr, headers: &HeaderMap) -> Strin
     remote.ip().to_string()
 }
 
-pub fn is_allowed(remote: &SocketAddr, headers: &HeaderMap, cfg: &config::Config) -> bool {
-    // 黑名单优先
-    let ip_str = client_ip_from_headers(remote, headers);
-    if metrics::is_ip_blacklisted(&ip_str) {
-        return false;
-    }
-
-    let ip = parse_ip(&ip_str).unwrap_or(remote.ip());
-
-    if is_ip_whitelisted(&ip, cfg) {
-        return true;
-    }
-
-    cfg.allow_all_lan && is_lan_ip(&ip)
-}
 
 pub fn is_allowed_fast(remote: &SocketAddr, headers: &HeaderMap, allow_all_lan: bool, whitelist: &[config::WhitelistEntry]) -> bool {
     let ip_str = client_ip_from_headers(remote, headers);

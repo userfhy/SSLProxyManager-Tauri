@@ -345,16 +345,43 @@ fn get_config_path() -> Result<PathBuf> {
         return Ok(base.join("SSLProxyManager").join("config.toml"));
     }
 
-    // Windows: 可执行文件同目录的 config.toml（安装目录旁）
+    // Windows: 优先读取可执行文件同目录（安装目录旁）的 config.toml；
+    // 若不存在，则使用用户目录下的配置文件（首次启动会自动生成）。
     #[cfg(target_os = "windows")]
     {
         let exe = std::env::current_exe().context("无法获取当前可执行文件路径")?;
         let dir = exe.parent().context("无法获取可执行文件目录")?;
-        return Ok(dir.join("config.toml"));
+        let install_cfg = dir.join("config.toml");
+        if install_cfg.exists() {
+            return Ok(install_cfg);
+        }
+
+        // Windows 用户目录：%APPDATA%\SSLProxyManager\config.toml
+        let base = std::env::var_os("APPDATA")
+            .map(PathBuf::from)
+            .or_else(|| {
+                std::env::var_os("USERPROFILE").map(|p| PathBuf::from(p).join("AppData").join("Roaming"))
+            })
+            .context("无法确定配置目录（缺少 APPDATA/USERPROFILE）")?;
+        return Ok(base.join("SSLProxyManager").join("config.toml"));
     }
 
-    // macOS / 其它：暂时沿用可执行文件同目录
-    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+    // macOS: ~/Library/Application Support/SSLProxyManager/config.toml
+    #[cfg(target_os = "macos")]
+    {
+        let home = std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .context("无法确定配置目录（缺少 HOME）")?;
+        return Ok(
+            home.join("Library")
+                .join("Application Support")
+                .join("SSLProxyManager")
+                .join("config.toml"),
+        );
+    }
+
+    // 其它：暂时沿用可执行文件同目录
+    #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
     {
         let exe = std::env::current_exe().context("无法获取当前可执行文件路径")?;
         let dir = exe.parent().context("无法获取可执行文件目录")?;

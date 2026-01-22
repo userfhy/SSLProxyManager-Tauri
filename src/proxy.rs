@@ -635,14 +635,6 @@ fn is_basic_auth_ok(
     s == expected
 }
 
-#[inline]
-fn header_str(headers: &HeaderMap, key: &str) -> String {
-    headers
-        .get(key)
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("-")
-        .to_string()
-}
 
 #[inline]
 fn time_local_string() -> String {

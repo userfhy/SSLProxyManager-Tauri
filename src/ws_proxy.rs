@@ -55,6 +55,9 @@ pub struct WsListenRule {
 struct WsAppState {
     rule: WsListenRule,
     app: tauri::AppHandle,
+    ws_access_control_enabled: bool,
+    allow_all_lan: bool,
+    whitelist: Arc<[config::WhitelistEntry]>,
 }
 
 #[derive(Clone)]
@@ -122,9 +125,14 @@ async fn start_ws_rule_server(
 ) -> Result<()> {
     let addr = parse_listen_addr(&rule.listen_addr)?;
 
+    let cfg = config::get_config();
+
     let state = WsAppState {
         rule: rule.clone(),
         app: app.clone(),
+        ws_access_control_enabled: cfg.ws_access_control_enabled,
+        allow_all_lan: cfg.allow_all_lan,
+        whitelist: Arc::from(cfg.whitelist),
     };
 
     let router = Router::new().route("/healthz", any(|| async { (StatusCode::OK, "OK") }));
@@ -172,13 +180,15 @@ async fn ws_handler(
     ConnectInfo(remote): ConnectInfo<SocketAddr>,
     State(WsRuleState(rule)): State<WsRuleState>,
     State(AppHandleState(app)): State<AppHandleState>,
+    State(state): State<WsAppState>,
     uri: Uri,
     ws: WebSocketUpgrade,
     headers: HeaderMap,
 ) -> Response {
     // 访问控制（与 HTTP 代理一致）：黑名单优先，其次白名单，再次 allow_all_lan
-    let cfg = config::get_config();
-    if cfg.ws_access_control_enabled && !access_control::is_allowed(&remote, &headers, &cfg) {
+    if state.ws_access_control_enabled
+        && !access_control::is_allowed_fast(&remote, &headers, state.allow_all_lan, &state.whitelist)
+    {
         let ip = access_control::client_ip_from_headers(&remote, &headers);
         let _ = app.emit("log-line", format!("WS forbidden: ip={ip} path={}", uri.path()));
         return (StatusCode::FORBIDDEN, "Forbidden").into_response();

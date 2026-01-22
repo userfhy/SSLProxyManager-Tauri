@@ -62,7 +62,6 @@
 </template>
 
 <script setup lang="ts">
-import { defineProps, defineEmits } from 'vue'
 import { Setting, DataAnalysis, Document, Lock, Search, Fold, Expand, InfoFilled } from '@element-plus/icons-vue'
 
 defineProps<{ 

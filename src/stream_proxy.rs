@@ -5,6 +5,7 @@ use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::io;
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
@@ -53,8 +54,8 @@ pub async fn start_stream_servers(config: &StreamProxyConfig) -> Result<()> {
             .find(|u| u.name == server.proxy_pass)
             .expect("validate_stream_config should ensure upstream exists");
 
-        let connect_timeout = parse_duration(&server.proxy_connect_timeout)
-            .unwrap_or_else(|_| Duration::from_secs(300));
+        let connect_timeout =
+            parse_duration(&server.proxy_connect_timeout).unwrap_or_else(|_| Duration::from_secs(300));
         let proxy_timeout =
             parse_duration(&server.proxy_timeout).unwrap_or_else(|_| Duration::from_secs(600));
 
@@ -140,8 +141,13 @@ fn validate_stream_config(cfg: &StreamProxyConfig) -> Result<()> {
             ));
         }
 
-        let _ = parse_duration(&s.proxy_connect_timeout)
-            .map_err(|e| anyhow!("invalid proxy_connect_timeout: {} ({})", s.proxy_connect_timeout, e))?;
+        let _ = parse_duration(&s.proxy_connect_timeout).map_err(|e| {
+            anyhow!(
+                "invalid proxy_connect_timeout: {} ({})",
+                s.proxy_connect_timeout,
+                e
+            )
+        })?;
         let _ = parse_duration(&s.proxy_timeout)
             .map_err(|e| anyhow!("invalid proxy_timeout: {} ({})", s.proxy_timeout, e))?;
     }
@@ -163,9 +169,15 @@ async fn start_tcp_server(
 
     tracing::info!("Stream TCP server listening on {} -> {}", listen_addr, upstream.name);
 
+    let cfg = config::get_config();
+    let access_control_enabled = cfg.stream_access_control_enabled;
+    let allow_all_lan = cfg.allow_all_lan;
+    let whitelist: Arc<[config::WhitelistEntry]> = Arc::from(cfg.whitelist);
+
     let (shutdown_tx, mut shutdown_rx) = mpsc::channel(1);
     let server_task = tokio::spawn({
         let upstream = upstream.clone();
+        let whitelist = whitelist.clone();
         async move {
             loop {
                 tokio::select! {
@@ -173,18 +185,34 @@ async fn start_tcp_server(
                         match result {
                             Ok((client_socket, client_addr)) => {
                                 // 访问控制/黑名单：TCP stream 没有 headers，仅按 remote ip 判定
-                                let cfg = config::get_config();
-                                if cfg.stream_access_control_enabled {
-                                let headers = axum::http::HeaderMap::new();
-                                if !access_control::is_allowed(&client_addr, &headers, &cfg) {
-                                    tracing::warn!("STREAM TCP forbidden: ip={} upstream={}", client_addr.ip(), upstream.name);
-                                    continue;
+                                if access_control_enabled {
+                                    let headers = axum::http::HeaderMap::new();
+                                    if !access_control::is_allowed_fast(
+                                        &client_addr,
+                                        &headers,
+                                        allow_all_lan,
+                                        &whitelist,
+                                    ) {
+                                        tracing::warn!(
+                                            "STREAM TCP forbidden: ip={} upstream={}",
+                                            client_addr.ip(),
+                                            upstream.name
+                                        );
+                                        continue;
                                     }
                                 }
 
                                 let upstream = upstream.clone();
                                 tokio::spawn(async move {
-                                    if let Err(e) = handle_tcp_client(client_socket, client_addr, &upstream, connect_timeout, proxy_timeout).await {
+                                    if let Err(e) = handle_tcp_client(
+                                        client_socket,
+                                        client_addr,
+                                        &upstream,
+                                        connect_timeout,
+                                        proxy_timeout,
+                                    )
+                                    .await
+                                    {
                                         tracing::error!("TCP client {} error: {}", client_addr, e);
                                     }
                                 });
@@ -299,6 +327,11 @@ async fn start_udp_server(
     proxy_timeout: Duration,
     servers: &mut Vec<StreamServerHandle>,
 ) -> Result<()> {
+    let cfg = config::get_config();
+    let access_control_enabled = cfg.stream_access_control_enabled;
+    let allow_all_lan = cfg.allow_all_lan;
+    let whitelist: Arc<[config::WhitelistEntry]> = Arc::from(cfg.whitelist);
+
     let listen_addr = format!("0.0.0.0:{}", server.listen_port);
     let listen_sock = UdpSocket::bind(&listen_addr)
         .await
@@ -306,10 +339,13 @@ async fn start_udp_server(
 
     tracing::info!("Stream UDP server listening on {}", listen_addr);
 
-    let sessions: std::sync::Arc<Mutex<HashMap<SocketAddr, UdpSessionEntry>>> =
-        std::sync::Arc::new(Mutex::new(HashMap::new()));
+    let sessions: Arc<Mutex<HashMap<SocketAddr, UdpSessionEntry>>> =
+        Arc::new(Mutex::new(HashMap::new()));
 
-    let listen_sock = std::sync::Arc::new(listen_sock);
+    let listen_sock = Arc::new(listen_sock);
+
+    // 为每个 upstream_addr 复用一个已 connect 的 UDP socket：避免每包 bind/connect
+    let mut upstream_socks: HashMap<SocketAddr, Arc<UdpSocket>> = HashMap::new();
 
     let mut upstream_readers: HashMap<SocketAddr, tokio::task::JoinHandle<()>> = HashMap::new();
     for s in &upstream.servers {
@@ -324,7 +360,9 @@ async fn start_udp_server(
 
         let upstream_socket = UdpSocket::bind("0.0.0.0:0").await?;
         upstream_socket.connect(upstream_addr).await?;
-        let upstream_socket = std::sync::Arc::new(upstream_socket);
+        let upstream_socket = Arc::new(upstream_socket);
+
+        upstream_socks.insert(upstream_addr, upstream_socket.clone());
 
         let sessions2 = sessions.clone();
         let listen2 = listen_sock.clone();
@@ -358,11 +396,15 @@ async fn start_udp_server(
         upstream_readers.insert(upstream_addr, h);
     }
 
+    let upstream_socks = Arc::new(upstream_socks);
+
     let (shutdown_tx, mut shutdown_rx) = mpsc::channel(1);
     let server_task = tokio::spawn({
         let upstream = upstream.clone();
         let sessions = sessions.clone();
         let listen = listen_sock.clone();
+        let whitelist = whitelist.clone();
+        let upstream_socks = upstream_socks.clone();
 
         async move {
             let mut buf = vec![0u8; 65536];
@@ -385,11 +427,15 @@ async fn start_udp_server(
                         match res {
                             Ok((n, client_addr)) => {
                                 // 访问控制/黑名单：UDP 仅按 remote ip 判定
-                                let cfg = config::get_config();
-                                if cfg.stream_access_control_enabled {
-                                let headers = axum::http::HeaderMap::new();
-                                if !access_control::is_allowed(&client_addr, &headers, &cfg) {
-                                    continue;
+                                if access_control_enabled {
+                                    let headers = axum::http::HeaderMap::new();
+                                    if !access_control::is_allowed_fast(
+                                        &client_addr,
+                                        &headers,
+                                        allow_all_lan,
+                                        &whitelist,
+                                    ) {
+                                        continue;
                                     }
                                 }
 
@@ -401,13 +447,17 @@ async fn start_udp_server(
 
                                 {
                                     let mut map = sessions.lock().await;
-                                    map.insert(client_addr, UdpSessionEntry { upstream_addr, last_seen_ms: now_ms() });
+                                    map.insert(
+                                        client_addr,
+                                        UdpSessionEntry {
+                                            upstream_addr,
+                                            last_seen_ms: now_ms(),
+                                        },
+                                    );
                                 }
 
-                                if let Ok(s) = UdpSocket::bind("0.0.0.0:0").await {
-                                    if s.connect(upstream_addr).await.is_ok() {
-                                        let _ = s.send(&buf[..n]).await;
-                                    }
+                                if let Some(s) = upstream_socks.get(&upstream_addr) {
+                                    let _ = s.send(&buf[..n]).await;
                                 }
                             }
                             Err(_) => {}
@@ -430,10 +480,7 @@ async fn start_udp_server(
     Ok(())
 }
 
-fn select_upstream_server<'a>(
-    upstream: &'a StreamUpstream,
-    client_addr: &SocketAddr,
-) -> &'a StreamUpstreamServer {
+fn select_upstream_server<'a>(upstream: &'a StreamUpstream, client_addr: &SocketAddr) -> &'a StreamUpstreamServer {
     let servers = &upstream.servers;
     if servers.is_empty() {
         panic!("No servers available in upstream '{}'", upstream.name);
