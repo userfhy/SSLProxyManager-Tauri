@@ -126,12 +126,31 @@ const loadInfo = async () => {
   }
 }
 
-const handleOpenURL = (url: string) => {
-  if (!url) {
+const opening = ref(false)
+
+const handleOpenURL = async (url: string) => {
+  const u = (url || '').trim()
+  if (!u) {
     ElMessage.warning('链接为空')
     return
   }
-  OpenURL(url)
+
+  if (opening.value) {
+    return
+  }
+
+  opening.value = true
+  try {
+    await OpenURL(u)
+  } catch (e: any) {
+    console.error('打开链接失败:', e)
+    ElMessage.error('打开链接失败，请手动复制到浏览器打开')
+  } finally {
+    // 防止短时间内连续点击触发系统 shell 多次启动
+    setTimeout(() => {
+      opening.value = false
+    }, 800)
+  }
 }
 
 const handleOpenDownload = (url: string) => {

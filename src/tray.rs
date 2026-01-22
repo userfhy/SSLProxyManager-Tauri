@@ -102,11 +102,17 @@ pub fn init_tray(app: &AppHandle) -> tauri::Result<()> {
                 if let Some(window) = app.get_webview_window("main") {
                     let _ = window.unminimize();
                     let _ = window.show();
+
+                    // Linux 下 request_user_attention + always_on_top 切换可能导致任务栏图标持续闪烁。
+                    // 这里仅做必要的 focus。
                     let _ = window.set_focus();
-                    let _ =
-                        window.request_user_attention(Some(tauri::UserAttentionType::Critical));
+
+                    #[cfg(not(target_os = "linux"))]
+                    {
+                        let _ = window.request_user_attention(Some(tauri::UserAttentionType::Critical));
                     let _ = window.set_always_on_top(true);
                     let _ = window.set_always_on_top(false);
+                    }
                 }
             }
             MENU_ID_HIDE => {
@@ -165,11 +171,18 @@ pub fn init_tray(app: &AppHandle) -> tauri::Result<()> {
                     } else {
                         let _ = window.unminimize();
                         let _ = window.show();
+
+                        // Linux 下 request_user_attention + always_on_top 切换可能导致任务栏图标持续闪烁。
+                        // 这里仅做必要的 focus。
                         let _ = window.set_focus();
+
+                        #[cfg(not(target_os = "linux"))]
+                        {
                         let _ = window
                             .request_user_attention(Some(tauri::UserAttentionType::Critical));
                         let _ = window.set_always_on_top(true);
                         let _ = window.set_always_on_top(false);
+                        }
                     }
                 }
             }

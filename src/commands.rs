@@ -74,7 +74,16 @@ pub async fn check_update() -> Result<update::CheckResult, String> {
 
 #[tauri::command]
 pub async fn open_url(_app: tauri::AppHandle, url: String) -> Result<(), String> {
-    tauri_plugin_opener::open_url(url, None::<&str>).map_err(|e| e.to_string())
+    let u = url.trim();
+    if u.is_empty() {
+        return Err("url is empty".to_string());
+    }
+
+    if !(u.starts_with("http://") || u.starts_with("https://")) {
+        return Err("invalid url scheme (only http/https allowed)".to_string());
+    }
+
+    tauri_plugin_opener::open_url(u, None::<&str>).map_err(|e| e.to_string())
 }
 
 #[tauri::command]

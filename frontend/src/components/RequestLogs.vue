@@ -460,7 +460,7 @@ onMounted(() => {
   const endTime = new Date()
   const startTime = new Date(endTime.getTime() - 60 * 60 * 1000)
   dateRange.value = [startTime.getTime(), endTime.getTime()]
-
+  
   // 加载监听地址列表（用于下拉框）
   GetListenAddrs()
     .then((addrs: any) => {

@@ -473,8 +473,8 @@ const buildAlignedView = () => {
     topUpErr: all.topUpErr || [],
   }
 
-  const result = {
-    x,
+  const result = { 
+    x, 
     series: view,
     window: selectedWindow.value,
     listen: selectedListen.value
@@ -570,7 +570,7 @@ const loadHistoricalData = async () => {
   loadingHistorical.value = true
   try {
     const listenAddr = selectedListen.value === '全局' ? '' : selectedListen.value
-
+    
     // @ts-ignore
     const response = await QueryHistoricalMetrics({
       start_time: startSec,
@@ -594,7 +594,7 @@ const loadHistoricalData = async () => {
         upstreamDist: (response.series.upstreamDist || []).map((kv: any) => ({ key: kv.key || kv.Key || '', value: kv.value || kv.Value || 0 })),
         topRouteErr: (response.series.topRouteErr || []).map((kv: any) => ({ key: kv.key || kv.Key || '', value: kv.value || kv.Value || 0 })),
         topUpErr: (response.series.topUpErr || []).map((kv: any) => ({ key: kv.key || kv.Key || '', value: kv.value || kv.Value || 0 })),
-        latencyDist: (response.series.latencyDist || []).map((kv: any) => ({ key: kv.key || kv.Key || '', value: kv.value || kv.Value || 0 })),
+        latencyDist: (response.series.latencyDist || []).map((kv: any) => ({ key: kv.key || kv.Key || '', value: kv.value || kv.Value || 0 })), 
       }
       historicalData.value = series
       ElMessage.success(`历史数据加载成功，共 ${series.timestamps.length} 个数据点`)
@@ -634,14 +634,14 @@ const commonAxis = {
 // 获取对齐后的视图数据（历史数据优先，如果有历史数据则不显示实时数据）
 const alignedView = computed(() => {
   if (!props.isActive) return null
-
+  
   // 如果有历史数据，只显示历史数据
   if (historicalData.value) {
     const histSeries = historicalData.value
     if (histSeries.timestamps.length === 0) {
       return null
     }
-
+    
     const step = histSeries.timestamps.length > maxPoints ? Math.ceil(histSeries.timestamps.length / maxPoints) : 1
     const idx: number[] = []
     for (let i = 0; i < histSeries.timestamps.length; i += step) idx.push(i)
@@ -671,7 +671,7 @@ const alignedView = computed(() => {
       listen: selectedListen.value,
     }
   }
-
+  
   // 没有历史数据时，显示实时数据
   return buildAlignedView()
 })
@@ -693,15 +693,15 @@ const qpsOption = computed<EChartsOption>(() => {
     xAxis: { type: 'category', data: v.x, boundaryGap: false, ...commonAxis },
     yAxis: { type: 'value', ...commonAxis },
     series: [
-      {
-        name: 'QPS',
-        type: 'line',
+      { 
+        name: 'QPS', 
+        type: 'line', 
         smooth: false,
-        showSymbol: false,
+        showSymbol: false, 
         large: true,
         largeThreshold: 200,
-        lineStyle: { width: 2, color: '#3b82f6' },
-        areaStyle: { opacity: 0.18, color: '#93c5fd' },
+        lineStyle: { width: 2, color: '#3b82f6' }, 
+        areaStyle: { opacity: 0.18, color: '#93c5fd' }, 
         data: v.series.counts || [],
         sampling: 'lttb',
       },
@@ -869,7 +869,7 @@ const statusPieOption = computed<EChartsOption>(() => {
   const total5xx = sum(raw.s5xx || [])
   const total0 = sum(raw.s0 || [])
   const total = total2xx + total3xx + total4xx + total5xx + total0
-
+  
   if (total === 0) {
     return {
       ...baseOption,
@@ -886,14 +886,14 @@ const statusPieOption = computed<EChartsOption>(() => {
       series: [{ type: 'pie', data: [] }],
     }
   }
-
+  
   const data: Array<{ name: string; value: number; itemStyle: { color: string } }> = []
   if (total2xx > 0) data.push({ name: '2xx', value: total2xx, itemStyle: { color: '#22c55e' } })
   if (total3xx > 0) data.push({ name: '3xx', value: total3xx, itemStyle: { color: '#0ea5e9' } })
   if (total4xx > 0) data.push({ name: '4xx', value: total4xx, itemStyle: { color: '#f59e0b' } })
   if (total5xx > 0) data.push({ name: '5xx', value: total5xx, itemStyle: { color: '#ef4444' } })
   if (total0 > 0) data.push({ name: '错误', value: total0, itemStyle: { color: '#6b7280' } })
-
+  
   return {
     ...baseOption,
     tooltip: {
@@ -959,7 +959,7 @@ const throughputOption = computed<EChartsOption>(() => {
     cumulative += Number.isFinite(c) ? c : 0
     return cumulative
   })
-
+  
   return {
     ...baseOption,
     tooltip: { trigger: 'axis', axisPointer: { type: 'line' } },
@@ -1072,13 +1072,13 @@ const convertMetricsSeriesMap = (map: Record<string, any> | undefined): Record<s
 
 const startPolling = () => {
   if (pollingTimer) return
-
+  
   const poll = async () => {
     if (!props.isActive) {
       stopPolling()
       return
     }
-
+    
     try {
       const payload = await GetMetrics()
       const converted: MetricsPayload = {
@@ -1092,10 +1092,10 @@ const startPolling = () => {
     } catch (err) {
       console.error('轮询获取 metrics 失败:', err)
     }
-
+    
     pollingTimer = window.setTimeout(poll, POLLING_INTERVAL)
   }
-
+  
   poll()
 }
 
@@ -1109,14 +1109,14 @@ const stopPolling = () => {
 const startHeartbeat = () => {
   const heartbeatInterval = setInterval(() => {
     if (!props.isActive) return
-
+    
     const now = Date.now()
 
     // 已经收过事件，但长时间收不到：启用轮询兜底
     if (subscribed && eventEverReceived && now - lastEventTime > EVENT_TIMEOUT) {
       startPolling()
     }
-
+    
     // 从未收到事件：给一点时间等待后端首次推送，再启用轮询兜底
     if (subscribed && !eventEverReceived && now - lastEventTime > EVENT_TIMEOUT) {
       startPolling()
@@ -1124,7 +1124,7 @@ const startHeartbeat = () => {
   }, 2000)
 
   return () => clearInterval(heartbeatInterval)
-}
+  }
 
 const refreshListenAddrs = async () => {
   try {
@@ -1151,27 +1151,27 @@ const startSubscription = () => {
 
   EventsOn('metrics', onMetrics)
     .then((unlisten) => {
-      metricsUnlisten = unlisten
-      subscribed = true
+          metricsUnlisten = unlisten
+          subscribed = true
     })
     .catch((err) => {
       console.error('EventsOn 订阅失败，启用轮询兜底:', err)
-      subscribed = false
+          subscribed = false
       startPolling()
-    })
+        })
 }
 
 const stopSubscription = () => {
   if (metricsUnlisten) {
     try {
       EventsOff(metricsUnlisten)
-    } catch (err) {
+      } catch (err) {
       console.error('EventsOff 失败:', err)
     }
     metricsUnlisten = null
   }
-  subscribed = false
-}
+        subscribed = false
+      }
 
 watch([selectedListen, selectedWindow], () => {
   if (!props.isActive) return
@@ -1188,12 +1188,12 @@ watch(() => props.isActive, (active) => {
     if (!heartbeatCleanup) {
       heartbeatCleanup = startHeartbeat()
     }
-
+    
     // 首次激活：等事件；若超时 heartbeat 会自动启动轮询
   } else {
     stopPolling()
     stopSubscription()
-
+    
     if (heartbeatCleanup) {
       heartbeatCleanup()
       heartbeatCleanup = null
@@ -1208,7 +1208,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   stopPolling()
   stopSubscription()
-
+  
   if (heartbeatCleanup) {
     heartbeatCleanup()
     heartbeatCleanup = null

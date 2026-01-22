@@ -144,7 +144,7 @@ impl RequestContext {
     #[inline]
     fn elapsed_ms(&self) -> f64 {
         self.started_at.elapsed().as_secs_f64() * 1000.0
-    }
+}
 
     #[inline]
     fn elapsed_s(&self) -> f64 {
@@ -401,16 +401,16 @@ async fn start_rule_server(
 
     let client_builder = || {
         let mut builder = reqwest::Client::builder()
-            .redirect(Policy::limited(10))
-            .danger_accept_invalid_certs(true)
-            .pool_max_idle_per_host(cfg.upstream_pool_max_idle)
-            .pool_idle_timeout(Duration::from_secs(cfg.upstream_pool_idle_timeout_sec))
-            .tcp_keepalive(Duration::from_secs(60))
+        .redirect(Policy::limited(10))
+        .danger_accept_invalid_certs(true)
+        .pool_max_idle_per_host(cfg.upstream_pool_max_idle)
+        .pool_idle_timeout(Duration::from_secs(cfg.upstream_pool_idle_timeout_sec))
+        .tcp_keepalive(Duration::from_secs(60))
             .tcp_nodelay(true)
-            .connect_timeout(Duration::from_millis(cfg.upstream_connect_timeout_ms))
-            .timeout(Duration::from_millis(cfg.upstream_read_timeout_ms));
+        .connect_timeout(Duration::from_millis(cfg.upstream_connect_timeout_ms))
+        .timeout(Duration::from_millis(cfg.upstream_read_timeout_ms));
 
-        if !cfg.enable_http2 {
+    if !cfg.enable_http2 {
             builder = builder.http1_only();
         }
 
@@ -543,9 +543,9 @@ fn pick_upstream_smooth(route: &config::Route) -> Option<String> {
         .entry(route_id.to_string())
         .or_insert_with(|| {
             Arc::new(RwLock::new(SmoothLbState {
-                signature: String::new(),
-                total_weight: 0,
-                upstreams: Vec::new(),
+        signature: String::new(),
+        total_weight: 0,
+        upstreams: Vec::new(),
             }))
         })
         .clone();
@@ -708,16 +708,16 @@ fn init_log_task(app: tauri::AppHandle) {
 
     tauri::async_runtime::spawn(async move {
         while let Some(line) = rx.recv().await {
-            {
-                let mut logs = LOGS.write();
-                logs.push(line.clone());
-                if logs.len() > 3000 {
-                    let over = logs.len() - 3000;
-                    logs.drain(0..over);
-                }
-            }
+    {
+        let mut logs = LOGS.write();
+        logs.push(line.clone());
+        if logs.len() > 3000 {
+            let over = logs.len() - 3000;
+            logs.drain(0..over);
+        }
+    }
 
-            let _ = app.emit("log-line", line);
+    let _ = app.emit("log-line", line);
         }
     });
 }
@@ -1111,7 +1111,7 @@ async fn proxy_handler(
             format_access_log(
                 node,
                 &ctx,
-                StatusCode::from_u16(status.as_u16()).unwrap_or(StatusCode::BAD_GATEWAY),
+            StatusCode::from_u16(status.as_u16()).unwrap_or(StatusCode::BAD_GATEWAY),
             )
         });
 
