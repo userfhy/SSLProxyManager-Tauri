@@ -65,3 +65,21 @@ pub fn is_allowed(remote: &SocketAddr, headers: &HeaderMap, cfg: &config::Config
 
     cfg.allow_all_lan && is_lan_ip(&ip)
 }
+
+pub fn is_allowed_fast(remote: &SocketAddr, headers: &HeaderMap, allow_all_lan: bool, whitelist: &[config::WhitelistEntry]) -> bool {
+    let ip_str = client_ip_from_headers(remote, headers);
+    if metrics::is_ip_blacklisted(&ip_str) {
+        return false;
+    }
+
+    let ip = parse_ip(&ip_str).unwrap_or(remote.ip());
+
+    if whitelist
+        .iter()
+        .any(|e| parse_ip(&e.ip).as_ref() == Some(&ip))
+    {
+        return true;
+    }
+
+    allow_all_lan && is_lan_ip(&ip)
+}

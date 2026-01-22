@@ -38,20 +38,6 @@ static SKIP_HEADERS: once_cell::sync::Lazy<HashSet<HeaderName>> = once_cell::syn
     set
 });
 
-// 预计算 hop-by-hop headers
-static HOP_HEADERS: once_cell::sync::Lazy<HashSet<&'static str>> = once_cell::sync::Lazy::new(|| {
-    let mut set = HashSet::new();
-    set.insert("connection");
-    set.insert("keep-alive");
-    set.insert("proxy-authenticate");
-    set.insert("proxy-authorization");
-    set.insert("te");
-    set.insert("trailer");
-    set.insert("transfer-encoding");
-    set.insert("upgrade");
-    set
-});
-
 use tauri::Emitter;
 use tower::util::ServiceExt;
 use tower_http::services::ServeDir;
@@ -110,6 +96,9 @@ struct AppState {
     max_body_size: usize,
     max_response_body_size: usize,
     http_access_control_enabled: bool,
+    // 访问控制所需配置快照：避免每请求 get_config() clone 整个 Config
+    allow_all_lan: bool,
+    whitelist: Arc<[config::WhitelistEntry]>,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -122,7 +111,11 @@ pub struct RuleStartErrorPayload {
 struct RequestContext {
     client_ip: String,
     started_at: std::time::Instant,
-    headers_snapshot: HeaderMap,
+    client_ip_header: String,
+    real_ip_header: String,
+    host_header: String,
+    referer_header: String,
+    user_agent_header: String,
     method: Method,
     uri: Uri,
     path: String,
@@ -131,10 +124,32 @@ struct RequestContext {
 impl RequestContext {
     fn new(remote: SocketAddr, headers: &HeaderMap, method: Method, uri: Uri) -> Self {
         let path = uri.path().to_string();
+
+        // 只提取日志/指标需要的少数字段，避免 HeaderMap 全量 clone
+        // 小优化：单独封装一次 get + to_str + to_string，减少重复闭包/链式调用开销
+        #[inline]
+        fn header_to_string(headers: &HeaderMap, key: &'static str) -> String {
+            headers
+                .get(key)
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("-")
+                .to_string()
+        }
+
+        let xff = header_to_string(headers, "x-forwarded-for");
+        let xri = header_to_string(headers, "x-real-ip");
+        let host = header_to_string(headers, "host");
+        let referer = header_to_string(headers, "referer");
+        let ua = header_to_string(headers, "user-agent");
+
         Self {
             client_ip: access_control::client_ip_from_headers(&remote, headers),
             started_at: std::time::Instant::now(),
-            headers_snapshot: headers.clone(),
+            client_ip_header: xff,
+            real_ip_header: xri,
+            host_header: host,
+            referer_header: referer,
+            user_agent_header: ua,
             method,
             uri,
             path,
@@ -144,7 +159,7 @@ impl RequestContext {
     #[inline]
     fn elapsed_ms(&self) -> f64 {
         self.started_at.elapsed().as_secs_f64() * 1000.0
-}
+    }
 
     #[inline]
     fn elapsed_s(&self) -> f64 {
@@ -201,7 +216,7 @@ pub fn start_server(app: tauri::AppHandle) -> Result<()> {
         let app_handle = app.clone();
         let listen_addr = rule.listen_addr.clone();
         let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
-        
+
         let handle = tauri::async_runtime::spawn(async move {
             if let Err(e) = precheck_rule(&rule).await {
                 error!("启动监听器失败({listen_addr}): {e}");
@@ -229,7 +244,7 @@ pub fn start_server(app: tauri::AppHandle) -> Result<()> {
                     *IS_RUNNING.write() = true;
                     *STARTING.write() = false;
                     let _ = app_handle.emit("status", "running");
-                    
+
                     let final_cfg = config::get_config();
                     for r in &final_cfg.rules {
                         let routes_summary = r
@@ -401,16 +416,16 @@ async fn start_rule_server(
 
     let client_builder = || {
         let mut builder = reqwest::Client::builder()
-        .redirect(Policy::limited(10))
-        .danger_accept_invalid_certs(true)
-        .pool_max_idle_per_host(cfg.upstream_pool_max_idle)
-        .pool_idle_timeout(Duration::from_secs(cfg.upstream_pool_idle_timeout_sec))
-        .tcp_keepalive(Duration::from_secs(60))
+            .redirect(Policy::limited(10))
+            .danger_accept_invalid_certs(true)
+            .pool_max_idle_per_host(cfg.upstream_pool_max_idle)
+            .pool_idle_timeout(Duration::from_secs(cfg.upstream_pool_idle_timeout_sec))
+            .tcp_keepalive(Duration::from_secs(60))
             .tcp_nodelay(true)
-        .connect_timeout(Duration::from_millis(cfg.upstream_connect_timeout_ms))
-        .timeout(Duration::from_millis(cfg.upstream_read_timeout_ms));
+            .connect_timeout(Duration::from_millis(cfg.upstream_connect_timeout_ms))
+            .timeout(Duration::from_millis(cfg.upstream_read_timeout_ms));
 
-    if !cfg.enable_http2 {
+        if !cfg.enable_http2 {
             builder = builder.http1_only();
         }
 
@@ -420,13 +435,9 @@ async fn start_rule_server(
     let follow_builder = client_builder();
     let nofollow_builder = client_builder().redirect(Policy::none());
 
-    let client_follow = follow_builder
-        .build()
-        .context("创建上游 HTTP client 失败")?;
+    let client_follow = follow_builder.build().context("创建上游 HTTP client 失败")?;
 
-    let client_nofollow = nofollow_builder
-        .build()
-        .context("创建上游 HTTP client 失败")?;
+    let client_nofollow = nofollow_builder.build().context("创建上游 HTTP client 失败")?;
 
     // 缓存常用配置到 AppState
     let state = AppState {
@@ -439,6 +450,8 @@ async fn start_rule_server(
         max_body_size: cfg.max_body_size,
         max_response_body_size: cfg.max_response_body_size,
         http_access_control_enabled: cfg.http_access_control_enabled,
+        allow_all_lan: cfg.allow_all_lan,
+        whitelist: Arc::from(cfg.whitelist),
     };
 
     let router = Router::new().route("/healthz", any(healthz));
@@ -543,9 +556,9 @@ fn pick_upstream_smooth(route: &config::Route) -> Option<String> {
         .entry(route_id.to_string())
         .or_insert_with(|| {
             Arc::new(RwLock::new(SmoothLbState {
-        signature: String::new(),
-        total_weight: 0,
-        upstreams: Vec::new(),
+                signature: String::new(),
+                total_weight: 0,
+                upstreams: Vec::new(),
             }))
         })
         .clone();
@@ -611,8 +624,7 @@ fn is_basic_auth_ok(
         return false;
     };
 
-    let Ok(decoded) = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, b64)
-    else {
+    let Ok(decoded) = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, b64) else {
         return false;
     };
     let Ok(s) = String::from_utf8(decoded) else {
@@ -643,26 +655,27 @@ fn request_line(method: &Method, uri: &Uri) -> String {
     format!("{} {} HTTP/1.1", method.as_str(), uri)
 }
 
-fn format_access_log(
-    node: &str,
-    ctx: &RequestContext,
-    status: StatusCode,
-) -> String {
-    let ip = header_str(&ctx.headers_snapshot, "x-forwarded-for");
-    let ip = if ip != "-" {
-        ip.split(',').next().unwrap_or("-").trim().to_string()
+fn format_access_log(node: &str, ctx: &RequestContext, status: StatusCode) -> String {
+    // 优先使用解析后的 client_ip（会从 XFF/X-Real-IP/remote 推导）
+    // 兜底再回退到原始 header 字段，避免日志里出现空/"-"。
+    let ip = if !ctx.client_ip.is_empty() {
+        ctx.client_ip.clone()
+    } else if ctx.client_ip_header != "-" {
+        ctx.client_ip_header
+            .split(',')
+            .next()
+            .unwrap_or("-")
+            .trim()
+            .to_string()
+    } else if ctx.real_ip_header != "-" {
+        ctx.real_ip_header.clone()
     } else {
-        let real = header_str(&ctx.headers_snapshot, "x-real-ip");
-        if real != "-" {
-            real
-        } else {
-            "-".to_string()
-        }
+        "-".to_string()
     };
     let time_local = time_local_string();
     let req_line = request_line(&ctx.method, &ctx.uri);
-    let referer = header_str(&ctx.headers_snapshot, "referer");
-    let ua = header_str(&ctx.headers_snapshot, "user-agent");
+    let referer = ctx.referer_header.clone();
+    let ua = ctx.user_agent_header.clone();
 
     format!(
         "[NODE {}] [-] {} - - [{}] \"{}\" {} - \"{}\" \"{}\" {:.3}s",
@@ -708,16 +721,16 @@ fn init_log_task(app: tauri::AppHandle) {
 
     tauri::async_runtime::spawn(async move {
         while let Some(line) = rx.recv().await {
-    {
-        let mut logs = LOGS.write();
-        logs.push(line.clone());
-        if logs.len() > 3000 {
-            let over = logs.len() - 3000;
-            logs.drain(0..over);
-        }
-    }
+            {
+                let mut logs = LOGS.write();
+                logs.push(line.clone());
+                if logs.len() > 3000 {
+                    let over = logs.len() - 3000;
+                    logs.drain(0..over);
+                }
+            }
 
-    let _ = app.emit("log-line", line);
+            let _ = app.emit("log-line", line);
         }
     });
 }
@@ -727,12 +740,7 @@ async fn proxy_handler(
     State(state): State<AppState>,
     req: Request<Body>,
 ) -> Response {
-    let ctx = RequestContext::new(
-        remote,
-        req.headers(),
-        req.method().clone(),
-        req.uri().clone(),
-    );
+    let ctx = RequestContext::new(remote, req.headers(), req.method().clone(), req.uri().clone());
 
     let node = &*state.listen_addr;
     let route = match_route(&state.rule.routes, &ctx.path);
@@ -750,19 +758,23 @@ async fn proxy_handler(
                 remote_ip: remote.ip().to_string(),
                 method: ctx.method.as_str().to_string(),
                 request_path: ctx.path.clone(),
-                request_host: header_str(&ctx.headers_snapshot, "host"),
+                request_host: ctx.host_header.clone(),
                 status_code: status.as_u16() as i32,
                 upstream: "".to_string(),
                 latency_ms: ctx.elapsed_ms(),
-                user_agent: header_str(&ctx.headers_snapshot, "user-agent"),
-                referer: header_str(&ctx.headers_snapshot, "referer"),
+                user_agent: ctx.user_agent_header.clone(),
+                referer: ctx.referer_header.clone(),
             });
 
             return (status, "IP Forbidden").into_response();
         }
 
-        let cfg = config::get_config();
-        if !access_control::is_allowed(&remote, req.headers(), &cfg) {
+        if !access_control::is_allowed_fast(
+            &remote,
+            req.headers(),
+            state.allow_all_lan,
+            &state.whitelist,
+        ) {
             let status = StatusCode::FORBIDDEN;
             push_log_lazy(&state.app, || format_access_log(node, &ctx, status));
 
@@ -773,12 +785,12 @@ async fn proxy_handler(
                 remote_ip: remote.ip().to_string(),
                 method: ctx.method.as_str().to_string(),
                 request_path: ctx.path.clone(),
-                request_host: header_str(&ctx.headers_snapshot, "host"),
+                request_host: ctx.host_header.clone(),
                 status_code: status.as_u16() as i32,
                 upstream: "".to_string(),
                 latency_ms: ctx.elapsed_ms(),
-                user_agent: header_str(&ctx.headers_snapshot, "user-agent"),
-                referer: header_str(&ctx.headers_snapshot, "referer"),
+                user_agent: ctx.user_agent_header.clone(),
+                referer: ctx.referer_header.clone(),
             });
 
             return (status, "Forbidden").into_response();
@@ -797,12 +809,12 @@ async fn proxy_handler(
             remote_ip: remote.ip().to_string(),
             method: ctx.method.as_str().to_string(),
             request_path: ctx.path.clone(),
-            request_host: header_str(&ctx.headers_snapshot, "host"),
+            request_host: ctx.host_header.clone(),
             status_code: status.as_u16() as i32,
             upstream: "".to_string(),
             latency_ms: ctx.elapsed_ms(),
-            user_agent: header_str(&ctx.headers_snapshot, "user-agent"),
-            referer: header_str(&ctx.headers_snapshot, "referer"),
+            user_agent: ctx.user_agent_header.clone(),
+            referer: ctx.referer_header.clone(),
         });
 
         let mut resp = Response::new(Body::from("Unauthorized"));
@@ -825,12 +837,12 @@ async fn proxy_handler(
             remote_ip: remote.ip().to_string(),
             method: ctx.method.as_str().to_string(),
             request_path: ctx.path.clone(),
-            request_host: header_str(&ctx.headers_snapshot, "host"),
+            request_host: ctx.host_header.clone(),
             status_code: status.as_u16() as i32,
             upstream: "".to_string(),
             latency_ms: ctx.elapsed_ms(),
-            user_agent: header_str(&ctx.headers_snapshot, "user-agent"),
-            referer: header_str(&ctx.headers_snapshot, "referer"),
+            user_agent: ctx.user_agent_header.clone(),
+            referer: ctx.referer_header.clone(),
         });
 
         return (status, "No route").into_response();
@@ -855,12 +867,12 @@ async fn proxy_handler(
                         remote_ip: remote.ip().to_string(),
                         method: ctx.method.as_str().to_string(),
                         request_path: ctx.path.clone(),
-                        request_host: header_str(&ctx.headers_snapshot, "host"),
+                        request_host: ctx.host_header.clone(),
                         status_code: status.as_u16() as i32,
                         upstream: "".to_string(),
                         latency_ms: ctx.elapsed_ms(),
-                        user_agent: header_str(&ctx.headers_snapshot, "user-agent"),
-                        referer: header_str(&ctx.headers_snapshot, "referer"),
+                        user_agent: ctx.user_agent_header.clone(),
+                        referer: ctx.referer_header.clone(),
                     });
 
                     return response;
@@ -890,12 +902,12 @@ async fn proxy_handler(
                             remote_ip: remote.ip().to_string(),
                             method: ctx.method.as_str().to_string(),
                             request_path: ctx.path.clone(),
-                            request_host: header_str(&ctx.headers_snapshot, "host"),
+                            request_host: ctx.host_header.clone(),
                             status_code: status.as_u16() as i32,
                             upstream: "".to_string(),
                             latency_ms: ctx.elapsed_ms(),
-                            user_agent: header_str(&ctx.headers_snapshot, "user-agent"),
-                            referer: header_str(&ctx.headers_snapshot, "referer"),
+                            user_agent: ctx.user_agent_header.clone(),
+                            referer: ctx.referer_header.clone(),
                         });
 
                         return resp;
@@ -917,12 +929,12 @@ async fn proxy_handler(
             remote_ip: remote.ip().to_string(),
             method: ctx.method.as_str().to_string(),
             request_path: ctx.path.clone(),
-            request_host: header_str(&ctx.headers_snapshot, "host"),
+            request_host: ctx.host_header.clone(),
             status_code: status.as_u16() as i32,
             upstream: "".to_string(),
             latency_ms: ctx.elapsed_ms(),
-            user_agent: header_str(&ctx.headers_snapshot, "user-agent"),
-            referer: header_str(&ctx.headers_snapshot, "referer"),
+            user_agent: ctx.user_agent_header.clone(),
+            referer: ctx.referer_header.clone(),
         });
 
         return (status, "Static file not found").into_response();
@@ -948,12 +960,12 @@ async fn proxy_handler(
                     remote_ip: remote.ip().to_string(),
                     method: ctx.method.as_str().to_string(),
                     request_path: ctx.path.clone(),
-                    request_host: header_str(&ctx.headers_snapshot, "host"),
+                    request_host: ctx.host_header.clone(),
                     status_code: status.as_u16() as i32,
                     upstream: upstream_url.clone(),
                     latency_ms: ctx.elapsed_ms(),
-                    user_agent: header_str(&ctx.headers_snapshot, "user-agent"),
-                    referer: header_str(&ctx.headers_snapshot, "referer"),
+                    user_agent: ctx.user_agent_header.clone(),
+                    referer: ctx.referer_header.clone(),
                 });
 
                 return (status, format!("bad upstream url: {e}")).into_response();
@@ -1048,7 +1060,8 @@ async fn proxy_handler(
                     continue;
                 }
 
-                let expanded = expand_proxy_header_value(v, &remote, &inbound_headers, state.rule.ssl_enable);
+                let expanded =
+                    expand_proxy_header_value(v, &remote, &inbound_headers, state.rule.ssl_enable);
 
                 let name = match HeaderName::from_bytes(key.as_bytes()) {
                     Ok(n) => n,
@@ -1111,7 +1124,7 @@ async fn proxy_handler(
             format_access_log(
                 node,
                 &ctx,
-            StatusCode::from_u16(status.as_u16()).unwrap_or(StatusCode::BAD_GATEWAY),
+                StatusCode::from_u16(status.as_u16()).unwrap_or(StatusCode::BAD_GATEWAY),
             )
         });
 
@@ -1122,17 +1135,16 @@ async fn proxy_handler(
             remote_ip: remote.ip().to_string(),
             method: ctx.method.as_str().to_string(),
             request_path: ctx.path.clone(),
-            request_host: header_str(&ctx.headers_snapshot, "host"),
+            request_host: ctx.host_header.clone(),
             status_code: status.as_u16() as i32,
             upstream: target.clone(),
             latency_ms: ctx.elapsed_ms(),
-            user_agent: header_str(&ctx.headers_snapshot, "user-agent"),
-            referer: header_str(&ctx.headers_snapshot, "referer"),
+            user_agent: ctx.user_agent_header.clone(),
+            referer: ctx.referer_header.clone(),
         });
 
         let mut out = Response::new(Body::empty());
-        *out.status_mut() =
-            StatusCode::from_u16(status.as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
+        *out.status_mut() = StatusCode::from_u16(status.as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
 
         for (k, v) in resp.headers().iter() {
             if is_hop_header_fast(k.as_str()) {
@@ -1201,7 +1213,9 @@ async fn proxy_handler(
                 target,
                 status.as_u16(),
                 outbound_headers_line,
-                req_body_size.map(|n| n.to_string()).unwrap_or_else(|| "stream".to_string())
+                req_body_size
+                    .map(|n| n.to_string())
+                    .unwrap_or_else(|| "stream".to_string())
             ));
         }
 
@@ -1276,34 +1290,74 @@ fn is_asset_path(path: &str) -> bool {
 // 使用预计算的 HashSet，性能更好
 #[inline]
 fn is_hop_header_fast(name: &str) -> bool {
-    HOP_HEADERS.contains(&name.to_ascii_lowercase().as_str())
+    // 0 分配：HTTP header 名大小写不敏感，直接用 eq_ignore_ascii_case
+    // 覆盖常见 hop-by-hop headers
+    name.eq_ignore_ascii_case("connection")
+        || name.eq_ignore_ascii_case("keep-alive")
+        || name.eq_ignore_ascii_case("proxy-authenticate")
+        || name.eq_ignore_ascii_case("proxy-authorization")
+        || name.eq_ignore_ascii_case("te")
+        || name.eq_ignore_ascii_case("trailer")
+        || name.eq_ignore_ascii_case("transfer-encoding")
+        || name.eq_ignore_ascii_case("upgrade")
 }
 
-fn expand_proxy_header_value(
-    raw: &str,
-    remote: &SocketAddr,
-    inbound_headers: &HeaderMap,
-    is_tls: bool,
-) -> String {
-    let mut out = raw.to_string();
+fn expand_proxy_header_value(raw: &str, remote: &SocketAddr, inbound_headers: &HeaderMap, is_tls: bool) -> String {
+    // 仅在真的包含变量时才分配
+    if !(raw.contains('$')) {
+        return raw.to_string();
+    }
 
-    out = out.replace("$remote_addr", &remote.ip().to_string());
-    out = out.replace("$scheme", if is_tls { "https" } else { "http" });
+    let remote_ip = remote.ip().to_string();
+    let scheme = if is_tls { "https" } else { "http" };
 
-    if out.contains("$proxy_add_x_forwarded_for") {
-        let remote_ip = remote.ip().to_string();
+    // 仅在需要时计算 $proxy_add_x_forwarded_for
+    let proxy_add_xff = if raw.contains("$proxy_add_x_forwarded_for") {
         let prior = inbound_headers
             .get("x-forwarded-for")
             .and_then(|v| v.to_str().ok())
             .map(|s| s.trim())
             .filter(|s| !s.is_empty());
 
-        let combined = match prior {
+        Some(match prior {
             Some(p) => format!("{}, {}", p, remote_ip),
-            None => remote_ip,
-        };
+            None => remote_ip.clone(),
+        })
+    } else {
+        None
+    };
 
-        out = out.replace("$proxy_add_x_forwarded_for", &combined);
+    // 预估容量，尽量一次分配
+    let mut out = String::with_capacity(raw.len() + 32);
+    let bytes = raw.as_bytes();
+    let mut i = 0usize;
+    while i < bytes.len() {
+        if bytes[i] == b'$' {
+            let rest = &raw[i..];
+            if rest.starts_with("$remote_addr") {
+                out.push_str(&remote_ip);
+                i += "$remote_addr".len();
+                continue;
+            }
+            if rest.starts_with("$scheme") {
+                out.push_str(scheme);
+                i += "$scheme".len();
+                continue;
+            }
+            if rest.starts_with("$proxy_add_x_forwarded_for") {
+                if let Some(v) = proxy_add_xff.as_ref() {
+                    out.push_str(v);
+                }
+                i += "$proxy_add_x_forwarded_for".len();
+                continue;
+            }
+        }
+
+        // 退化为逐字节拷贝（utf8 安全：这里拷的是原始 bytes，对应原始字符串片段）
+        // 为避免 utf8 边界问题，用 char 级推进
+        let ch = raw[i..].chars().next().unwrap();
+        out.push(ch);
+        i += ch.len_utf8();
     }
 
     out
