@@ -21,14 +21,17 @@
         <template #header>
           <div class="rule-header">
             <h4>规则 {{ ruleIndex + 1 }}</h4>
-            <el-button 
-              @click="removeRule(ruleIndex)" 
-              type="danger"
-              size="small"
-              :disabled="rules.length <= 1"
-            >
-              删除规则
-            </el-button>
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <el-switch v-model="rule.Enabled" @change="() => onToggleListenRuleEnabled(rule)" />
+              <el-button 
+                @click="removeRule(ruleIndex)" 
+                type="danger"
+                size="small"
+                :disabled="rules.length <= 1"
+              >
+                删除规则
+              </el-button>
+            </div>
           </div>
         </template>
 
@@ -48,14 +51,17 @@
                 <template #header>
                   <div class="route-header">
                     <div class="route-title">路由 {{ routeIndex + 1 }}</div>
-                    <el-button
-                      @click="removeRoute(ruleIndex, routeIndex)"
-                      type="danger"
-                      size="small"
-                      :disabled="rule.Routes.length <= 1"
-                    >
-                      删除路由
-                    </el-button>
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                      <el-switch v-model="rt.Enabled" @change="() => onToggleRouteEnabled(rule, rt)" />
+                      <el-button
+                        @click="removeRoute(ruleIndex, routeIndex)"
+                        type="danger"
+                        size="small"
+                        :disabled="rule.Routes.length <= 1"
+                      >
+                        删除路由
+                      </el-button>
+                    </div>
                   </div>
                 </template>
 
@@ -235,7 +241,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { GetConfig, OpenCertFileDialog, OpenKeyFileDialog, OpenDirectoryDialog, ExportCurrentConfigToml } from '../api'
+import { GetConfig, OpenCertFileDialog, OpenKeyFileDialog, OpenDirectoryDialog, ExportCurrentConfigToml, SetListenRuleEnabled, SetRouteEnabled } from '../api'
 import { Plus, MagicStick, Folder } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 
@@ -251,6 +257,7 @@ interface HeaderKV {
 
 interface Route {
   ID?: string
+  Enabled?: boolean
   Host: string
   Path: string
 
@@ -267,6 +274,7 @@ interface Route {
 
 interface ListenRule {
   ID?: string
+  Enabled?: boolean
   ListenAddr: string
   SSLEnable: boolean
   CertFile: string
@@ -305,6 +313,52 @@ const rules = ref<ListenRule[]>([
   },
 ])
 
+const onToggleListenRuleEnabled = async (rule: ListenRule) => {
+  try {
+    if (!rule.ID) {
+      ElMessage.warning('请先保存配置以生成规则 ID')
+      rule.Enabled = true
+      return
+    }
+    const next = !!rule.Enabled
+    const cfg = (await SetListenRuleEnabled(rule.ID, next)) as any
+    // 用后端返回的最新配置回填，保证持久化状态与 UI 一致
+    if (cfg && Array.isArray(cfg.rules)) {
+      const found = cfg.rules.find((r: any) => (r.id || '') === rule.ID)
+      if (found && found.enabled !== undefined) {
+        rule.Enabled = !!found.enabled
+      }
+    }
+    ElMessage.success(next ? '监听规则已启用' : '监听规则已禁用')
+  } catch (error: any) {
+    ElMessage.error(`切换监听规则失败: ${error?.message || error}`)
+    rule.Enabled = !rule.Enabled
+  }
+}
+
+const onToggleRouteEnabled = async (rule: ListenRule, rt: Route) => {
+  try {
+    if (!rule.ID || !rt.ID) {
+      ElMessage.warning('请先保存配置以生成规则/路由 ID')
+      rt.Enabled = true
+      return
+    }
+    const next = !!rt.Enabled
+    const cfg = (await SetRouteEnabled(rule.ID, rt.ID, next)) as any
+    if (cfg && Array.isArray(cfg.rules)) {
+      const foundRule = cfg.rules.find((r: any) => (r.id || '') === rule.ID)
+      const foundRt = (foundRule?.routes || []).find((r: any) => (r.id || '') === rt.ID)
+      if (foundRt && foundRt.enabled !== undefined) {
+        rt.Enabled = !!foundRt.enabled
+      }
+    }
+    ElMessage.success(next ? '路由已启用' : '路由已禁用')
+  } catch (error: any) {
+    ElMessage.error(`切换路由失败: ${error?.message || error}`)
+    rt.Enabled = !rt.Enabled
+  }
+}
+
 onMounted(async () => {
   const configData = (await GetConfig()) as any;
 
@@ -312,6 +366,7 @@ onMounted(async () => {
     rules.value = configData.rules.map((rule: any) => {
       const routes = (rule.routes || []).map((rt: any) => ({
         ID: rt.id || '',
+        Enabled: rt.enabled !== undefined ? !!rt.enabled : true,
         Host: rt.host || '',
         Path: rt.path || '/',
         ProxyPassPath: rt.proxy_pass_path || '',
@@ -331,6 +386,7 @@ onMounted(async () => {
 
       return {
         ID: rule.id || '',
+        Enabled: rule.enabled !== undefined ? !!rule.enabled : true,
         ListenAddr: rule.listen_addr || '0.0.0.0:8888',
         SSLEnable: !!rule.ssl_enable,
         CertFile: rule.cert_file || '',
@@ -545,6 +601,7 @@ const getConfig = () => {
 
   const cleanedRules: ListenRule[] = currentRules.map((rule) => ({
     ID: (rule.ID || '').trim(),
+    Enabled: rule.Enabled !== undefined ? !!rule.Enabled : true,
     ListenAddr: rule.ListenAddr.trim(),
     SSLEnable: !!rule.SSLEnable,
     CertFile: rule.CertFile || '',
@@ -563,6 +620,7 @@ const getConfig = () => {
       }
       return {
         ID: (rt.ID || '').trim(),
+        Enabled: rt.Enabled !== undefined ? !!rt.Enabled : true,
         Host: (rt.Host || '').trim(),
         Path: normalizePath(rt.Path),
         ProxyPassPath: rt.ProxyPassPath ? normalizePath(rt.ProxyPassPath) : '',
@@ -610,6 +668,7 @@ const getConfig = () => {
   // 关键：输出为 Rust 后端需要的 snake_case 结构
   const mappedRules = cleanedRules.map((r: any) => ({
     id: r.ID || undefined,
+    enabled: r.Enabled !== undefined ? !!r.Enabled : true,
     listen_addr: r.ListenAddr,
     ssl_enable: !!r.SSLEnable,
     cert_file: r.CertFile,
@@ -620,6 +679,7 @@ const getConfig = () => {
     basic_auth_forward_header: !!r.BasicAuthForwardHeader,
     routes: (r.Routes || []).map((rt: any) => ({
       id: rt.ID || undefined,
+      enabled: rt.Enabled !== undefined ? !!rt.Enabled : true,
       host: rt.Host || undefined,
       path: rt.Path,
       proxy_pass_path: rt.ProxyPassPath || undefined,

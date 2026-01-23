@@ -84,6 +84,7 @@ pub struct QueryRequestLogsRequest {
     pub status_code: Option<i32>,
     pub page: i32,
     pub page_size: i32,
+    pub matched_route_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -108,6 +109,8 @@ pub struct RequestLog {
     pub latency_ms: f64,
     pub user_agent: String,
     pub referer: String,
+    #[sqlx(default)]
+    pub matched_route_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -141,6 +144,8 @@ pub struct DashboardStatsResponse {
     pub time_series: Vec<DashboardStatsPoint>,
     pub top_paths: Vec<TopListItem>,
     pub top_ips: Vec<TopListItem>,
+    pub top_routes: Vec<TopListItem>,
+    pub top_route_errors: Vec<TopListItem>,
     pub total_requests: i64,
     pub success_rate: f64,
     pub avg_latency_ms: f64,
@@ -160,6 +165,7 @@ pub struct RequestLogInsert {
     pub latency_ms: f64,
     pub user_agent: String,
     pub referer: String,
+    pub matched_route_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -460,19 +466,7 @@ pub async fn init_db(db_path: String) -> Result<()> {
             .await
             .with_context(|| format!("连接数据库失败: {}", path.display()))?;
 
-        // 检查是否需要迁移
-        let needs_recreation = sqlx::query("SELECT remote_ip FROM request_logs LIMIT 1")
-            .fetch_one(&pool)
-            .await
-            .is_err();
-
-        if needs_recreation {
-            sqlx::query("DROP TABLE IF EXISTS request_logs")
-                .execute(&pool)
-                .await
-                .context("删除旧 request_logs 表失败")?;
-        }
-
+        // 轻量迁移：尽量通过 ALTER TABLE 添加缺失列，避免丢历史数据
         sqlx::query(
             r#"
             CREATE TABLE IF NOT EXISTS request_logs (
@@ -488,13 +482,32 @@ pub async fn init_db(db_path: String) -> Result<()> {
               upstream TEXT NOT NULL,
               latency_ms REAL NOT NULL,
               user_agent TEXT NOT NULL,
-              referer TEXT NOT NULL
+              referer TEXT NOT NULL,
+              matched_route_id TEXT NOT NULL DEFAULT ''
             );
             "#,
         )
         .execute(&pool)
         .await
         .context("创建 request_logs 表失败")?;
+
+        // 为旧库补列（SQLite 不支持 IF NOT EXISTS，需要先探测列是否存在）
+        // PRAGMA table_info 返回列：cid,name,type,notnull,dflt_value,pk
+        // 这里我们只取 name 字段（第 2 列）
+        let cols: Vec<(i64, String, String, i64, Option<String>, i64)> =
+            sqlx::query_as("PRAGMA table_info(request_logs)")
+                .fetch_all(&pool)
+                .await
+                .context("读取 request_logs 表结构失败")?;
+        let has_matched_route_id = cols.iter().any(|(_, name, _, _, _, _)| name == "matched_route_id");
+        if !has_matched_route_id {
+            sqlx::query(
+                "ALTER TABLE request_logs ADD COLUMN matched_route_id TEXT NOT NULL DEFAULT ''",
+            )
+            .execute(&pool)
+            .await
+            .context("迁移 request_logs.matched_route_id 失败")?;
+        }
 
         sqlx::query(
             r#"CREATE INDEX IF NOT EXISTS idx_request_logs_ts ON request_logs(timestamp);"#,
@@ -770,7 +783,7 @@ async fn flush_request_logs(buf: &mut Vec<RequestLogInsert>) {
     
     for chunk in buf.chunks(CHUNK_SIZE) {
         let mut query_builder = QueryBuilder::new(
-            "INSERT INTO request_logs (timestamp, listen_addr, client_ip, remote_ip, method, request_path, request_host, status_code, upstream, latency_ms, user_agent, referer) "
+            "INSERT INTO request_logs (timestamp, listen_addr, client_ip, remote_ip, method, request_path, request_host, status_code, upstream, latency_ms, user_agent, referer, matched_route_id) "
         );
 
         query_builder.push_values(chunk, |mut b, it| {
@@ -785,7 +798,8 @@ async fn flush_request_logs(buf: &mut Vec<RequestLogInsert>) {
              .push_bind(&it.upstream)
              .push_bind(it.latency_ms)
              .push_bind(&it.user_agent)
-             .push_bind(&it.referer);
+             .push_bind(&it.referer)
+             .push_bind(&it.matched_route_id);
         });
 
         let query = query_builder.build();
@@ -811,6 +825,11 @@ pub async fn query_request_logs(req: QueryRequestLogsRequest) -> Result<QueryReq
     let request_path = req.request_path.as_deref().map(str::trim).filter(|s| !s.is_empty());
     let client_ip = req.client_ip.as_deref().map(str::trim).filter(|s| !s.is_empty());
     let status_code = req.status_code.filter(|c| *c > 0);
+    let matched_route_id = req
+        .matched_route_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
 
     // COUNT
     let mut count_qb = QueryBuilder::new("SELECT COUNT(1) FROM request_logs WHERE timestamp >= ");
@@ -833,13 +852,16 @@ pub async fn query_request_logs(req: QueryRequestLogsRequest) -> Result<QueryReq
     if let Some(v) = status_code {
         count_qb.push(" AND status_code = ").push_bind(v);
     }
+    if let Some(v) = matched_route_id {
+        count_qb.push(" AND matched_route_id = ").push_bind(v);
+    }
 
     let total: i64 = count_qb.build_query_as::<(i64,)>().fetch_one(&*pool).await?.0;
     let total_page = if total == 0 { 0 } else { (total + page_size - 1) / page_size };
 
     // SELECT
     let mut sel_qb = QueryBuilder::new(
-        "SELECT id, timestamp, listen_addr, client_ip, remote_ip, method, request_path, request_host, status_code, upstream, latency_ms, user_agent, referer FROM request_logs WHERE timestamp >= "
+        "SELECT id, timestamp, listen_addr, client_ip, remote_ip, method, request_path, request_host, status_code, upstream, latency_ms, user_agent, referer, matched_route_id FROM request_logs WHERE timestamp >= "
     );
     sel_qb.push_bind(req.start_time);
     sel_qb.push(" AND timestamp <= ");
@@ -859,6 +881,9 @@ pub async fn query_request_logs(req: QueryRequestLogsRequest) -> Result<QueryReq
     }
     if let Some(v) = status_code {
         sel_qb.push(" AND status_code = ").push_bind(v);
+    }
+    if let Some(v) = matched_route_id {
+        sel_qb.push(" AND matched_route_id = ").push_bind(v);
     }
 
     sel_qb.push(" ORDER BY timestamp DESC LIMIT ").push_bind(page_size).push(" OFFSET ").push_bind(offset);
@@ -1176,6 +1201,32 @@ pub async fn get_dashboard_stats(req: DashboardStatsRequest) -> Result<Dashboard
     ip_qb.push(" GROUP BY client_ip ORDER BY count DESC LIMIT 10");
     let top_ips = ip_qb.build_query_as::<TopListItem>().fetch_all(&*pool).await?;
 
+    // Top routes
+    let mut route_qb = QueryBuilder::new(
+        "SELECT matched_route_id AS item, COUNT(1) AS count FROM request_logs WHERE timestamp >= ",
+    );
+    route_qb.push_bind(req.start_time).push(" AND timestamp <= ").push_bind(req.end_time);
+    route_qb.push(" AND trim(matched_route_id) != ''");
+    if let Some(v) = listen_addr {
+        route_qb.push(" AND listen_addr = ").push_bind(v);
+    }
+    route_qb.push(" GROUP BY matched_route_id ORDER BY count DESC LIMIT 10");
+    let top_routes = route_qb.build_query_as::<TopListItem>().fetch_all(&*pool).await?;
+
+    // Top route errors
+    let mut route_err_qb = QueryBuilder::new(
+        "SELECT matched_route_id AS item, COUNT(1) AS count FROM request_logs WHERE timestamp >= ",
+    );
+    route_err_qb.push_bind(req.start_time)
+        .push(" AND timestamp <= ")
+        .push_bind(req.end_time);
+    route_err_qb.push(" AND trim(matched_route_id) != '' AND status_code >= 400");
+    if let Some(v) = listen_addr {
+        route_err_qb.push(" AND listen_addr = ").push_bind(v);
+    }
+    route_err_qb.push(" GROUP BY matched_route_id ORDER BY count DESC LIMIT 10");
+    let top_route_errors = route_err_qb.build_query_as::<TopListItem>().fetch_all(&*pool).await?;
+
     // Overall
     let mut ov_qb = QueryBuilder::new("SELECT COUNT(1) AS total, SUM(CASE WHEN status_code BETWEEN 200 AND 299 THEN 1 ELSE 0 END) AS ok, AVG(latency_ms) AS avg_latency FROM request_logs WHERE timestamp >= ");
     ov_qb.push_bind(req.start_time).push(" AND timestamp <= ").push_bind(req.end_time);
@@ -1189,7 +1240,13 @@ pub async fn get_dashboard_stats(req: DashboardStatsRequest) -> Result<Dashboard
     } else { 0.0 };
 
     Ok(DashboardStatsResponse {
-        time_series, top_paths, top_ips, total_requests, success_rate,
+        time_series,
+        top_paths,
+        top_ips,
+        top_routes,
+        top_route_errors,
+        total_requests,
+        success_rate,
         avg_latency_ms: avg_latency.unwrap_or(0.0),
     })
 }

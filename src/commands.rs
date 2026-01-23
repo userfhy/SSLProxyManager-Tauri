@@ -18,7 +18,7 @@ pub async fn save_config(
     app: tauri::AppHandle,
     mut cfg: config::Config,
 ) -> Result<config::Config, String> {
-    let was_running = proxy::is_running();
+    let was_running = proxy::is_effectively_running();
 
     // 1. 如果正在运行，先停止服务
     if was_running {
@@ -44,6 +44,7 @@ pub async fn save_config(
 
     // 4. 如果之前在运行，则用新配置重启服务
     if was_running {
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
         proxy::start_server(app).map_err(|e| e.to_string())?;
     }
 
@@ -289,6 +290,106 @@ pub async fn save_config_toml_as(app: tauri::AppHandle, content: String) -> Resu
     std::fs::write(&path, content).map_err(|e| format!("写入文件失败: {e}"))?;
 
     Ok(Some(path.to_string_lossy().to_string()))
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct SetRouteEnabledArgs {
+    #[serde(alias = "listenRuleId")]
+    pub listen_rule_id: String,
+    #[serde(alias = "routeId")]
+    pub route_id: String,
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct SetListenRuleEnabledArgs {
+    #[serde(alias = "listenRuleId")]
+    pub listen_rule_id: String,
+    pub enabled: bool,
+}
+
+#[tauri::command]
+pub async fn set_route_enabled(
+    app: tauri::AppHandle,
+    args: SetRouteEnabledArgs,
+) -> Result<config::Config, String> {
+    let was_running = proxy::is_effectively_running();
+
+    if was_running {
+        proxy::stop_server(app.clone()).map_err(|e| e.to_string())?;
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+
+    let mut cfg = config::get_config();
+
+    let mut found = false;
+    for lr in &mut cfg.rules {
+        if lr.id.as_deref().unwrap_or("") == args.listen_rule_id {
+            for rt in &mut lr.routes {
+                if rt.id.as_deref().unwrap_or("") == args.route_id {
+                    rt.enabled = args.enabled;
+                    found = true;
+                    break;
+                }
+            }
+        }
+        if found {
+            break;
+        }
+    }
+
+    if !found {
+        return Err("未找到对应的监听规则或路由".to_string());
+    }
+
+    config::ensure_config_ids_for_save(&mut cfg);
+    config::set_config(cfg.clone());
+    config::save_config().map_err(|e| e.to_string())?;
+
+    if was_running {
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        proxy::start_server(app).map_err(|e| e.to_string())?;
+    }
+
+    Ok(cfg)
+}
+
+#[tauri::command]
+pub async fn set_listen_rule_enabled(
+    app: tauri::AppHandle,
+    args: SetListenRuleEnabledArgs,
+) -> Result<config::Config, String> {
+    let was_running = proxy::is_effectively_running();
+
+    if was_running {
+        proxy::stop_server(app.clone()).map_err(|e| e.to_string())?;
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+
+    let mut cfg = config::get_config();
+
+    let mut found = false;
+    for lr in &mut cfg.rules {
+        if lr.id.as_deref().unwrap_or("") == args.listen_rule_id {
+            lr.enabled = args.enabled;
+            found = true;
+            break;
+        }
+    }
+
+    if !found {
+        return Err("未找到对应的监听规则".to_string());
+    }
+
+    config::ensure_config_ids_for_save(&mut cfg);
+    config::set_config(cfg.clone());
+    config::save_config().map_err(|e| e.to_string())?;
+
+    if was_running {
+        proxy::start_server(app).map_err(|e| e.to_string())?;
+    }
+
+    Ok(cfg)
 }
 
 #[tauri::command]

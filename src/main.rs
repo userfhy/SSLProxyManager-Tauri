@@ -63,6 +63,8 @@ fn main() {
             commands::quit_app,
             commands::get_dashboard_stats,
             commands::set_tray_proxy_state,
+            commands::set_route_enabled,
+            commands::set_listen_rule_enabled,
         ])
         .setup(|app| {
             // 初始化应用

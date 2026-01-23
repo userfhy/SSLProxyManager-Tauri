@@ -10,6 +10,10 @@ fn default_true() -> bool {
     true
 }
 
+fn default_route_enabled() -> bool {
+    true
+}
+
 fn default_max_body_size() -> usize {
     10 * 1024 * 1024
 }
@@ -73,6 +77,10 @@ pub struct Upstream {
 pub struct Route {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
+
+    #[serde(default = "default_route_enabled")]
+    pub enabled: bool,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub host: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -104,6 +112,10 @@ pub struct Route {
 pub struct ListenRule {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
+
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+
     pub listen_addr: String,
     pub ssl_enable: bool,
     pub cert_file: String,

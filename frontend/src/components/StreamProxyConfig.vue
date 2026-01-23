@@ -127,7 +127,7 @@
         </template>
 
         <el-form :model="sv" label-width="200px">
-          <el-form-item label="enabled">
+          <el-form-item label="启用">
             <el-switch v-model="sv.enabled" />
           </el-form-item>
 

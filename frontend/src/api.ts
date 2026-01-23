@@ -117,6 +117,15 @@ export async function ExportCurrentConfigToml() {
   return await invoke('export_current_config_toml');
 }
 
+// 规则/路由启用开关
+export async function SetListenRuleEnabled(listenRuleId: string, enabled: boolean) {
+  return await invoke('set_listen_rule_enabled', { args: { listenRuleId, enabled } });
+}
+
+export async function SetRouteEnabled(listenRuleId: string, routeId: string, enabled: boolean) {
+  return await invoke('set_route_enabled', { args: { listenRuleId, routeId, enabled } });
+}
+
 // 应用控制
 export async function HideToTray() {
   return await invoke('hide_to_tray');

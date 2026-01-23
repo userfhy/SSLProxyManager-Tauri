@@ -195,7 +195,7 @@ pub fn start_server(app: tauri::AppHandle) -> Result<()> {
     *START_FAILED.write() = false;
 
     let cfg = config::get_config();
-    let rules = cfg.rules;
+    let rules: Vec<_> = cfg.rules.into_iter().filter(|r| r.enabled).collect();
     let expected = rules.len();
     *START_EXPECTED.write() = expected;
     *START_STARTED_COUNT.write() = 0;
@@ -517,13 +517,61 @@ async fn healthz() -> impl IntoResponse {
 }
 
 #[inline]
-fn match_route<'a>(routes: &'a [config::Route], path: &str) -> Option<&'a config::Route> {
-    routes
-        .iter()
-        .filter_map(|r| r.path.as_deref().map(|p| (p, r)))
-        .filter(|(p, _)| path.starts_with(p))
-        .max_by_key(|(p, _)| p.len())
-        .map(|(_, r)| r)
+fn normalize_host(host: &str) -> &str {
+    host.split(':').next().unwrap_or(host).trim()
+}
+
+#[inline]
+fn match_route<'a>(
+    routes: &'a [config::Route],
+    request_host: &str,
+    path: &str,
+) -> (Option<&'a config::Route>, String) {
+    let host = normalize_host(request_host);
+
+    let mut best: Option<(&config::Route, bool, usize)> = None; // (route, has_host_constraint, path_len)
+
+    for r in routes {
+        if !r.enabled {
+            continue;
+        }
+
+        let p = match r.path.as_deref() {
+            Some(v) => v,
+            None => continue,
+        };
+        if !path.starts_with(p) {
+            continue;
+        }
+
+        let host_ok = match r.host.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+            None => true,
+            Some(h) => normalize_host(h).eq_ignore_ascii_case(host),
+        };
+        if !host_ok {
+            continue;
+        }
+
+        let cand = (r, r.host.as_ref().is_some(), p.len());
+        best = match best {
+            None => Some(cand),
+            Some((best_r, best_has_host, best_plen)) => {
+                if cand.1 != best_has_host {
+                    if cand.1 { Some(cand) } else { Some((best_r, best_has_host, best_plen)) }
+                } else if cand.2 > best_plen {
+                    Some(cand)
+                } else {
+                    Some((best_r, best_has_host, best_plen))
+                }
+            }
+        };
+    }
+
+    if let Some((r, _, _)) = best {
+        (Some(r), r.id.as_deref().unwrap_or("").to_string())
+    } else {
+        (None, String::new())
+    }
 }
 
 fn upstream_signature(route: &config::Route) -> String {
@@ -735,7 +783,7 @@ async fn proxy_handler(
     let ctx = RequestContext::new(remote, req.headers(), req.method().clone(), req.uri().clone());
 
     let node = &*state.listen_addr;
-    let route = match_route(&state.rule.routes, &ctx.path);
+    let (route, matched_route_id) = match_route(&state.rule.routes, &ctx.host_header, &ctx.path);
 
     // 0. 访问控制
     if state.http_access_control_enabled {
@@ -756,6 +804,7 @@ async fn proxy_handler(
                 latency_ms: ctx.elapsed_ms(),
                 user_agent: ctx.user_agent_header.clone(),
                 referer: ctx.referer_header.clone(),
+                matched_route_id: matched_route_id.clone(),
             });
 
             return (status, "IP Forbidden").into_response();
@@ -783,6 +832,7 @@ async fn proxy_handler(
                 latency_ms: ctx.elapsed_ms(),
                 user_agent: ctx.user_agent_header.clone(),
                 referer: ctx.referer_header.clone(),
+                matched_route_id: matched_route_id.clone(),
             });
 
             return (status, "Forbidden").into_response();
@@ -807,6 +857,7 @@ async fn proxy_handler(
             latency_ms: ctx.elapsed_ms(),
             user_agent: ctx.user_agent_header.clone(),
             referer: ctx.referer_header.clone(),
+            matched_route_id: matched_route_id.clone(),
         });
 
         let mut resp = Response::new(Body::from("Unauthorized"));
@@ -835,6 +886,7 @@ async fn proxy_handler(
             latency_ms: ctx.elapsed_ms(),
             user_agent: ctx.user_agent_header.clone(),
             referer: ctx.referer_header.clone(),
+            matched_route_id: matched_route_id.clone(),
         });
 
         return (status, "No route").into_response();
@@ -865,6 +917,7 @@ async fn proxy_handler(
                         latency_ms: ctx.elapsed_ms(),
                         user_agent: ctx.user_agent_header.clone(),
                         referer: ctx.referer_header.clone(),
+                        matched_route_id: matched_route_id.clone(),
                     });
 
                     return response;
@@ -900,6 +953,7 @@ async fn proxy_handler(
                             latency_ms: ctx.elapsed_ms(),
                             user_agent: ctx.user_agent_header.clone(),
                             referer: ctx.referer_header.clone(),
+                            matched_route_id: matched_route_id.clone(),
                         });
 
                         return resp;
@@ -927,6 +981,7 @@ async fn proxy_handler(
             latency_ms: ctx.elapsed_ms(),
             user_agent: ctx.user_agent_header.clone(),
             referer: ctx.referer_header.clone(),
+            matched_route_id: matched_route_id.clone(),
         });
 
         return (status, "Static file not found").into_response();
@@ -958,6 +1013,7 @@ async fn proxy_handler(
                     latency_ms: ctx.elapsed_ms(),
                     user_agent: ctx.user_agent_header.clone(),
                     referer: ctx.referer_header.clone(),
+                    matched_route_id: matched_route_id.clone(),
                 });
 
                 return (status, format!("bad upstream url: {e}")).into_response();
@@ -1133,6 +1189,7 @@ async fn proxy_handler(
             latency_ms: ctx.elapsed_ms(),
             user_agent: ctx.user_agent_header.clone(),
             referer: ctx.referer_header.clone(),
+            matched_route_id: matched_route_id.clone(),
         });
 
         let mut out = Response::new(Body::empty());
