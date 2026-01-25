@@ -1,4 +1,4 @@
-use crate::{access_control, config, metrics, ws_proxy, stream_proxy};
+use crate::{access_control, config, metrics, ws_proxy, stream_proxy, rate_limit};
 use anyhow::{anyhow, Context, Result};
 use axum::{
     body::Body,
@@ -455,6 +455,19 @@ async fn start_rule_server(
         whitelist: Arc::from(cfg.whitelist),
     };
 
+    // 初始化速率限制器（如果在该规则中启用）
+    if let Some(enabled) = rule.rate_limit_enabled {
+        if enabled {
+            let rate_limit_config = rate_limit::RateLimitConfig {
+                enabled: true,
+                requests_per_second: rule.rate_limit_requests_per_second.unwrap_or(10),
+                burst_size: rule.rate_limit_burst_size.unwrap_or(20),
+                ban_seconds: rule.rate_limit_ban_seconds.unwrap_or(0),
+            };
+            rate_limit::get_rate_limiter(&rule.listen_addr, rate_limit_config);
+        }
+    }
+
     let router = Router::new().route("/healthz", any(healthz));
     let mut app = router.fallback(any(proxy_handler)).with_state(state);
     
@@ -859,6 +872,60 @@ async fn proxy_handler(
             });
 
             return (status, "Forbidden").into_response();
+        }
+    }
+
+    // 0.5. 速率限制检查（如果在该规则中启用）
+    if state.rule.rate_limit_enabled.unwrap_or(false) {
+        if let Some(limiter) = rate_limit::RATE_LIMITERS.get(node) {
+            let (allowed, should_ban) = limiter.read().check(&ctx.client_ip);
+            
+            if !allowed {
+                // 如果需要封禁，添加到黑名单
+                if should_ban {
+                    let ban_seconds = state.rule.rate_limit_ban_seconds.unwrap_or(0) as i32;
+                    if ban_seconds > 0 {
+                        let ip_clone = ctx.client_ip.clone();
+                        let app_clone = state.app.clone();
+                        // 异步添加到黑名单，不阻塞请求处理
+                        tokio::spawn(async move {
+                            if let Err(e) = metrics::add_blacklist_entry(
+                                ip_clone.clone(),
+                                format!("速率限制超过，自动封禁 {} 秒", ban_seconds),
+                                ban_seconds,
+                            ).await {
+                                tracing::warn!("添加IP到黑名单失败: {} - {}", ip_clone, e);
+                            } else {
+                                send_log_with_app(&app_clone, format!(
+                                    "[速率限制] IP {} 因超过速率限制被封禁 {} 秒",
+                                    ip_clone, ban_seconds
+                                ));
+                            }
+                        });
+                    }
+                }
+                
+                let status = StatusCode::TOO_MANY_REQUESTS;
+                push_log_lazy(&state.app, || format_access_log(node, &ctx, status));
+
+                metrics::try_enqueue_request_log(metrics::RequestLogInsert {
+                    timestamp: chrono::Utc::now().timestamp(),
+                    listen_addr: node.to_string(),
+                    client_ip: ctx.client_ip.clone(),
+                    remote_ip: remote.ip().to_string(),
+                    method: ctx.method.as_str().to_string(),
+                    request_path: ctx.path.clone(),
+                    request_host: ctx.host_header.clone(),
+                    status_code: status.as_u16() as i32,
+                    upstream: "".to_string(),
+                    latency_ms: ctx.elapsed_ms(),
+                    user_agent: ctx.user_agent_header.clone(),
+                    referer: ctx.referer_header.clone(),
+                    matched_route_id: matched_route_id.clone(),
+                });
+
+                return (status, "Rate limit exceeded").into_response();
+            }
         }
     }
 

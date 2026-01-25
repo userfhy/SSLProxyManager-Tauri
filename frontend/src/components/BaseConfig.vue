@@ -151,30 +151,36 @@ const resetToDefaults = async () => {
       }
     )
 
+    // 基础设置
     autoStart.value = false
     showRealtimeLogs.value = true
     realtimeLogsOnlyErrors.value = false
 
+    // 代理设置
     streamProxy.value = true
     enableHttp2.value = DEFAULT_ENABLE_HTTP2
 
+    // 请求体大小限制
     maxBodySizeMB.value = DEFAULT_MAX_BODY_SIZE_MB
     maxResponseBodySizeMB.value = DEFAULT_MAX_RESPONSE_BODY_SIZE_MB
 
+    // 上游连接设置
     upstreamConnectTimeoutMs.value = DEFAULT_CONNECT_TIMEOUT_MS
     upstreamReadTimeoutMs.value = DEFAULT_READ_TIMEOUT_MS
     upstreamPoolMaxIdle.value = DEFAULT_POOL_MAX_IDLE
     upstreamPoolIdleTimeoutSec.value = DEFAULT_POOL_IDLE_TIMEOUT_SEC
 
+    // 压缩设置
     compressionEnabled.value = DEFAULT_COMPRESSION_ENABLED
     compressionGzip.value = DEFAULT_COMPRESSION_GZIP
     compressionBrotli.value = DEFAULT_COMPRESSION_BROTLI
     compressionGzipLevel.value = DEFAULT_COMPRESSION_GZIP_LEVEL
     compressionBrotliLevel.value = DEFAULT_COMPRESSION_BROTLI_LEVEL
 
+    // 触发实时日志事件
     window.dispatchEvent(new CustomEvent('toggle-realtime-logs', { detail: showRealtimeLogs.value }))
 
-    ElMessage.success('已恢复默认值（未保存）')
+    ElMessage.success('已恢复所有默认值（未保存）')
   } catch {
     // 用户取消
   }
@@ -282,7 +288,6 @@ defineExpose({
 
 .config-page :deep(.el-card__body) {
   padding: 24px;
-  max-width: 800px;
 }
 
 .header-row {

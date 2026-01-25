@@ -158,6 +158,18 @@ pub struct ListenRule {
     pub basic_auth_password: String,
     pub basic_auth_forward_header: bool,
     pub routes: Vec<Route>,
+
+    // 速率限制配置（可选，每个规则独立配置）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rate_limit_enabled: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rate_limit_requests_per_second: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rate_limit_burst_size: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rate_limit_window_seconds: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rate_limit_ban_seconds: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

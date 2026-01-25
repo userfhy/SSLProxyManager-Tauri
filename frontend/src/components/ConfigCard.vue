@@ -229,6 +229,59 @@
               </el-text>
             </el-form-item>
           </template>
+
+          <el-divider />
+
+          <el-form-item>
+            <el-checkbox v-model="rule.RateLimitEnabled">启用速率限制</el-checkbox>
+            <el-text type="info" size="small" class="mini-hint" style="margin-left: 10px;">
+              按IP限制请求频率，防止DDoS攻击和滥用。
+            </el-text>
+          </el-form-item>
+
+          <template v-if="rule.RateLimitEnabled">
+            <el-form-item label="每秒请求数限制">
+              <el-input-number 
+                v-model="rule.RateLimitRequestsPerSecond" 
+                :min="1" 
+                :max="10000" 
+                :step="1" 
+                controls-position="right"
+                style="width: 200px;"
+              />
+              <el-text type="info" size="small" class="mini-hint" style="margin-left: 10px;">
+                每个IP每秒允许的最大请求数。推荐值：10-100。
+              </el-text>
+            </el-form-item>
+
+            <el-form-item label="突发请求数">
+              <el-input-number 
+                v-model="rule.RateLimitBurstSize" 
+                :min="1" 
+                :max="1000" 
+                :step="1" 
+                controls-position="right"
+                style="width: 200px;"
+              />
+              <el-text type="info" size="small" class="mini-hint" style="margin-left: 10px;">
+                令牌桶容量，允许短时间内的突发请求。推荐值：20-100。
+              </el-text>
+            </el-form-item>
+
+            <el-form-item label="超过限制封禁秒数">
+              <el-input-number 
+                v-model="rule.RateLimitBanSeconds" 
+                :min="0" 
+                :max="86400" 
+                :step="1" 
+                controls-position="right"
+                style="width: 200px;"
+              />
+              <el-text type="info" size="small" class="mini-hint" style="margin-left: 10px;">
+                超过速率限制后自动封禁的秒数。0表示不封禁，只返回429错误。推荐值：60-3600。
+              </el-text>
+            </el-form-item>
+          </template>
         </el-form>
       </el-card>
     </TransitionGroup>
@@ -283,6 +336,10 @@ interface ListenRule {
   BasicAuthUsername?: string
   BasicAuthPassword?: string
   BasicAuthForwardHeader?: boolean
+  RateLimitEnabled?: boolean
+  RateLimitRequestsPerSecond?: number
+  RateLimitBurstSize?: number
+  RateLimitBanSeconds?: number
   Routes: Route[]
 }
 
@@ -395,6 +452,10 @@ onMounted(async () => {
         BasicAuthUsername: rule.basic_auth_username || '',
         BasicAuthPassword: rule.basic_auth_password || '',
         BasicAuthForwardHeader: !!rule.basic_auth_forward_header,
+    RateLimitEnabled: rule.rate_limit_enabled !== undefined ? !!rule.rate_limit_enabled : undefined,
+    RateLimitRequestsPerSecond: rule.rate_limit_requests_per_second !== undefined ? Number(rule.rate_limit_requests_per_second) : undefined,
+    RateLimitBurstSize: rule.rate_limit_burst_size !== undefined ? Number(rule.rate_limit_burst_size) : undefined,
+    RateLimitBanSeconds: rule.rate_limit_ban_seconds !== undefined ? Number(rule.rate_limit_ban_seconds) : undefined,
         Routes: routes.length > 0 ? routes : [{
           Host: '',
           Path: '/',
@@ -418,6 +479,11 @@ onMounted(async () => {
         BasicAuthEnable: false,
         BasicAuthUsername: '',
         BasicAuthPassword: '',
+        BasicAuthForwardHeader: false,
+        RateLimitEnabled: undefined,
+        RateLimitRequestsPerSecond: undefined,
+        RateLimitBurstSize: undefined,
+        RateLimitBanSeconds: undefined,
         Routes: [
           {
             Host: '',
@@ -446,6 +512,10 @@ const addRule = () => {
     BasicAuthUsername: '',
     BasicAuthPassword: '',
     BasicAuthForwardHeader: false,
+    RateLimitEnabled: undefined,
+    RateLimitRequestsPerSecond: undefined,
+    RateLimitBurstSize: undefined,
+    RateLimitBanSeconds: undefined,
     Routes: [
       {
         ID: `new-route-${Date.now()}`,
@@ -610,6 +680,10 @@ const getConfig = () => {
     BasicAuthUsername: (rule.BasicAuthUsername || '').trim(),
     BasicAuthPassword: (rule.BasicAuthPassword || '').trim(),
     BasicAuthForwardHeader: !!rule.BasicAuthForwardHeader,
+    RateLimitEnabled: rule.RateLimitEnabled !== undefined ? !!rule.RateLimitEnabled : undefined,
+    RateLimitRequestsPerSecond: rule.RateLimitRequestsPerSecond !== undefined ? Number(rule.RateLimitRequestsPerSecond) : undefined,
+    RateLimitBurstSize: rule.RateLimitBurstSize !== undefined ? Number(rule.RateLimitBurstSize) : undefined,
+    RateLimitBanSeconds: rule.RateLimitBanSeconds !== undefined ? Number(rule.RateLimitBanSeconds) : undefined,
     Routes: rule.Routes.map((rt) => {
       const list = Array.isArray(rt.SetHeadersList) ? rt.SetHeadersList : []
       const setHeaders: Record<string, string> = {}
@@ -677,6 +751,11 @@ const getConfig = () => {
     basic_auth_username: r.BasicAuthUsername || '',
     basic_auth_password: r.BasicAuthPassword || '',
     basic_auth_forward_header: !!r.BasicAuthForwardHeader,
+    rate_limit_enabled: r.RateLimitEnabled !== undefined ? !!r.RateLimitEnabled : undefined,
+    rate_limit_requests_per_second: r.RateLimitRequestsPerSecond !== undefined ? Number(r.RateLimitRequestsPerSecond) : undefined,
+    rate_limit_burst_size: r.RateLimitBurstSize !== undefined ? Number(r.RateLimitBurstSize) : undefined,
+    rate_limit_window_seconds: r.RateLimitWindowSeconds !== undefined ? Number(r.RateLimitWindowSeconds) : 1,
+    rate_limit_ban_seconds: r.RateLimitBanSeconds !== undefined ? Number(r.RateLimitBanSeconds) : undefined,
     routes: (r.Routes || []).map((rt: any) => ({
       id: rt.ID || undefined,
       enabled: rt.Enabled !== undefined ? !!rt.Enabled : true,
