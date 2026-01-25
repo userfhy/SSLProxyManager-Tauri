@@ -19,6 +19,11 @@
           </el-link>
         </el-descriptions-item>
         <el-descriptions-item label="版权">© 2026</el-descriptions-item>
+        <el-descriptions-item label="使用条款">
+          <el-link type="primary" @click.prevent="handleShowTerms">
+            查看使用条款与免责声明
+          </el-link>
+        </el-descriptions-item>
       </el-descriptions>
 
       <el-divider />
@@ -73,14 +78,31 @@
           </div>
         </template>
       </el-alert>
+
+      <el-divider />
+
+      <el-form label-width="180px">
+        <el-form-item label="使用条款">
+          <el-button type="warning" @click="handleResetTerms" :loading="resettingTerms">
+            重置条款接受状态
+          </el-button>
+          <el-text type="info" size="small" class="mini-hint" style="margin-left: 12px;">
+            重置后，下次启动时将重新显示使用条款对话框
+          </el-text>
+        </el-form-item>
+      </el-form>
     </div>
+
+    <!-- 使用条款对话框（查看模式，不要求必须接受） -->
+    <TermsDialog v-if="showTermsDialog" :require-accept="false" @close="handleTermsDialogClose" />
   </el-card>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
-import { GetConfig, GetVersion, CheckUpdate, OpenURL } from '../api'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { GetConfig, GetVersion, CheckUpdate, OpenURL, ResetTermsAccepted } from '../api'
+import TermsDialog from './TermsDialog.vue'
 
 const authorName = 'fhy'
 const authorUrl = 'https://github.com/userfhy'
@@ -89,6 +111,8 @@ const repoUrl = 'https://github.com/userfhy/SSLProxyManager-Tauri'
 const version = ref<string>('')
 const checking = ref(false)
 const checkResult = ref<any>(null)
+const resettingTerms = ref(false)
+const showTermsDialog = ref(false)
 
 const updateForm = ref({
   enabled: false,
@@ -219,6 +243,42 @@ const handleCheckUpdate = async () => {
   }
 }
 
+const handleShowTerms = () => {
+  showTermsDialog.value = true
+}
+
+const handleTermsDialogClose = () => {
+  showTermsDialog.value = false
+}
+
+const handleResetTerms = () => {
+  ElMessageBox.confirm(
+    '确定要重置条款接受状态吗？\n\n重置后，应用将自动重启并重新显示使用条款对话框。',
+    '确认重置',
+    {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'warning',
+    }
+  )
+    .then(async () => {
+      resettingTerms.value = true
+      try {
+        // 重置状态并重启应用（relaunch 会重启应用，后续代码不会执行）
+        await ResetTermsAccepted()
+        // 注意：relaunch() 会重启应用，所以下面的代码不会执行
+        // 但为了代码完整性，保留这些行
+        ElMessage.success('已重置条款接受状态，应用将重启')
+      } catch (e: any) {
+        ElMessage.error(`重置失败: ${e?.message || String(e)}`)
+        resettingTerms.value = false
+      }
+    })
+    .catch(() => {
+      // 用户取消
+    })
+}
+
 // 暴露给父组件，用于保存配置
 const getConfig = () => {
   return {
@@ -277,5 +337,13 @@ watch(
 
 :deep(.el-descriptions__label) {
   width: 120px;
+}
+
+.mini-hint {
+  display: block;
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-muted);
 }
 </style>

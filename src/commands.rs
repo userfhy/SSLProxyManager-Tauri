@@ -13,6 +13,7 @@ pub fn get_config() -> Result<config::Config, String> {
     Ok(config::get_config())
 }
 
+
 #[tauri::command]
 pub async fn save_config(
     app: tauri::AppHandle,

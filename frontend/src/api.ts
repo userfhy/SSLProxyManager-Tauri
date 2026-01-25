@@ -2,6 +2,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-shell';
+import { exit, relaunch } from '@tauri-apps/plugin-process';
 
 // 配置相关
 export async function GetConfig() {
@@ -141,6 +142,43 @@ export async function HideToTray() {
 
 export async function QuitApp() {
   return await invoke('quit_app');
+}
+
+// 条款接受状态（使用 localStorage）
+const TERMS_ACCEPTED_KEY = 'ssl_proxy_manager_terms_accepted'
+
+export function GetTermsAccepted(): boolean {
+  try {
+    const value = localStorage.getItem(TERMS_ACCEPTED_KEY)
+    return value === 'true'
+  } catch (e) {
+    console.error('读取条款接受状态失败:', e)
+    return false
+  }
+}
+
+export async function SetTermsAccepted(accepted: boolean): Promise<void> {
+  try {
+    if (accepted) {
+      localStorage.setItem(TERMS_ACCEPTED_KEY, 'true')
+      await relaunch();
+    } else {
+      localStorage.removeItem(TERMS_ACCEPTED_KEY)
+    }
+  } catch (e) {
+    console.error('保存条款接受状态失败:', e)
+    throw e
+  }
+}
+
+export async function ResetTermsAccepted(): Promise<void> {
+  try {
+    localStorage.removeItem(TERMS_ACCEPTED_KEY)
+    await relaunch();
+  } catch (e) {
+    console.error('重置条款接受状态失败:', e)
+    throw e
+  }
 }
 
 // 事件监听

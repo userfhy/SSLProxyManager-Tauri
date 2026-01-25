@@ -95,6 +95,9 @@
         <About v-show="activeTab === 'about'" ref="aboutRef" />
       </div>
     </div>
+
+    <!-- 使用条款对话框（首次启动，要求必须接受） -->
+    <TermsDialog v-if="showTermsDialog" :require-accept="true" @close="handleTermsAccepted" />
   </div>
 </template>
 
@@ -114,9 +117,11 @@ import MetricsStorage from './components/MetricsStorage.vue'
 import RequestLogs from './components/RequestLogs.vue'
 import About from './components/About.vue'
 import Sidebar from './components/Sidebar.vue'
+import TermsDialog from './components/TermsDialog.vue'
 import { Sunny, Moon, Check } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox, ElNotification } from 'element-plus'
 import { GetConfig, SaveConfig } from './api'
+import { GetTermsAccepted } from './api'
 
 const activeTab = ref<'base' | 'config' | 'ws' | 'stream' | 'logs' | 'dashboard' | 'access' | 'storage' | 'requestLogs' | 'about'>('config')
 const status = ref('stopped')
@@ -130,6 +135,7 @@ const accessControlRef = ref<InstanceType<typeof AccessControl> | null>(null)
 const metricsStorageRef = ref<InstanceType<typeof MetricsStorage> | null>(null)
 const aboutRef = ref<InstanceType<typeof About> | null>(null)
 const globalConfig = ref<any>({})
+const showTermsDialog = ref(false)
 
 // 运行时间相关
 const startTime = ref<number | null>(null)
@@ -529,6 +535,60 @@ onMounted(async () => {
   // 启动自动主题切换（如果已启用）
   startAutoTheme()
   
+  // 立即设置退出事件监听，确保无论是否接受条款都能响应退出请求
+  await setupQuitHandler()
+  
+  // 检查条款接受状态（使用 localStorage）
+  try {
+    const termsAccepted = GetTermsAccepted()
+    if (!termsAccepted) {
+      showTermsDialog.value = true
+      // 如果未接受条款，等待用户接受后再继续初始化
+      // 初始化逻辑将在用户接受条款后通过页面重新加载执行
+      return
+    }
+  } catch (error: any) {
+    console.error('检查条款接受状态失败:', error)
+    // 如果检查失败，默认显示条款对话框
+    showTermsDialog.value = true
+    return
+  }
+  
+  // 只有接受条款后才继续初始化
+  await initializeApp()
+})
+
+// 处理条款接受后的逻辑
+const handleTermsAccepted = async () => {
+  showTermsDialog.value = false
+  // 继续初始化应用（但保留已加载的配置，避免覆盖用户设置）
+  await initializeAppWithoutReloadConfig()
+}
+
+// 设置退出事件处理器（在应用启动时立即设置，确保退出功能始终可用）
+const setupQuitHandler = async () => {
+  // 托盘请求退出：由前端弹确认框，避免后端/GTK 死锁
+  await EventsOn('request-quit', () => {
+    ElMessageBox.confirm(
+      '确定要退出 SSLProxyManager 吗？\n\n退出后，代理服务将停止运行。',
+      '确认退出',
+      {
+        confirmButtonText: '退出',
+        cancelButtonText: '取消',
+        type: 'warning',
+      }
+    )
+      .then(() => {
+        QuitApp()
+      })
+      .catch(() => {
+        // 用户取消
+      })
+  })
+}
+
+// 初始化应用核心逻辑（公共部分）
+const initializeAppCore = async () => {
   status.value = await GetStatus()
   try {
     await SetTrayProxyState(status.value === 'running')
@@ -563,25 +623,6 @@ onMounted(async () => {
     }
   })
 
-  // 托盘请求退出：由前端弹确认框，避免后端/GTK 死锁
-  await EventsOn('request-quit', () => {
-    ElMessageBox.confirm(
-      '确定要退出 SSLProxyManager 吗？\n\n退出后，代理服务将停止运行。',
-      '确认退出',
-      {
-        confirmButtonText: '退出',
-        cancelButtonText: '取消',
-        type: 'warning',
-      }
-    )
-      .then(() => {
-        QuitApp()
-      })
-      .catch(() => {
-        // 用户取消
-      })
-  })
-  
   // 监听后端启动错误
   await EventsOn('server-start-error', (payload: any) => {
     try {
@@ -594,7 +635,7 @@ onMounted(async () => {
         duration: 0, // 不自动关闭
       })
 
-      // 发生启动错误时，不要让 UI 继续显示“运行中”
+      // 发生启动错误时，不要让 UI 继续显示"运行中"
       status.value = 'stopped'
       startTime.value = null
       stopRuntimeTimer()
@@ -603,14 +644,6 @@ onMounted(async () => {
       ElMessage.error(`服务启动失败，但前端提示异常: ${e?.message || String(e)}`)
     }
   });
-
-  // 加载配置
-  try {
-    const config = await GetConfig()
-    globalConfig.value = config
-  } catch (e) {
-    // 加载配置失败时使用默认配置
-  }
   
   // 自动启动服务
   if (status.value === 'stopped') {
@@ -649,7 +682,26 @@ onMounted(async () => {
         });
     }
   });
-})
+}
+
+// 将初始化逻辑提取为单独函数（包含配置加载）
+const initializeApp = async () => {
+  await initializeAppCore()
+  
+  // 加载配置
+  try {
+    const config = await GetConfig()
+    globalConfig.value = config
+  } catch (e) {
+    // 加载配置失败时使用默认配置
+  }
+}
+
+// 初始化应用（不重新加载配置，保留已有配置状态）
+const initializeAppWithoutReloadConfig = async () => {
+  await initializeAppCore()
+  // 不重新加载配置，保留用户已设置的配置状态（如数据库持久化开关）
+}
 
 // 组件卸载时清理定时器
 onBeforeUnmount(() => {

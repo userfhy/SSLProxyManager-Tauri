@@ -564,6 +564,7 @@ pub fn set_config(config: Config) {
     *CONFIG.write() = config;
 }
 
+
 pub fn ensure_config_ids_for_save(config: &mut Config) {
     ensure_config_ids(config);
 }

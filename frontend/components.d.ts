@@ -42,6 +42,7 @@ declare module 'vue' {
     ElRadio: typeof import('element-plus/es')['ElRadio']
     ElRadioGroup: typeof import('element-plus/es')['ElRadioGroup']
     ElRow: typeof import('element-plus/es')['ElRow']
+    ElScrollbar: typeof import('element-plus/es')['ElScrollbar']
     ElSelect: typeof import('element-plus/es')['ElSelect']
     ElSkeleton: typeof import('element-plus/es')['ElSkeleton']
     ElSlider: typeof import('element-plus/es')['ElSlider']
@@ -57,6 +58,7 @@ declare module 'vue' {
     RequestLogs: typeof import('./src/components/RequestLogs.vue')['default']
     Sidebar: typeof import('./src/components/Sidebar.vue')['default']
     StreamProxyConfig: typeof import('./src/components/StreamProxyConfig.vue')['default']
+    TermsDialog: typeof import('./src/components/TermsDialog.vue')['default']
     TitleBar: typeof import('./src/components/TitleBar.vue')['default']
     WsProxyConfig: typeof import('./src/components/WsProxyConfig.vue')['default']
   }
