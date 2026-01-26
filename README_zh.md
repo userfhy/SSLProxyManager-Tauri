@@ -2,30 +2,43 @@
 
 **[(English Documentation)](README.md)**
 
-SSLProxyManager 是一个基于 **Tauri 2 + Rust** 的桌面代理管理工具，提供管理界面（前端：**Vue 3 + Vite + Element Plus**），用于配置与管理：
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+一个桌面代理管理工具，提供现代化的基于 Web 的管理界面，用于管理 HTTP/HTTPS、WebSocket 和 Stream（TCP/UDP）反向代理。
+
+SSLProxyManager 基于 **Tauri 2 + Rust**，提供管理界面（前端：**Vue 3 + Vite + Element Plus**），用于配置与管理：
 
 - HTTP/HTTPS 反向代理
 - WebSocket（WS/WSS）反向代理
 - Stream（TCP/UDP）四层代理
 - 静态资源托管
-- 访问控制（局域网/白名单）
+- 访问控制（局域网/白名单/黑名单）
+- 速率限制
+- 指标存储与查询
+- 请求日志与历史数据
 - 运行状态与日志查看
+- 仪表板实时统计
 
 ## 功能概览
 
 - **HTTP/HTTPS 代理（rules/routes）**
   - 多监听节点（`listen_addr`）
   - TLS（证书/私钥）
-  - Basic Auth
+  - Basic Auth（支持可选头部转发）
   - 路由（path 前缀匹配）
   - Upstream 列表（权重）
   - `proxy_pass_path` 路径改写
   - 静态目录优先（`static_dir`）
   - Header 注入（`set_headers`）
+  - 跟随重定向配置
+  - HTTP/2 支持（可选）
+  - 压缩支持（gzip/brotli）
 
 - **WebSocket 代理（ws_proxy）**
   - 每条 WS 规则可独立启用
-  - **新增：WS 全局开关 `ws_proxy_enabled`**（全局禁用时，WS 监听不会启动）
+  - WS 全局开关 `ws_proxy_enabled`（全局禁用时，WS 监听不会启动）
+  - TLS 支持（WSS）
+  - 基于路径的路由
 
 - **Stream 代理（TCP/UDP，stream）**
   - `listen_port` 监听端口（TCP 或 UDP）
@@ -33,10 +46,35 @@ SSLProxyManager 是一个基于 **Tauri 2 + Rust** 的桌面代理管理工具�
   - upstream 支持按客户端 IP 进行一致性选择（默认 `hash_key = "$remote_addr"`）
   - `proxy_connect_timeout` / `proxy_timeout`（字符串形式，例：`300s`）
 
+- **访问控制**
+  - IP 白名单/黑名单
+  - 局域网访问控制（允许所有局域网）
+  - HTTP、WS、Stream 代理独立控制
+
+- **指标与监控**
+  - 实时指标收集
+  - 历史指标存储（SQLite）
+  - 请求日志过滤与查询
+  - 仪表板统计与图表
+  - 实时日志查看器
+
+- **应用功能**
+  - 系统托盘集成
+  - 系统启动自动运行
+  - 单实例模式
+  - 自动更新检查
+  - 国际化支持（英文/中文）
+  - 深色/浅色主题支持
+
 ## 技术栈
 
-- 后端：Rust（Tauri 2）
-- 前端：Vue 3、Vite、Element Plus
+- **后端**：Rust（Tauri 2）、Axum、Tokio、SQLx
+- **前端**：Vue 3、Vite、Element Plus、ECharts、Vue I18n
+- **核心库**：
+  - HTTP/WebSocket：Axum、Hyper、Tokio-Tungstenite
+  - TLS：Rustls
+  - 数据库：SQLite（通过 SQLx）
+  - 配置：TOML
 
 ## 程序界面
 
@@ -181,10 +219,82 @@ stream {
 
 在本项目中等价配置可参考 `config.toml.example` 的 `[stream]` 片段。
 
+### 4) 全局配置
+
+- `ws_proxy_enabled`：全局启用/禁用 WebSocket 代理（默认 `true`）
+- `http_access_control_enabled`：启用 HTTP 访问控制（默认 `true`）
+- `ws_access_control_enabled`：启用 WebSocket 访问控制（默认 `false`）
+- `stream_access_control_enabled`：启用 Stream 代理访问控制（默认 `true`）
+- `allow_all_lan`：允许所有局域网 IP（默认 `true`）
+- `auto_start`：应用启动时自动启动代理服务（默认 `true`）
+- `show_realtime_logs`：在 UI 中显示实时日志（默认 `false`）
+- `realtime_logs_only_errors`：实时日志视图仅显示错误（默认 `false`）
+- `stream_proxy`：遗留字段（请使用 `[stream].enabled` 代替）
+- `max_body_size`：最大请求体大小（字节，默认 `10485760` = 10MB）
+- `max_response_body_size`：最大响应体大小（字节，默认 `10485760` = 10MB）
+- `upstream_connect_timeout_ms`：上游连接超时（毫秒，默认 `5000`）
+- `upstream_read_timeout_ms`：上游读取超时（毫秒，默认 `30000`）
+- `upstream_pool_max_idle`：连接池最大空闲连接数（默认 `100`）
+- `upstream_pool_idle_timeout_sec`：空闲连接超时（秒，默认 `60`）
+- `enable_http2`：启用 HTTP/2 支持（默认 `false`）
+
+### 5) 访问控制（白名单）
+
+- `[[whitelist]]`：IP 白名单条目
+  - `ip`：IP 地址或 CIDR 表示法（例如：`127.0.0.1` 或 `192.168.1.0/24`）
+
+### 6) 指标存储
+
+- `[metrics_storage]`：指标存储配置
+  - `enabled`：启用指标存储（默认 `true`）
+  - `db_path`：SQLite 数据库文件路径（例如：`/path/to/metrics.db`）
+
+### 7) 更新配置
+
+- `[update]`：自动更新配置
+  - `enabled`：启用更新检查（默认 `true`）
+  - `server_url`：更新服务器 URL（为空则使用默认）
+  - `auto_check`：自动检查更新（默认 `true`）
+  - `timeout_ms`：更新检查超时（毫秒，默认 `10000`）
+  - `ignore_prerelease`：忽略预发布版本（默认 `true`）
+
+## 界面功能
+
+应用程序提供了全面的基于 Web 的管理界面：
+
+- **仪表板**：实时统计、指标图表和服务状态
+- **基础配置**：全局设置和代理服务控制
+- **HTTP/HTTPS 代理配置**：配置反向代理规则和路由
+- **WebSocket 代理配置**：配置 WS/WSS 代理规则
+- **Stream 代理配置**：配置 TCP/UDP 四层代理
+- **访问控制**：管理 IP 白名单/黑名单
+- **指标存储**：查看和管理指标数据库
+- **请求日志**：查询和过滤历史请求日志
+- **日志查看器**：实时日志查看与过滤
+- **关于**：版本信息和更新检查
+
 ## 常见问题
 
-- 前端开发服务器端口默认是 `5173`（见 `tauri.conf.json` 的 `devUrl`）。
-- 如果需要更改前端 dev/build 命令，请修改根目录 `tauri.conf.json` 的 `build.beforeDevCommand` / `build.beforeBuildCommand`。
+- **Q: 前端开发服务器使用什么端口？**  
+  A: 默认端口是 `5173`（见 `tauri.conf.json` 的 `devUrl`）。
+
+- **Q: 如何更改前端 dev/build 命令？**  
+  A: 修改根目录 `tauri.conf.json` 的 `build.beforeDevCommand` / `build.beforeBuildCommand`。
+
+- **Q: 配置文件位于哪里？**  
+  A: 开发模式下，如果项目根目录存在 `config.toml`，则优先读取。生产模式（Linux）下，默认位置是 `~/.config/SSLProxyManager/config.toml`。
+
+- **Q: 如何启用系统启动时自动运行？**  
+  A: 在 `config.toml` 中设置 `auto_start = true`，应用启动时会自动启动代理服务。
+
+- **Q: 可以将应用隐藏到系统托盘吗？**  
+  A: 可以，点击关闭按钮会将窗口隐藏到系统托盘而不是退出。可以从托盘菜单退出。
+
+- **Q: 如何查看历史指标？**  
+  A: 在配置中启用指标存储，然后在 UI 中使用"指标存储"标签页查询历史数据。
+
+- **Q: 如何配置访问控制？**  
+  A: 使用"访问控制"标签页管理 IP 白名单/黑名单，或在 `config.toml` 中编辑 `[[whitelist]]` 条目。
 
 ## 免责声明
 
@@ -195,3 +305,15 @@ stream {
 - **责任限制**：对于因使用或无法使用本项目导致的任何直接或间接损失（包括但不限于利润损失、数据丢失、业务中断、设备或系统损坏等），作者与贡献者不承担任何责任。
 
 如果你不同意上述条款，请勿使用、分发或基于本项目进行二次开发。
+
+## 许可证
+
+本项目采用 MIT 许可证 - 详见 [LICENSE](LICENSE) 文件。
+
+## 仓库
+
+- GitHub: [https://github.com/userfhy/SSLProxyManager-Tauri](https://github.com/userfhy/SSLProxyManager-Tauri)
+
+## 贡献
+
+欢迎贡献！请随时提交 Pull Request。
