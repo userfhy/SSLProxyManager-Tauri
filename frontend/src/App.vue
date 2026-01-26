@@ -158,15 +158,32 @@ const runTime = computed(() => {
   const minutes = Math.floor((elapsed % 3600) / 60)
   const seconds = elapsed % 60
   
-  if (days > 0) {
-    return `${days}天${hours}小时${minutes}分${seconds}秒`
-  } else if (hours > 0) {
-    return `${hours}小时${minutes}分${seconds}秒`
-  } else if (minutes > 0) {
-    return `${minutes}分${seconds}秒`
-  } else {
-    return `${seconds}秒`
+  const formatTimeUnit = (value: number, unitKey: string, pluralKey?: string) => {
+    if (locale.value === 'en-US') {
+      // 英文：使用空格，处理复数
+      const unit = (pluralKey && value !== 1) ? pluralKey : unitKey
+      return `${value} ${t(`app.timeUnit.${unit}`)}`
+    } else {
+      // 中文：直接连接，无空格
+      return `${value}${t(`app.timeUnit.${unitKey}`)}`
+    }
   }
+  
+  const parts: string[] = []
+  if (days > 0) {
+    parts.push(formatTimeUnit(days, 'day', 'days'))
+  }
+  if (hours > 0 || days > 0) {
+    parts.push(formatTimeUnit(hours, 'hour', 'hours'))
+  }
+  if (minutes > 0 || hours > 0 || days > 0) {
+    parts.push(formatTimeUnit(minutes, 'minute', 'minutes'))
+  }
+  parts.push(formatTimeUnit(seconds, 'second', 'seconds'))
+  
+  // 中文直接连接，英文用空格连接
+  const separator = locale.value === 'en-US' ? ' ' : ''
+  return parts.join(separator)
 })
 
 // 启动运行时间计时器

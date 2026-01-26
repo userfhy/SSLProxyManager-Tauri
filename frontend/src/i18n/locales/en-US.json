@@ -93,7 +93,17 @@
     "newVersion": "New version {version} found\n\n{notes}",
     "downloadUpdate": "Download Update",
     "later": "Later",
-    "serverStartErrorWithException": "Service start failed, but frontend prompt exception: {error}"
+    "serverStartErrorWithException": "Service start failed, but frontend prompt exception: {error}",
+    "timeUnit": {
+      "day": "day",
+      "days": "days",
+      "hour": "hour",
+      "hours": "hours",
+      "minute": "minute",
+      "minutes": "minutes",
+      "second": "second",
+      "seconds": "seconds"
+    }
   },
   "sidebar": {
     "expand": "Expand Sidebar",

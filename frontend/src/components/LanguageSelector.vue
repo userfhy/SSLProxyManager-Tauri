@@ -63,8 +63,8 @@ const handleLocaleChange = async (val: string) => {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   cursor: pointer;
   border-radius: 4px;
   transition: background-color 0.2s;
@@ -72,7 +72,6 @@ const handleLocaleChange = async (val: string) => {
 
 .language-icon:hover {
   background-color: var(--el-fill-color-light);
-  opacity: 0.5;
 }
 
 .language-icon svg {
@@ -82,19 +81,18 @@ const handleLocaleChange = async (val: string) => {
 }
 
 :deep(.el-dropdown-menu__item) {
-  color: var(--text) !important;
+  color: var(--el-text-color-primary) !important;
   font-weight: normal;
 }
 
 :deep(.el-dropdown-menu__item:hover) {
   background-color: rgba(0, 0, 0, 0.04) !important;
-  color: var(--text) !important;
+  color: var(--el-text-color-primary) !important;
   font-weight: 600 !important;
 }
 
-:deep(.el-dropdown-menu[data-theme="dark"] .el-dropdown-menu__item:hover) {
-  background-color: rgba(255, 255, 255, 0.08) !important;
-  color: var(--text) !important;
+/* 暗色模式（非 light-mode） */
+:deep(html:not(.light-mode) .el-dropdown-menu__item:hover) {
   font-weight: 600 !important;
 }
 
@@ -110,9 +108,28 @@ const handleLocaleChange = async (val: string) => {
   font-weight: 600 !important;
 }
 
-:deep(.el-dropdown-menu[data-theme="dark"] .el-dropdown-menu__item.is-active:hover) {
-  background-color: rgba(255, 255, 255, 0.08) !important;
+:deep(html:not(.light-mode) .el-dropdown-menu__item.is-active:hover) {
   color: var(--el-color-primary) !important;
+  font-weight: 600 !important;
+}
+</style>
+
+<style>
+/* 全局样式：暗色模式下的下拉菜单项（下拉菜单挂载在 body 上，需要使用全局样式） */
+html:not(.light-mode) .el-dropdown-menu__item:hover {
+  background-color: rgba(255, 255, 255, 0.08) !important;
+  color: #003cff !important;
+  font-weight: 600 !important;
+}
+
+html:not(.light-mode) .el-dropdown-menu__item.is-active {
+  color: #60a5fa !important;
+  font-weight: 600 !important;
+}
+
+html:not(.light-mode) .el-dropdown-menu__item.is-active:hover {
+  background-color: rgba(255, 255, 255, 0.08) !important;
+  color: #93c5fd !important;
   font-weight: 600 !important;
 }
 </style>

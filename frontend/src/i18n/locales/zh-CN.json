@@ -93,7 +93,13 @@
     "newVersion": "发现新版本 {version}\n\n{notes}",
     "downloadUpdate": "下载更新",
     "later": "稍后再说",
-    "serverStartErrorWithException": "服务启动失败，但前端提示异常: {error}"
+    "serverStartErrorWithException": "服务启动失败，但前端提示异常: {error}",
+    "timeUnit": {
+      "day": "天",
+      "hour": "小时",
+      "minute": "分",
+      "second": "秒"
+    }
   },
   "sidebar": {
     "expand": "展开侧边栏",
