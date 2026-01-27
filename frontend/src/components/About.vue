@@ -101,7 +101,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { GetConfig, GetVersion, CheckUpdate, OpenURL, ResetTermsAccepted } from '../api'
+import { GetConfig, GetVersion, CheckUpdate, ResetTermsAccepted } from '../api'
+import { openUrl } from '@tauri-apps/plugin-opener'
 import TermsDialog from './TermsDialog.vue'
 import { useI18n } from 'vue-i18n'
 
@@ -153,8 +154,6 @@ const loadInfo = async () => {
   }
 }
 
-const opening = ref(false)
-
 const handleOpenURL = async (url: string) => {
   const u = (url || '').trim()
   if (!u) {
@@ -162,26 +161,16 @@ const handleOpenURL = async (url: string) => {
     return
   }
 
-  if (opening.value) {
-    return
-  }
-
-  opening.value = true
   try {
-    await OpenURL(u)
+    await openUrl(u)
   } catch (e: any) {
     console.error('打开链接失败:', e)
     ElMessage.error(t('about.openLinkFailed'))
-  } finally {
-    // 防止短时间内连续点击触发系统 shell 多次启动
-    setTimeout(() => {
-      opening.value = false
-    }, 800)
   }
 }
 
-const handleOpenDownload = (url: string) => {
-  handleOpenURL(url)
+const handleOpenDownload = async (url: string) => {
+  await handleOpenURL(url)
 }
 
 const copyToClipboard = async (text: string) => {

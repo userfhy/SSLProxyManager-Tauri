@@ -1,7 +1,7 @@
 // Tauri API 适配层
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { open } from '@tauri-apps/plugin-shell';
+import { openUrl } from '@tauri-apps/plugin-opener';
 import { exit, relaunch } from '@tauri-apps/plugin-process';
 
 // 配置相关
@@ -23,9 +23,9 @@ export async function CheckUpdate() {
   return await invoke('check_update');
 }
 
-// 打开 URL
+// 打开 URL (使用 Tauri 2 官方 opener 插件)
 export async function OpenURL(url: string) {
-  await open(url);
+  await openUrl(url);
 }
 
 // 服务器控制

@@ -33,6 +33,7 @@ fn main() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
@@ -42,7 +43,6 @@ fn main() {
             commands::save_config,
             commands::get_version,
             commands::check_update,
-            commands::open_url,
             commands::start_server,
             commands::stop_server,
             commands::get_status,

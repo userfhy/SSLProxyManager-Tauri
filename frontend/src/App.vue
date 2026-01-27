@@ -104,7 +104,8 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
-import { StartServer, StopServer, GetStatus, QuitApp, OpenURL, EventsOn, SetTrayProxyState } from './api'
+import { StartServer, StopServer, GetStatus, QuitApp, EventsOn, SetTrayProxyState } from './api'
+import { openUrl } from '@tauri-apps/plugin-opener'
 import { enable as enableAutostart, disable as disableAutostart, isEnabled as isAutostartEnabled } from '@tauri-apps/plugin-autostart'
 import TitleBar from './components/TitleBar.vue'
 import BaseConfig from './components/BaseConfig.vue'
@@ -704,9 +705,13 @@ const initializeAppCore = async () => {
           closeOnHashChange: false,
         }
       )
-        .then(() => {
+        .then(async () => {
           if (info.download_url) {
-            OpenURL(info.download_url);
+            try {
+              await openUrl(info.download_url);
+            } catch (e: any) {
+              console.error('打开下载链接失败:', e);
+            }
           }
         })
         .catch(() => {
