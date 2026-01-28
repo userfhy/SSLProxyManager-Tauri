@@ -123,7 +123,7 @@ async fn start_ws_rule_server(
     rule: WsListenRule,
     shutdown_rx: tokio::sync::oneshot::Receiver<()>,
 ) -> Result<()> {
-    let addr = parse_listen_addr(&rule.listen_addr)?;
+    let (addr, need_dual_stack) = parse_listen_addr(&rule.listen_addr)?;
 
     let cfg = config::get_config();
 
@@ -150,25 +150,62 @@ async fn start_ws_rule_server(
         .with_context(|| "加载 WS TLS 证书/私钥失败")?;
 
         let mut shutdown_rx = shutdown_rx;
-        let server_future = axum_server::bind_rustls(addr, tls_cfg).serve(app_router);
-        tokio::select! {
-            res = server_future => {
-                res.map_err(|e| anyhow!(e))?;
+        
+        if need_dual_stack && addr.is_ipv6() {
+            // 在 Linux 上，绑定 [::]:port 通常已经启用了 IPv6 dual-stack，
+            // 可以同时处理 IPv4 和 IPv6 连接，不需要再绑定 0.0.0.0:port
+            // 如果系统不支持 dual-stack，绑定会失败，此时可以回退到只绑定 IPv4
+            info!("监听 IPv6 (dual-stack): {} (同时支持 IPv4 和 IPv6)", addr);
+            
+            let server_future = axum_server::bind_rustls(addr, tls_cfg).serve(app_router);
+            tokio::select! {
+                res = server_future => {
+                    res.map_err(|e| anyhow!("WS HTTPS 服务失败: {e}"))?;
+                }
+                _ = &mut shutdown_rx => {
+                    info!("收到关闭信号，WS HTTPS 服务 {} 即将停止", addr);
+                }
             }
-            _ = &mut shutdown_rx => {
-                info!("收到关闭信号，WS HTTPS 服务 {} 即将停止", addr);
+        } else {
+            let server_future = axum_server::bind_rustls(addr, tls_cfg).serve(app_router);
+            tokio::select! {
+                res = server_future => {
+                    res.map_err(|e| anyhow!(e))?;
+                }
+                _ = &mut shutdown_rx => {
+                    info!("收到关闭信号，WS HTTPS 服务 {} 即将停止", addr);
+                }
             }
         }
     } else {
         let mut shutdown_rx = shutdown_rx;
-        let listener = tokio::net::TcpListener::bind(addr).await?;
-        let server_future = axum::serve(listener, app_router);
-        tokio::select! {
-            res = server_future => {
-                res.map_err(|e| anyhow!(e))?;
+        
+        if need_dual_stack && addr.is_ipv6() {
+            // 在 Linux 上，绑定 [::]:port 通常已经启用了 IPv6 dual-stack，
+            // 可以同时处理 IPv4 和 IPv6 连接，不需要再绑定 0.0.0.0:port
+            // 如果系统不支持 dual-stack，绑定会失败，此时可以回退到只绑定 IPv4
+            info!("监听 IPv6 (dual-stack): {} (同时支持 IPv4 和 IPv6)", addr);
+            
+            let listener = tokio::net::TcpListener::bind(addr).await?;
+            let server_future = axum::serve(listener, app_router);
+            tokio::select! {
+                res = server_future => {
+                    res.map_err(|e| anyhow!("WS HTTP 服务失败: {e}"))?;
+                }
+                _ = &mut shutdown_rx => {
+                    info!("收到关闭信号，WS HTTP 服务 {} 即将停止", addr);
+                }
             }
-            _ = &mut shutdown_rx => {
-                info!("收到关闭信号，WS HTTP 服务 {} 即将停止", addr);
+        } else {
+            let listener = tokio::net::TcpListener::bind(addr).await?;
+            let server_future = axum::serve(listener, app_router);
+            tokio::select! {
+                res = server_future => {
+                    res.map_err(|e| anyhow!(e))?;
+                }
+                _ = &mut shutdown_rx => {
+                    info!("收到关闭信号，WS HTTP 服务 {} 即将停止", addr);
+                }
             }
         }
     }
@@ -280,15 +317,30 @@ fn match_ws_route<'a>(routes: &'a [WsRoute], path: &str) -> Option<&'a WsRoute> 
         .max_by_key(|r| r.path.len())
 }
 
-fn parse_listen_addr(s: &str) -> Result<SocketAddr> {
+/// 解析监听地址，返回主地址和是否需要同时绑定 IPv4/IPv6
+fn parse_listen_addr(s: &str) -> Result<(SocketAddr, bool)> {
     let trimmed = s.trim();
-    let normalized = if trimmed.starts_with(':') {
-        format!("0.0.0.0{}", trimmed)
+    let (normalized, need_dual_stack) = if trimmed.starts_with(':') {
+        // :port 格式：同时监听 IPv4 和 IPv6
+        let port = trimmed;
+        let ipv6_format = format!("[::]{}", port);
+        let ipv4_format = format!("0.0.0.0{}", port);
+        
+        // 优先使用 IPv6，因为它通常可以同时监听 IPv4（dual-stack）
+        if let Ok(addr) = ipv6_format.parse::<SocketAddr>() {
+            (addr, true) // 标记需要同时绑定
+        } else if let Ok(addr) = ipv4_format.parse::<SocketAddr>() {
+            (addr, true) // 即使 IPv6 失败，也标记需要同时绑定
+        } else {
+            return Err(anyhow::anyhow!("解析 ws listen_addr 失败: {s}"));
+        }
     } else {
-        trimmed.to_string()
+        // 完整地址格式：直接解析
+        let addr = trimmed
+            .parse::<SocketAddr>()
+            .with_context(|| format!("解析 ws listen_addr 失败: {s}"))?;
+        (addr, false)
     };
 
-    normalized
-        .parse::<SocketAddr>()
-        .with_context(|| format!("解析 ws listen_addr 失败: {s}"))
+    Ok((normalized, need_dual_stack))
 }

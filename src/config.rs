@@ -289,6 +289,11 @@ pub struct StreamServer {
 
     #[serde(default)]
     pub udp: bool,
+
+    /// 监听地址，支持 IPv4 和 IPv6。如果未指定，默认使用 0.0.0.0（仅 IPv4）
+    /// 示例: "0.0.0.0:8080", "[::]:8080", "127.0.0.1:8080"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub listen_addr: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

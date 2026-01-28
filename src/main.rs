@@ -9,6 +9,8 @@ mod proxy;
 mod ws_proxy;
 mod stream_proxy;
 mod access_control;
+#[cfg(test)]
+mod access_control_test;
 mod rate_limit;
 mod i18n;
 
