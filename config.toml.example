@@ -43,7 +43,10 @@ weight = 1
 [[rules]]
 id = "be84e732-15e3-439a-964c-226c00ebb0bb"
 enabled = true
-listen_addr = "0.0.0.0:1024"
+listen_addrs = [
+    ":8888",
+    ":8889",
+]
 ssl_enable = true
 cert_file = "/home/fhy/software/frp_0.65.0_linux_amd64/ssl/bt.aiti.fun/fullchain.crt"
 key_file = "/home/fhy/software/frp_0.65.0_linux_amd64/ssl/bt.aiti.fun/privkey.key"
@@ -79,7 +82,9 @@ weight = 1
 
 [[ws_proxy]]
 enabled = true
-listen_addr = "0.0.0.0:8800"
+listen_addrs = [
+    "0.0.0.0:8800"
+]
 ssl_enable = false
 cert_file = "/home/fhy/mygo/SSLproxy/ssl/cdc-report/server.crt"
 key_file = "/home/fhy/mygo/SSLproxy/ssl/cdc-report/server.key"
