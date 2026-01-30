@@ -177,6 +177,7 @@ async fn start_tcp_server(
     let cfg = config::get_config();
     let access_control_enabled = cfg.stream_access_control_enabled;
     let allow_all_lan = cfg.allow_all_lan;
+    let allow_all_ip = cfg.allow_all_ip;
     let whitelist: Arc<[config::WhitelistEntry]> = Arc::from(cfg.whitelist);
 
     let (shutdown_tx, mut shutdown_rx) = mpsc::channel(1);
@@ -196,6 +197,7 @@ async fn start_tcp_server(
                                         &client_addr,
                                         &headers,
                                         allow_all_lan,
+                                        allow_all_ip,
                                         &whitelist,
                                     ) {
                                         tracing::warn!(
@@ -335,6 +337,7 @@ async fn start_udp_server(
     let cfg = config::get_config();
     let access_control_enabled = cfg.stream_access_control_enabled;
     let allow_all_lan = cfg.allow_all_lan;
+    let allow_all_ip = cfg.allow_all_ip;
     let whitelist: Arc<[config::WhitelistEntry]> = Arc::from(cfg.whitelist);
 
     // 如果指定了 listen_addr，使用它；否则使用默认的 0.0.0.0:port
@@ -443,6 +446,7 @@ async fn start_udp_server(
                                         &client_addr,
                                         &headers,
                                         allow_all_lan,
+                                        allow_all_ip,
                                         &whitelist,
                                     ) {
                                         continue;

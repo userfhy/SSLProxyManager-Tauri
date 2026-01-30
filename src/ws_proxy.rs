@@ -57,6 +57,7 @@ struct WsAppState {
     app: tauri::AppHandle,
     ws_access_control_enabled: bool,
     allow_all_lan: bool,
+    allow_all_ip: bool,
     whitelist: Arc<[config::WhitelistEntry]>,
 }
 
@@ -132,6 +133,7 @@ async fn start_ws_rule_server(
         app: app.clone(),
         ws_access_control_enabled: cfg.ws_access_control_enabled,
         allow_all_lan: cfg.allow_all_lan,
+        allow_all_ip: cfg.allow_all_ip,
         whitelist: Arc::from(cfg.whitelist),
     };
 
@@ -224,7 +226,7 @@ async fn ws_handler(
 ) -> Response {
     // 访问控制（与 HTTP 代理一致）：黑名单优先，其次白名单，再次 allow_all_lan
     if state.ws_access_control_enabled
-        && !access_control::is_allowed_fast(&remote, &headers, state.allow_all_lan, &state.whitelist)
+        && !access_control::is_allowed_fast(&remote, &headers, state.allow_all_lan, state.allow_all_ip, &state.whitelist)
     {
         let ip = access_control::client_ip_from_headers(&remote, &headers);
         let _ = app.emit("log-line", format!("WS forbidden: ip={ip} path={}", uri.path()));

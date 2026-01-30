@@ -102,6 +102,7 @@ struct AppState {
     http_access_control_enabled: bool,
     // 访问控制所需配置快照：避免每请求 get_config() clone 整个 Config
     allow_all_lan: bool,
+    allow_all_ip: bool,
     whitelist: Arc<[config::WhitelistEntry]>,
 }
 
@@ -510,6 +511,7 @@ async fn start_rule_server(
         max_response_body_size: cfg.max_response_body_size,
         http_access_control_enabled: cfg.http_access_control_enabled,
         allow_all_lan: cfg.allow_all_lan,
+        allow_all_ip: cfg.allow_all_ip,
         whitelist: Arc::from(cfg.whitelist),
     };
 
@@ -977,6 +979,7 @@ async fn proxy_handler(
             &remote,
             req.headers(),
             state.allow_all_lan,
+            state.allow_all_ip,
             &state.whitelist,
         );
         
@@ -1000,7 +1003,7 @@ async fn proxy_handler(
                 .join(" ## ");
 
             send_log_with_app(&state.app, format!(
-                "反代错误(IN): {} {} -> [访问控制拒绝] status={} | inbound_headers=[{}] | client_ip={}, remote_ip={}, allow_all_lan={}, whitelist_len={}",
+                "反代错误(IN): {} {} -> [访问控制拒绝] status={} | inbound_headers=[{}] | client_ip={}, remote_ip={}, allow_all_lan={}, allow_all_ip={}, whitelist_len={}",
                 ctx.method.as_str(),
                 ctx.uri,
                 status.as_u16(),
@@ -1008,6 +1011,7 @@ async fn proxy_handler(
                 ctx.client_ip,
                 remote.ip(),
                 state.allow_all_lan,
+                state.allow_all_ip,
                 state.whitelist.len()
             ));
 

@@ -85,7 +85,7 @@ pub fn client_ip_from_headers(remote: &SocketAddr, headers: &HeaderMap) -> Strin
 }
 
 
-pub fn is_allowed_fast(remote: &SocketAddr, headers: &HeaderMap, allow_all_lan: bool, whitelist: &[config::WhitelistEntry]) -> bool {
+pub fn is_allowed_fast(remote: &SocketAddr, headers: &HeaderMap, allow_all_lan: bool, allow_all_ip: bool, whitelist: &[config::WhitelistEntry]) -> bool {
     let ip_str = client_ip_from_headers(remote, headers);
     if metrics::is_ip_blacklisted(&ip_str) {
         debug!("IP {} is blacklisted", ip_str);
@@ -99,6 +99,12 @@ pub fn is_allowed_fast(remote: &SocketAddr, headers: &HeaderMap, allow_all_lan: 
     
     // info!("Access control check: remote_ip_raw={}, converted_ip={}, ip_str={}, allow_all_lan={}", 
     //       remote_ip_raw, ip, ip_str, allow_all_lan);
+
+    // 如果允许所有 IP，直接返回 true（黑名单检查已在前面完成）
+    if allow_all_ip {
+        debug!("IP {} allowed (allow_all_ip=true)", ip);
+        return true;
+    }
 
     // 本机回环地址（127.0.0.1 / ::1）永远允许，不需要加入白名单
     if is_loopback_ip(&ip) {
@@ -124,7 +130,8 @@ pub fn is_allowed_fast(remote: &SocketAddr, headers: &HeaderMap, allow_all_lan: 
 
     let is_lan = is_lan_ip(&ip);
     let allowed = allow_all_lan && is_lan;
-    // info!("IP {} is_lan={}, allow_all_lan={}, final_allowed={}", ip, is_lan, allow_all_lan, allowed);
+    debug!("Access control: IP={}, ip_str={}, is_lan={}, allow_all_lan={}, allow_all_ip={}, final_allowed={}", 
+           ip, ip_str, is_lan, allow_all_lan, allow_all_ip, allowed);
     
     allowed
 }

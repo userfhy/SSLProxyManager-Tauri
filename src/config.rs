@@ -331,6 +331,8 @@ pub struct Config {
     pub stream_access_control_enabled: bool,
 
     pub allow_all_lan: bool,
+    #[serde(default)]
+    pub allow_all_ip: bool,
     pub whitelist: Vec<WhitelistEntry>,
 
     #[serde(default)]
@@ -395,6 +397,7 @@ static CONFIG: Lazy<RwLock<Config>> = Lazy::new(|| {
         ws_access_control_enabled: default_ws_access_control_enabled(),
         stream_access_control_enabled: default_stream_access_control_enabled(),
         allow_all_lan: true,
+        allow_all_ip: false,
         whitelist: vec![],
         auto_start: false,
         show_realtime_logs: true,
@@ -428,6 +431,7 @@ fn default_config() -> Config {
         ws_access_control_enabled: default_ws_access_control_enabled(),
         stream_access_control_enabled: default_stream_access_control_enabled(),
         allow_all_lan: true,
+        allow_all_ip: false,
         whitelist: vec![],
         auto_start: false,
         show_realtime_logs: true,

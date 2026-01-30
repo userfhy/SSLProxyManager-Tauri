@@ -371,6 +371,8 @@
     "switchHint": "Controls whether access control (whitelist/blacklist) is enabled for the three types of reverse proxies. When disabled, requests of the corresponding type will be directly allowed.",
     "allowAllLAN": "Allow All LAN IPs",
     "allowAllLANHint": "When checked, all LAN addresses (e.g., 192.168.x.x, 10.x.x.x) will be allowed, and the whitelist will still be effective.",
+    "allowAllIP": "Allow All IPs",
+    "allowAllIPHint": "When checked, all IP addresses (including public IPs) will be allowed, and the whitelist and blacklist will still be effective. Warning: This will allow access from the internet, use with caution.",
     "ipWhitelist": "IP Whitelist",
     "addIP": "Add IP Address",
     "ipBlacklist": "IP Blacklist",

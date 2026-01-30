@@ -31,6 +31,15 @@
         </el-text>
       </el-form-item>
 
+      <el-form-item>
+        <el-checkbox v-model="localConfig.allow_all_ip">
+          {{ $t('accessControl.allowAllIP') }}
+        </el-checkbox>
+        <el-text type="info" size="small" class="mini-hint">
+          {{ $t('accessControl.allowAllIPHint') }}
+        </el-text>
+      </el-form-item>
+
       <el-form-item :label="$t('accessControl.ipWhitelist')">
         <TransitionGroup name="list" tag="div" class="whitelist-list">
           <div v-for="(item, index) in localConfig.whitelist" :key="item.id || index" class="whitelist-item">
@@ -225,6 +234,7 @@ const localConfig = ref({
   ws_access_control_enabled: true,
   stream_access_control_enabled: true,
   allow_all_lan: true,
+  allow_all_ip: false,
   whitelist: [] as { id?: string; ip: string }[],
 })
 
@@ -344,6 +354,7 @@ watch(
       localConfig.value.ws_access_control_enabled = newConfig.ws_access_control_enabled !== false
       localConfig.value.stream_access_control_enabled = newConfig.stream_access_control_enabled !== false
       localConfig.value.allow_all_lan = newConfig.allow_all_lan ?? true
+      localConfig.value.allow_all_ip = newConfig.allow_all_ip ?? false
       localConfig.value.whitelist = Array.isArray(newConfig.whitelist) ? [...newConfig.whitelist] : []
     }
   },
@@ -527,6 +538,7 @@ const getConfig = () => {
     ws_access_control_enabled: !!localConfig.value.ws_access_control_enabled,
     stream_access_control_enabled: !!localConfig.value.stream_access_control_enabled,
     allow_all_lan: localConfig.value.allow_all_lan,
+    allow_all_ip: localConfig.value.allow_all_ip,
     whitelist: localConfig.value.whitelist.filter((item) => item.ip.trim() !== ''),
   }
 }

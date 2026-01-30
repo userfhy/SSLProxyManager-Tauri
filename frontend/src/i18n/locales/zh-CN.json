@@ -367,6 +367,8 @@
     "switchHint": "用于控制三类反向代理是否启用访问控制（白名单/黑名单）。关闭后将直接放行对应类型的请求。",
     "allowAllLAN": "允许所有局域网 IP 访问",
     "allowAllLANHint": "勾选后，所有局域网地址（如 192.168.x.x, 10.x.x.x）都将被允许访问，白名单依然有效。",
+    "allowAllIP": "允许所有 IP 访问",
+    "allowAllIPHint": "勾选后，所有 IP 地址（包括公网 IP）都将被允许访问，白名单和黑名单依然有效。注意：这会允许来自互联网的访问，请谨慎使用。",
     "ipWhitelist": "IP 白名单",
     "addIP": "添加 IP 地址",
     "ipBlacklist": "IP 黑名单",
