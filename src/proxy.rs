@@ -199,7 +199,20 @@ pub fn start_server(app: tauri::AppHandle) -> Result<()> {
 
     let cfg = config::get_config();
     let rules: Vec<_> = cfg.rules.into_iter().filter(|r| r.enabled).collect();
-    let expected = rules.len();
+
+    // 计算总监听节点数：每个规则的 listen_addrs 数量（为空则按 1 计算）
+    let expected: usize = rules
+        .iter()
+        .map(|r| {
+            let n = r
+                .listen_addrs
+                .iter()
+                .map(|s| s.trim())
+                .filter(|s| !s.is_empty())
+                .count();
+            if n == 0 { 1 } else { n }
+        })
+        .sum();
     *START_EXPECTED.write() = expected;
     *START_STARTED_COUNT.write() = 0;
 
@@ -216,69 +229,33 @@ pub fn start_server(app: tauri::AppHandle) -> Result<()> {
     let mut handles = Vec::new();
 
     for rule in rules {
-        let app_handle = app.clone();
-        let listen_addr = rule.listen_addr.clone();
-        let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
-
-        let handle = tauri::async_runtime::spawn(async move {
-            if let Err(e) = precheck_rule(&rule).await {
-                error!("启动监听器失败({listen_addr}): {e}");
-                send_log(format!("启动监听器失败({listen_addr}): {e}"));
-
-                let payload = RuleStartErrorPayload {
-                    listen_addr,
-                    error: e.to_string(),
-                };
-                let _ = app_handle.emit("server-start-error", payload);
-
-                *START_FAILED.write() = true;
-                *IS_RUNNING.write() = false;
-                *STARTING.write() = false;
-                let _ = app_handle.emit("status", "stopped");
-                return;
+        // 为每个规则展开出多个监听地址；如果没有配置 listen_addrs，则退化为单个 listen_addr
+        let addrs: Vec<String> = {
+            let mut v: Vec<String> = rule
+                .listen_addrs
+                .iter()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
+            if v.is_empty() {
+                v.push(rule.listen_addr.clone());
             }
+            v
+        };
 
-            {
-                let mut started = START_STARTED_COUNT.write();
-                *started += 1;
-                let expected = *START_EXPECTED.read();
-                let failed = *START_FAILED.read();
-                if !failed && *started == expected {
-                    *IS_RUNNING.write() = true;
-                    *STARTING.write() = false;
-                    let _ = app_handle.emit("status", "running");
+        for listen_addr in addrs {
+            let app_handle = app.clone();
+            let rule_clone = rule.clone();
+            let listen_addr_clone = listen_addr.clone();
+            let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
 
-                    let final_cfg = config::get_config();
-                    for r in &final_cfg.rules {
-                        let routes_summary = r
-                            .routes
-                            .iter()
-                            .map(|rt| {
-                                format!(
-                                    "{} -> {} upstreams",
-                                    rt.path.as_deref().unwrap_or("/"),
-                                    rt.upstreams.len()
-                                )
-                            })
-                            .collect::<Vec<_>>()
-                            .join(", ");
-                        let log_line = format!(
-                            "[NODE {}] Server started | SSL: {} | Routes: [{}] | Allow all LAN: {}",
-                            r.listen_addr, r.ssl_enable, routes_summary, final_cfg.allow_all_lan
-                        );
-                        send_log_with_app(&app_handle, log_line);
-                    }
-                }
-            }
-
-            match start_rule_server(app_handle.clone(), rule, shutdown_rx).await {
-                Ok(()) => {}
-                Err(e) => {
-                    error!("启动监听器失败({listen_addr}): {e}");
-                    send_log(format!("启动监听器失败({listen_addr}): {e}"));
+            let handle = tauri::async_runtime::spawn(async move {
+                if let Err(e) = precheck_rule(&rule_clone, &listen_addr_clone).await {
+                    error!("启动监听器失败({listen_addr_clone}): {e}");
+                    send_log(format!("启动监听器失败({listen_addr_clone}): {e}"));
 
                     let payload = RuleStartErrorPayload {
-                        listen_addr,
+                        listen_addr: listen_addr_clone.clone(),
                         error: e.to_string(),
                     };
                     let _ = app_handle.emit("server-start-error", payload);
@@ -287,10 +264,70 @@ pub fn start_server(app: tauri::AppHandle) -> Result<()> {
                     *IS_RUNNING.write() = false;
                     *STARTING.write() = false;
                     let _ = app_handle.emit("status", "stopped");
+                    return;
                 }
-            }
-        });
-        handles.push(ServerHandle { handle, shutdown_tx });
+
+                {
+                    let mut started = START_STARTED_COUNT.write();
+                    *started += 1;
+                    let expected = *START_EXPECTED.read();
+                    let failed = *START_FAILED.read();
+                    if !failed && *started == expected {
+                        *IS_RUNNING.write() = true;
+                        *STARTING.write() = false;
+                        let _ = app_handle.emit("status", "running");
+
+                        let final_cfg = config::get_config();
+                        for r in &final_cfg.rules {
+                            let routes_summary = r
+                                .routes
+                                .iter()
+                                .map(|rt| {
+                                    format!(
+                                        "{} -> {} upstreams",
+                                        rt.path.as_deref().unwrap_or("/"),
+                                        rt.upstreams.len()
+                                    )
+                                })
+                                .collect::<Vec<_>>()
+                                .join(", ");
+                            let log_line = format!(
+                                "[NODE {}] Server started | SSL: {} | Routes: [{}] | Allow all LAN: {}",
+                                r.listen_addr, r.ssl_enable, routes_summary, final_cfg.allow_all_lan
+                            );
+                            send_log_with_app(&app_handle, log_line);
+                        }
+                    }
+                }
+
+                match start_rule_server(
+                    app_handle.clone(),
+                    rule_clone,
+                    listen_addr_clone.clone(),
+                    shutdown_rx,
+                )
+                .await
+                {
+                    Ok(()) => {}
+                    Err(e) => {
+                        error!("启动监听器失败({listen_addr_clone}): {e}");
+                        send_log(format!("启动监听器失败({listen_addr_clone}): {e}"));
+
+                        let payload = RuleStartErrorPayload {
+                            listen_addr: listen_addr_clone.clone(),
+                            error: e.to_string(),
+                        };
+                        let _ = app_handle.emit("server-start-error", payload);
+
+                        *START_FAILED.write() = true;
+                        *IS_RUNNING.write() = false;
+                        *STARTING.write() = false;
+                        let _ = app_handle.emit("status", "stopped");
+                    }
+                }
+            });
+            handles.push(ServerHandle { handle, shutdown_tx });
+        }
     }
 
     *SERVERS.write() = handles;
@@ -321,8 +358,23 @@ pub fn stop_server(app: tauri::AppHandle) -> Result<()> {
 
     let cfg = config::get_config();
     for r in &cfg.rules {
-        let log_line = format!("[NODE {}] Server stopped", r.listen_addr);
-        send_log_with_app(&app, log_line);
+        // 优先打印 listen_addrs，如果为空则回退到 listen_addr
+        let addrs: Vec<String> = {
+            let mut v: Vec<String> = r
+                .listen_addrs
+                .iter()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
+            if v.is_empty() {
+                v.push(r.listen_addr.clone());
+            }
+            v
+        };
+        for addr in addrs {
+            let log_line = format!("[NODE {}] Server stopped", addr);
+            send_log_with_app(&app, log_line);
+        }
     }
 
     info!("代理服务器已停止");
@@ -387,8 +439,8 @@ pub fn send_log_with_app(app: &tauri::AppHandle, message: String) {
     let _ = app.emit("log-line", message);
 }
 
-async fn precheck_rule(rule: &config::ListenRule) -> Result<()> {
-    let (addr, _need_dual_stack) = parse_listen_addr(&rule.listen_addr)?;
+async fn precheck_rule(rule: &config::ListenRule, listen_addr: &str) -> Result<()> {
+    let (addr, _need_dual_stack) = parse_listen_addr(listen_addr)?;
 
     if rule.ssl_enable {
         let _ = axum_server::tls_rustls::RustlsConfig::from_pem_file(
@@ -411,9 +463,10 @@ async fn precheck_rule(rule: &config::ListenRule) -> Result<()> {
 async fn start_rule_server(
     app: tauri::AppHandle,
     rule: config::ListenRule,
+    listen_addr: String,
     shutdown_rx: tokio::sync::oneshot::Receiver<()>,
 ) -> Result<()> {
-    let (addr, need_dual_stack) = parse_listen_addr(&rule.listen_addr)?;
+    let (addr, need_dual_stack) = parse_listen_addr(&listen_addr)?;
 
     let cfg = crate::config::get_config();
 
@@ -448,7 +501,7 @@ async fn start_rule_server(
         client_follow,
         client_nofollow,
         app: app.clone(),
-        listen_addr: Arc::from(rule.listen_addr.clone()),
+        listen_addr: Arc::from(listen_addr.clone()),
         stream_proxy: cfg.stream_proxy,
         max_body_size: cfg.max_body_size,
         max_response_body_size: cfg.max_response_body_size,
@@ -458,7 +511,7 @@ async fn start_rule_server(
     };
 
     // 初始化速率限制器（如果在该规则中启用）
-    if let Some(enabled) = rule.rate_limit_enabled {
+            if let Some(enabled) = rule.rate_limit_enabled {
         if enabled {
             let rate_limit_config = rate_limit::RateLimitConfig {
                 enabled: true,
@@ -466,7 +519,7 @@ async fn start_rule_server(
                 burst_size: rule.rate_limit_burst_size.unwrap_or(20),
                 ban_seconds: rule.rate_limit_ban_seconds.unwrap_or(0),
             };
-            rate_limit::get_rate_limiter(&rule.listen_addr, rate_limit_config);
+            rate_limit::get_rate_limiter(&listen_addr, rate_limit_config);
         }
     }
 
@@ -496,8 +549,8 @@ async fn start_rule_server(
     
     let app = app.into_make_service_with_connect_info::<SocketAddr>();
 
-    send_log(format!("监听地址: {} -> {}", rule.listen_addr, addr));
-    info!("监听地址: {} -> {}", rule.listen_addr, addr);
+    send_log(format!("监听地址: {} -> {}", listen_addr, addr));
+    info!("监听地址: {} -> {}", listen_addr, addr);
 
     if rule.ssl_enable {
         let tls_cfg = axum_server::tls_rustls::RustlsConfig::from_pem_file(

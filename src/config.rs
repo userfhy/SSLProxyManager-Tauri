@@ -186,7 +186,11 @@ pub struct ListenRule {
     #[serde(default = "default_true")]
     pub enabled: bool,
 
+    /// 兼容旧字段：单个监听地址
     pub listen_addr: String,
+    /// 新字段：多个监听地址（如果为空，则回退到 listen_addr）
+    #[serde(default)]
+    pub listen_addrs: Vec<String>,
     pub ssl_enable: bool,
     pub cert_file: String,
     pub key_file: String,

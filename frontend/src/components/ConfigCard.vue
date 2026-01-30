@@ -37,7 +37,19 @@
 
         <el-form :model="rule" label-width="120px" class="form-grid">
           <el-form-item :label="$t('configCard.listenAddr')">
-            <el-input v-model="rule.ListenAddr" placeholder="0.0.0.0:8888" style="width: 260px;"/>
+            <el-select
+              v-model="rule.ListenAddrs"
+              multiple
+              filterable
+              allow-create
+              default-first-option
+              placeholder="0.0.0.0:8888、[::]:8888、:8888"
+              :no-data-text="$t('configCard.listenAddrPlaceholder')"
+              :no-match-text="$t('configCard.noMatchText')"
+              style="width: 360px;"
+              class="listen-addr-input"
+            >
+            </el-select>
           </el-form-item>
 
           <el-form-item :label="$t('configCard.routes')" required>
@@ -443,7 +455,8 @@ interface BodyReplaceRule {
 interface ListenRule {
   ID?: string
   Enabled?: boolean
-  ListenAddr: string
+  ListenAddr: string         // 兼容旧字段（单个）
+  ListenAddrs?: string[]     // 新字段：多个监听地址
   SSLEnable: boolean
   CertFile: string
   KeyFile: string
@@ -464,6 +477,7 @@ interface ListenRule {
 const rules = ref<ListenRule[]>([
   {
     ListenAddr: '0.0.0.0:8888',
+    ListenAddrs: ['0.0.0.0:8888'],
     SSLEnable: false,
     CertFile: '',
     KeyFile: '',
@@ -577,7 +591,11 @@ onMounted(async () => {
       return {
         ID: rule.id || '',
         Enabled: rule.enabled !== undefined ? !!rule.enabled : true,
+        // 后端向下兼容：如果有 listen_addrs 就用数组，否则从 listen_addr 构造
         ListenAddr: rule.listen_addr || '0.0.0.0:8888',
+        ListenAddrs: Array.isArray(rule.listen_addrs) && rule.listen_addrs.length > 0
+          ? rule.listen_addrs
+          : [(rule.listen_addr || '0.0.0.0:8888')],
         SSLEnable: !!rule.ssl_enable,
         CertFile: rule.cert_file || '',
         KeyFile: rule.key_file || '',
@@ -606,6 +624,7 @@ onMounted(async () => {
     rules.value = [
       {
         ListenAddr: '0.0.0.0:8888',
+        ListenAddrs: ['0.0.0.0:8888'],
         SSLEnable: false,
         CertFile: '',
         KeyFile: '',
@@ -638,6 +657,7 @@ const addRule = () => {
   rules.value.push({
     ID: `new-rule-${Date.now()}`,
     ListenAddr: '0.0.0.0:8888',
+    ListenAddrs: ['0.0.0.0:8888'],
     SSLEnable: false,
     CertFile: '',
     KeyFile: '',
@@ -810,6 +830,10 @@ const getConfig = () => {
     ID: (rule.ID || '').trim(),
     Enabled: rule.Enabled !== undefined ? !!rule.Enabled : true,
     ListenAddr: rule.ListenAddr.trim(),
+    ListenAddrs: (rule.ListenAddrs && rule.ListenAddrs.length > 0
+      ? rule.ListenAddrs
+      : [rule.ListenAddr]
+    ).map((s) => s.trim()).filter((s) => s !== ''),
     SSLEnable: !!rule.SSLEnable,
     CertFile: rule.CertFile || '',
     KeyFile: rule.KeyFile || '',
@@ -898,7 +922,9 @@ const getConfig = () => {
   const mappedRules = cleanedRules.map((r: any) => ({
     id: r.ID || undefined,
     enabled: r.Enabled !== undefined ? !!r.Enabled : true,
-    listen_addr: r.ListenAddr,
+    // 向后端输出新的 listen_addrs 数组，同时保留第一个为 listen_addr 兼容旧字段
+    listen_addr: r.ListenAddrs[0] || r.ListenAddr,
+    listen_addrs: r.ListenAddrs,
     ssl_enable: !!r.SSLEnable,
     cert_file: r.CertFile,
     key_file: r.KeyFile,
