@@ -26,6 +26,7 @@ SSLProxyManager is based on **Tauri 2 + Rust**, providing a management interface
   - TLS (certificate/private key)
   - Basic Auth (with optional header forwarding)
   - Routing: path prefix matching + optional conditions (Host / HTTP methods / request headers)
+  - Request/response body replacement supports optional `content_types` filtering (by `Content-Type`)
   - Upstream list (with weights)
   - `proxy_pass_path` path rewriting
   - Static directory priority (`static_dir`)
@@ -148,17 +149,28 @@ The project uses TOML for configuration.
 ### 1) HTTP/HTTPS Proxy (rules)
 
 - `[[rules]]`: Listen node
-  - `listen_addr`: Listen address, e.g., `:8888` or `0.0.0.0:1024`
+  - `listen_addr`: Legacy single listen address (kept for backward compatibility)
+  - `listen_addrs`: Preferred multiple listen addresses, e.g. `[":8888", ":8889"]` (if empty, falls back to `listen_addr`)
+  - `ssl_enable`: Whether to enable TLS
+  - `cert_file` / `key_file`: Certificate and private key paths
+  - `basic_auth_enable` / `basic_auth_username` / `basic_auth_password`
+  - `basic_auth_forward_header`: Whether to forward the `Authorization` header to upstream
+  - `routes`: Routes list
   - `ssl_enable`: Whether to enable TLS
   - `cert_file` / `key_file`: Certificate and private key paths
   - `basic_auth_enable` / `basic_auth_username` / `basic_auth_password`
 - `[[rules.routes]]`: Route
   - `path`: Path prefix matching
+  - `host`: Optional host constraint (supports exact match and wildcard like `*.example.com`)
+  - `methods`: Optional HTTP method constraint (e.g. `["GET","POST"]`)
+  - `headers`: Optional request header constraint (exact match; supports wildcard `*` in expected value)
   - `static_dir`: Static directory (optional)
   - `proxy_pass_path`: Forward path rewriting (optional)
   - `exclude_basic_auth`: Whether this route skips Basic Auth (optional)
   - `follow_redirects`: Whether the proxy follows upstream 30x redirects (optional)
   - `[rules.routes.set_headers]`: Header injection (optional)
+  - `request_body_replace` / `response_body_replace`: Body replacement rules (optional)
+    - `content_types`: Optional Content-Type filter for this replace rule (comma-separated, e.g. `text/html,application/json`)
   - `[[rules.routes.upstreams]]`: Upstream list (optional)
 
 ### 2) WS Proxy (ws_proxy)

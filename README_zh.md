@@ -22,10 +22,11 @@ SSLProxyManager 基于 **Tauri 2 + Rust**，提供管理界面（前端：**Vue 
 ## 功能概览
 
 - **HTTP/HTTPS 代理（rules/routes）**
-  - 多监听节点（`listen_addr`）
+  - 多监听节点（`listen_addr` / `listen_addrs`）
   - TLS（证书/私钥）
   - Basic Auth（支持可选头部转发）
-  - 路由（path 前缀匹配）
+  - 路由：Path 前缀匹配 + 可选条件（Host / HTTP 方法 / 请求头）
+  - 请求/响应体替换支持按 `Content-Type` 过滤（`content_types`）
   - Upstream 列表（权重）
   - `proxy_pass_path` 路径改写
   - 静态目录优先（`static_dir`）
