@@ -127,11 +127,9 @@ struct RequestContext {
 }
 
 impl RequestContext {
-    fn new(remote: SocketAddr, headers: &HeaderMap, method: Method, uri: Uri) -> Self {
+    fn new(remote: SocketAddr, headers: &HeaderMap, method: &Method, uri: &Uri) -> Self {
         let path = uri.path().to_string();
 
-        // 只提取日志/指标需要的少数字段，避免 HeaderMap 全量 clone
-        // 小优化：单独封装一次 get + to_str + to_string，减少重复闭包/链式调用开销
         #[inline]
         fn header_to_string(headers: &HeaderMap, key: &'static str) -> String {
             headers
@@ -143,8 +141,8 @@ impl RequestContext {
 
         let xff = header_to_string(headers, "x-forwarded-for");
         let xri = header_to_string(headers, "x-real-ip");
-        // 获取 Host 头；在 HTTP/2 场景下可能没有传统的 Host 头（而是 :authority），
-        // axum 会把 authority 映射到 host 头，但为了稳妥，这里做多路兜底。
+
+        // Host: prefer Host header; fallback to :authority; finally fallback to uri.authority()
         let host = headers
             .get("host")
             .or_else(|| headers.get(":authority"))
@@ -152,6 +150,7 @@ impl RequestContext {
             .or_else(|| uri.authority().map(|a| a.as_str()))
             .unwrap_or("")
             .to_string();
+
         let referer = header_to_string(headers, "referer");
         let ua = header_to_string(headers, "user-agent");
 
@@ -163,8 +162,8 @@ impl RequestContext {
             host_header: host,
             referer_header: referer,
             user_agent_header: ua,
-            method,
-            uri,
+            method: method.clone(),
+            uri: uri.clone(),
             path,
         }
     }
@@ -728,7 +727,7 @@ fn match_route<'a>(
     headers: &HeaderMap,
 ) -> (Option<&'a config::Route>, String) {
     let host = normalize_host(request_host);
-    
+
     let mut best: Option<(&config::Route, bool, usize)> = None; // (route, has_host_constraint, path_len)
 
     for r in routes {
@@ -951,7 +950,7 @@ fn format_access_log(node: &str, ctx: &RequestContext, status: StatusCode) -> St
             .trim()
             .to_string()
     } else if ctx.real_ip_header != "-" {
-        ctx.real_ip_header.clone()
+        ctx.real_ip_header.to_string()
     } else {
         "-".to_string()
     };
@@ -1023,7 +1022,9 @@ async fn proxy_handler(
     State(state): State<AppState>,
     req: Request<Body>,
 ) -> Response {
-    let ctx = RequestContext::new(remote, req.headers(), req.method().clone(), req.uri().clone());
+    let method = req.method().clone();
+    let uri = req.uri().clone();
+    let ctx = RequestContext::new(remote, req.headers(), &method, &uri);
 
     let node = &*state.listen_addr;
     let (route, matched_route_id) = match_route(
@@ -1061,13 +1062,13 @@ async fn proxy_handler(
                 client_ip: ctx.client_ip.clone(),
                 remote_ip: remote.ip().to_string(),
                 method: ctx.method.as_str().to_string(),
-                request_path: ctx.path.clone(),
-                request_host: ctx.host_header.clone(),
+                request_path: ctx.path.to_string(),
+                request_host: ctx.host_header.to_string(),
                 status_code: status.as_u16() as i32,
                 upstream: "".to_string(),
                 latency_ms: ctx.elapsed_ms(),
-                user_agent: ctx.user_agent_header.clone(),
-                referer: ctx.referer_header.clone(),
+                user_agent: ctx.user_agent_header.to_string(),
+                referer: ctx.referer_header.to_string(),
                 matched_route_id: matched_route_id.clone(),
             });
 
@@ -1120,13 +1121,13 @@ async fn proxy_handler(
                 client_ip: ctx.client_ip.clone(),
                 remote_ip: remote.ip().to_string(),
                 method: ctx.method.as_str().to_string(),
-                request_path: ctx.path.clone(),
-                request_host: ctx.host_header.clone(),
+                request_path: ctx.path.to_string(),
+                request_host: ctx.host_header.to_string(),
                 status_code: status.as_u16() as i32,
                 upstream: "".to_string(),
                 latency_ms: ctx.elapsed_ms(),
-                user_agent: ctx.user_agent_header.clone(),
-                referer: ctx.referer_header.clone(),
+                user_agent: ctx.user_agent_header.to_string(),
+                referer: ctx.referer_header.to_string(),
                 matched_route_id: matched_route_id.clone(),
             });
 
@@ -1173,13 +1174,13 @@ async fn proxy_handler(
                     client_ip: ctx.client_ip.clone(),
                     remote_ip: remote.ip().to_string(),
                     method: ctx.method.as_str().to_string(),
-                    request_path: ctx.path.clone(),
-                    request_host: ctx.host_header.clone(),
+                    request_path: ctx.path.to_string(),
+                    request_host: ctx.host_header.to_string(),
                     status_code: status.as_u16() as i32,
                     upstream: "".to_string(),
                     latency_ms: ctx.elapsed_ms(),
-                    user_agent: ctx.user_agent_header.clone(),
-                    referer: ctx.referer_header.clone(),
+                    user_agent: ctx.user_agent_header.to_string(),
+                    referer: ctx.referer_header.to_string(),
                     matched_route_id: matched_route_id.clone(),
                 });
 
@@ -1214,13 +1215,13 @@ async fn proxy_handler(
             client_ip: ctx.client_ip.clone(),
             remote_ip: remote.ip().to_string(),
             method: ctx.method.as_str().to_string(),
-            request_path: ctx.path.clone(),
-            request_host: ctx.host_header.clone(),
+            request_path: ctx.path.to_string(),
+            request_host: ctx.host_header.to_string(),
             status_code: status.as_u16() as i32,
             upstream: "".to_string(),
             latency_ms: ctx.elapsed_ms(),
-            user_agent: ctx.user_agent_header.clone(),
-            referer: ctx.referer_header.clone(),
+            user_agent: ctx.user_agent_header.to_string(),
+            referer: ctx.referer_header.to_string(),
             matched_route_id: matched_route_id.clone(),
         });
 
@@ -1243,13 +1244,13 @@ async fn proxy_handler(
             client_ip: ctx.client_ip.clone(),
             remote_ip: remote.ip().to_string(),
             method: ctx.method.as_str().to_string(),
-            request_path: ctx.path.clone(),
-            request_host: ctx.host_header.clone(),
+            request_path: ctx.path.to_string(),
+            request_host: ctx.host_header.to_string(),
             status_code: status.as_u16() as i32,
             upstream: "".to_string(),
             latency_ms: ctx.elapsed_ms(),
-            user_agent: ctx.user_agent_header.clone(),
-            referer: ctx.referer_header.clone(),
+            user_agent: ctx.user_agent_header.to_string(),
+            referer: ctx.referer_header.to_string(),
             matched_route_id: matched_route_id.clone(),
         });
 
@@ -1274,13 +1275,13 @@ async fn proxy_handler(
                         client_ip: ctx.client_ip.clone(),
                         remote_ip: remote.ip().to_string(),
                         method: ctx.method.as_str().to_string(),
-                        request_path: ctx.path.clone(),
-                        request_host: ctx.host_header.clone(),
+                        request_path: ctx.path.to_string(),
+                        request_host: ctx.host_header.to_string(),
                         status_code: status.as_u16() as i32,
                         upstream: "".to_string(),
                         latency_ms: ctx.elapsed_ms(),
-                        user_agent: ctx.user_agent_header.clone(),
-                        referer: ctx.referer_header.clone(),
+                        user_agent: ctx.user_agent_header.to_string(),
+                        referer: ctx.referer_header.to_string(),
                         matched_route_id: matched_route_id.clone(),
                     });
 
@@ -1310,13 +1311,13 @@ async fn proxy_handler(
                             client_ip: ctx.client_ip.clone(),
                             remote_ip: remote.ip().to_string(),
                             method: ctx.method.as_str().to_string(),
-                            request_path: ctx.path.clone(),
-                            request_host: ctx.host_header.clone(),
+                            request_path: ctx.path.to_string(),
+                            request_host: ctx.host_header.to_string(),
                             status_code: status.as_u16() as i32,
                             upstream: "".to_string(),
                             latency_ms: ctx.elapsed_ms(),
-                            user_agent: ctx.user_agent_header.clone(),
-                            referer: ctx.referer_header.clone(),
+                            user_agent: ctx.user_agent_header.to_string(),
+                            referer: ctx.referer_header.to_string(),
                             matched_route_id: matched_route_id.clone(),
                         });
 
@@ -1338,13 +1339,13 @@ async fn proxy_handler(
             client_ip: ctx.client_ip.clone(),
             remote_ip: remote.ip().to_string(),
             method: ctx.method.as_str().to_string(),
-            request_path: ctx.path.clone(),
-            request_host: ctx.host_header.clone(),
+            request_path: ctx.path.to_string(),
+            request_host: ctx.host_header.to_string(),
             status_code: status.as_u16() as i32,
             upstream: "".to_string(),
             latency_ms: ctx.elapsed_ms(),
-            user_agent: ctx.user_agent_header.clone(),
-            referer: ctx.referer_header.clone(),
+            user_agent: ctx.user_agent_header.to_string(),
+            referer: ctx.referer_header.to_string(),
             matched_route_id: matched_route_id.clone(),
         });
 
@@ -1395,13 +1396,13 @@ async fn proxy_handler(
                     client_ip: ctx.client_ip.clone(),
                     remote_ip: remote.ip().to_string(),
                     method: ctx.method.as_str().to_string(),
-                    request_path: ctx.path.clone(),
-                    request_host: ctx.host_header.clone(),
+                    request_path: ctx.path.to_string(),
+                    request_host: ctx.host_header.to_string(),
                     status_code: status.as_u16() as i32,
                     upstream: upstream_url.clone(),
                     latency_ms: ctx.elapsed_ms(),
-                    user_agent: ctx.user_agent_header.clone(),
-                    referer: ctx.referer_header.clone(),
+                    user_agent: ctx.user_agent_header.to_string(),
+                    referer: ctx.referer_header.to_string(),
                     matched_route_id: matched_route_id.clone(),
                 });
 
@@ -1642,13 +1643,13 @@ async fn proxy_handler(
             client_ip: ctx.client_ip.clone(),
             remote_ip: remote.ip().to_string(),
             method: ctx.method.as_str().to_string(),
-            request_path: ctx.path.clone(),
-            request_host: ctx.host_header.clone(),
+            request_path: ctx.path.to_string(),
+            request_host: ctx.host_header.to_string(),
             status_code: status.as_u16() as i32,
             upstream: target.clone(),
             latency_ms: ctx.elapsed_ms(),
-            user_agent: ctx.user_agent_header.clone(),
-            referer: ctx.referer_header.clone(),
+            user_agent: ctx.user_agent_header.to_string(),
+            referer: ctx.referer_header.to_string(),
             matched_route_id: matched_route_id.clone(),
         });
 
