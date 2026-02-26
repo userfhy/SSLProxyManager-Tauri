@@ -16,7 +16,7 @@
     "element-plus": "^2.13.2",
     "unplugin-auto-import": "^21.0.0",
     "unplugin-vue-components": "^31.0.0",
-    "vue": "^3.5.28",
+    "vue": "^3.5.29",
     "vue-echarts": "^8.0.1",
     "vue-i18n": "^11.2.8"
   },
