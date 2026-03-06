@@ -13,7 +13,7 @@ use axum::{
 use parking_lot::RwLock;
 use reqwest::redirect::Policy;
 use std::{
-    collections::HashSet,
+    collections::{HashSet, VecDeque},
     net::SocketAddr,
     sync::Arc,
     time::Duration,
@@ -46,8 +46,6 @@ use tower_http::services::ServeDir;
 use tower_http::compression::{CompressionLayer, CompressionLevel};
 use tracing::{error, info};
 
-static IS_RUNNING: RwLock<bool> = RwLock::new(false);
-
 struct ServerHandle {
     handle: tauri::async_runtime::JoinHandle<()>,
     shutdown_tx: tokio::sync::oneshot::Sender<()>,
@@ -60,13 +58,43 @@ impl ServerHandle {
     }
 }
 
-static SERVERS: RwLock<Vec<ServerHandle>> = RwLock::new(Vec::new());
-static LOGS: RwLock<Vec<String>> = RwLock::new(Vec::new());
+static LOGS: RwLock<VecDeque<String>> = RwLock::new(VecDeque::new());
 
-static STARTING: RwLock<bool> = RwLock::new(false);
-static START_EXPECTED: RwLock<usize> = RwLock::new(0);
-static START_FAILED: RwLock<bool> = RwLock::new(false);
-static START_STARTED_COUNT: RwLock<usize> = RwLock::new(0);
+/// 服务器生命周期阶段
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Phase {
+    Stopped,
+    Starting,
+    Running,
+    Failed,
+}
+
+/// 所有启动/停止相关状态集中在单一 Mutex 内，
+/// 确保状态转换的原子性，消除多个独立 RwLock 之间的竞态窗口。
+struct ProxyState {
+    phase: Phase,
+    /// 每次 stop/start 时递增；异步任务对比自身捕获的 generation
+    /// 与当前值，不匹配则说明已被新的 stop/start 超越，直接退出。
+    generation: u64,
+    expected: usize,
+    started: usize,
+    handles: Vec<ServerHandle>,
+}
+
+impl ProxyState {
+    const fn new() -> Self {
+        Self {
+            phase: Phase::Stopped,
+            generation: 0,
+            expected: 0,
+            started: 0,
+            handles: Vec::new(),
+        }
+    }
+}
+
+static PROXY_STATE: parking_lot::Mutex<ProxyState> =
+    parking_lot::Mutex::new(ProxyState::new());
 
 #[derive(Debug, Clone)]
 struct SmoothUpstream {
@@ -82,9 +110,33 @@ struct SmoothLbState {
     upstreams: Vec<SmoothUpstream>,
 }
 
-// 使用 DashMap 替代 RwLock<HashMap>，减少锁竞争
-static UPSTREAM_LB: once_cell::sync::Lazy<DashMap<String, Arc<RwLock<SmoothLbState>>>> =
-    once_cell::sync::Lazy::new(|| DashMap::new());
+// 使用 DashMap 避免全局读锁；内部用 Mutex 而非 RwLock，
+// 因为 SWRR 算法每次选择都需要修改 current 权重（写操作为主），
+// Mutex 在写多读少场景下比 RwLock 开销更低。
+static UPSTREAM_LB: once_cell::sync::Lazy<DashMap<String, Arc<parking_lot::Mutex<SmoothLbState>>>> =
+    once_cell::sync::Lazy::new(DashMap::new);
+
+/// 全局正则缓存：将编译过的 Regex 按 pattern 字符串缓存，
+/// 避免热路径（header 匹配、URL 重写、body 替换）每次请求重新编译。
+static REGEX_CACHE: once_cell::sync::Lazy<DashMap<String, Arc<Regex>>> =
+    once_cell::sync::Lazy::new(DashMap::new);
+
+/// 从缓存中获取或编译正则表达式。
+/// 若 pattern 非法则返回 None（与原来 `if let Ok(re) = Regex::new(...)` 语义一致）。
+#[inline]
+fn cached_regex(pattern: &str) -> Option<Arc<Regex>> {
+    if let Some(entry) = REGEX_CACHE.get(pattern) {
+        return Some(entry.clone());
+    }
+    match Regex::new(pattern) {
+        Ok(re) => {
+            let arc = Arc::new(re);
+            REGEX_CACHE.insert(pattern.to_string(), arc.clone());
+            Some(arc)
+        }
+        Err(_) => None,
+    }
+}
 
 // 优化后的 AppState：缓存常用配置，减少热路径上的配置克隆
 #[derive(Clone)]
@@ -135,8 +187,8 @@ impl RequestContext {
             headers
                 .get(key)
                 .and_then(|v| v.to_str().ok())
-                .unwrap_or("-")
-                .to_string()
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| "-".to_string())
         }
 
         let xff = header_to_string(headers, "x-forwarded-for");
@@ -196,16 +248,6 @@ pub fn start_server(app: tauri::AppHandle) -> Result<()> {
         });
     }
 
-    {
-        let starting = STARTING.read();
-        if *starting {
-            return Ok(());
-        }
-    }
-
-    *STARTING.write() = true;
-    *START_FAILED.write() = false;
-
     let cfg = config::get_config();
     let rules: Vec<_> = cfg.rules.into_iter().filter(|r| r.enabled).collect();
 
@@ -222,16 +264,28 @@ pub fn start_server(app: tauri::AppHandle) -> Result<()> {
             if n == 0 { 1 } else { n }
         })
         .sum();
-    *START_EXPECTED.write() = expected;
-    *START_STARTED_COUNT.write() = 0;
 
-    if expected == 0 {
-        *IS_RUNNING.write() = false;
-        *STARTING.write() = false;
-        let _ = app.emit("status", "stopped");
-        send_log("未配置监听规则，服务保持停止状态".to_string());
-        return Ok(());
-    }
+    // ── 原子状态转换 ──────────────────────────────────────────────────────────
+    // 在单次加锁内完成"检查当前阶段 → 转换到 Starting"，
+    // 消除原来 read-lock / release / write-lock 之间的双重启动竞态。
+    let generation = {
+        let mut state = PROXY_STATE.lock();
+        if matches!(state.phase, Phase::Starting | Phase::Running) {
+            return Ok(());
+        }
+        if expected == 0 {
+            state.phase = Phase::Stopped;
+            drop(state);
+            let _ = app.emit("status", "stopped");
+            send_log("未配置监听规则，服务保持停止状态".to_string());
+            return Ok(());
+        }
+        state.phase = Phase::Starting;
+        state.expected = expected;
+        state.started = 0;
+        state.generation = state.generation.wrapping_add(1);
+        state.generation
+    };
 
     let _ = app.emit("status", "stopped");
 
@@ -253,39 +307,54 @@ pub fn start_server(app: tauri::AppHandle) -> Result<()> {
         };
 
         for listen_addr in addrs {
-        let app_handle = app.clone();
+            let app_handle = app.clone();
             let rule_clone = rule.clone();
             let listen_addr_clone = listen_addr.clone();
-        let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
+            let gen = generation; // 捕获当前 generation，用于检测过时更新
+            let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
 
-        let handle = tauri::async_runtime::spawn(async move {
+            let handle = tauri::async_runtime::spawn(async move {
                 if let Err(e) = precheck_rule(&rule_clone, &listen_addr_clone).await {
                     error!("启动监听器失败({listen_addr_clone}): {e}");
                     send_log(format!("启动监听器失败({listen_addr_clone}): {e}"));
 
-                let payload = RuleStartErrorPayload {
+                    let payload = RuleStartErrorPayload {
                         listen_addr: listen_addr_clone.clone(),
-                    error: e.to_string(),
+                        error: e.to_string(),
+                    };
+                    let _ = app_handle.emit("server-start-error", payload);
+
+                    // 原子更新：仅在 generation 未被 stop/restart 超越时才修改状态
+                    {
+                        let mut state = PROXY_STATE.lock();
+                        if state.generation == gen {
+                            state.phase = Phase::Failed;
+                        }
+                    }
+                    let _ = app_handle.emit("status", "stopped");
+                    return;
+                }
+
+                // 原子地递增已就绪计数并判断是否全部完成：
+                // 单次加锁完成 increment + 条件检查 + 状态转换，
+                // 消除原来跨多个 RwLock 读写之间的竞态。
+                let transition_to_running = {
+                    let mut state = PROXY_STATE.lock();
+                    if state.generation != gen {
+                        return; // 此次启动已被 stop/restart 超越，静默退出
+                    }
+                    state.started += 1;
+                    // 仅在没有其他任务失败（phase 仍为 Starting）且全部就绪时转换
+                    if matches!(state.phase, Phase::Starting) && state.started == state.expected {
+                        state.phase = Phase::Running;
+                        true
+                    } else {
+                        false
+                    }
                 };
-                let _ = app_handle.emit("server-start-error", payload);
 
-                *START_FAILED.write() = true;
-                *IS_RUNNING.write() = false;
-                *STARTING.write() = false;
-                let _ = app_handle.emit("status", "stopped");
-                return;
-            }
-
-            {
-                let mut started = START_STARTED_COUNT.write();
-                *started += 1;
-                let expected = *START_EXPECTED.read();
-                let failed = *START_FAILED.read();
-                if !failed && *started == expected {
-                    *IS_RUNNING.write() = true;
-                    *STARTING.write() = false;
+                if transition_to_running {
                     let _ = app_handle.emit("status", "running");
-
                     let final_cfg = config::get_config();
                     for r in &final_cfg.rules {
                         let routes_summary = r
@@ -307,7 +376,6 @@ pub fn start_server(app: tauri::AppHandle) -> Result<()> {
                         send_log_with_app(&app_handle, log_line);
                     }
                 }
-            }
 
                 match start_rule_server(
                     app_handle.clone(),
@@ -317,29 +385,43 @@ pub fn start_server(app: tauri::AppHandle) -> Result<()> {
                 )
                 .await
                 {
-                Ok(()) => {}
-                Err(e) => {
+                    Ok(()) => {}
+                    Err(e) => {
                         error!("启动监听器失败({listen_addr_clone}): {e}");
                         send_log(format!("启动监听器失败({listen_addr_clone}): {e}"));
 
-                    let payload = RuleStartErrorPayload {
+                        let payload = RuleStartErrorPayload {
                             listen_addr: listen_addr_clone.clone(),
-                        error: e.to_string(),
-                    };
-                    let _ = app_handle.emit("server-start-error", payload);
+                            error: e.to_string(),
+                        };
+                        let _ = app_handle.emit("server-start-error", payload);
 
-                    *START_FAILED.write() = true;
-                    *IS_RUNNING.write() = false;
-                    *STARTING.write() = false;
-                    let _ = app_handle.emit("status", "stopped");
+                        {
+                            let mut state = PROXY_STATE.lock();
+                            if state.generation == gen {
+                                state.phase = Phase::Failed;
+                            }
+                        }
+                        let _ = app_handle.emit("status", "stopped");
+                    }
                 }
-            }
-        });
-        handles.push(ServerHandle { handle, shutdown_tx });
+            });
+            handles.push(ServerHandle { handle, shutdown_tx });
         }
     }
 
-    *SERVERS.write() = handles;
+    // 原子存储 handles；若在 spawn 期间被 stop_server 超越，则中止新建的 handles
+    {
+        let mut state = PROXY_STATE.lock();
+        if state.generation == generation {
+            state.handles = handles;
+        } else {
+            for h in handles {
+                h.abort();
+            }
+        }
+    }
+
     send_log("代理服务器启动中...".to_string());
     Ok(())
 }
@@ -352,13 +434,19 @@ pub fn stop_server(app: tauri::AppHandle) -> Result<()> {
         stream_proxy::stop_stream_servers().await;
     });
 
-    *STARTING.write() = false;
-    *START_FAILED.write() = false;
-    *START_EXPECTED.write() = 0;
-    *START_STARTED_COUNT.write() = 0;
-    *IS_RUNNING.write() = false;
+    // 单次加锁完成所有状态重置 + 取出 handles，
+    // 消除原来 5 次独立写锁之间的竞态窗口。
+    // generation 递增后，所有仍在运行的启动任务检测到不匹配时会静默退出，
+    // 不再回写 IS_RUNNING = true。
+    let handles = {
+        let mut state = PROXY_STATE.lock();
+        state.phase = Phase::Stopped;
+        state.generation = state.generation.wrapping_add(1);
+        state.expected = 0;
+        state.started = 0;
+        std::mem::take(&mut state.handles)
+    };
 
-    let handles = std::mem::take(&mut *SERVERS.write());
     for handle in handles {
         handle.abort();
     }
@@ -367,7 +455,6 @@ pub fn stop_server(app: tauri::AppHandle) -> Result<()> {
 
     let cfg = config::get_config();
     for r in &cfg.rules {
-        // 优先打印 listen_addrs，如果为空则回退到 listen_addr
         let addrs: Vec<String> = {
             let mut v: Vec<String> = r
                 .listen_addrs
@@ -381,8 +468,7 @@ pub fn stop_server(app: tauri::AppHandle) -> Result<()> {
             v
         };
         for addr in addrs {
-            let log_line = format!("[NODE {}] Server stopped", addr);
-        send_log_with_app(&app, log_line);
+            send_log_with_app(&app, format!("[NODE {}] Server stopped", addr));
         }
     }
 
@@ -391,42 +477,39 @@ pub fn stop_server(app: tauri::AppHandle) -> Result<()> {
 }
 
 pub fn is_running() -> bool {
-    *IS_RUNNING.read()
-}
-
-pub fn is_starting() -> bool {
-    *STARTING.read()
+    matches!(PROXY_STATE.lock().phase, Phase::Running)
 }
 
 pub fn is_effectively_running() -> bool {
-    is_running() || is_starting()
+    matches!(PROXY_STATE.lock().phase, Phase::Starting | Phase::Running)
 }
 
 pub fn get_logs() -> Vec<String> {
-    LOGS.read().clone()
+    LOGS.read().iter().cloned().collect()
 }
 
 pub fn clear_logs() {
     LOGS.write().clear();
 }
 
-pub fn send_log(message: String) {
-    let mut logs = LOGS.write();
-    logs.push(message);
-    if logs.len() > 3000 {
-        let over = logs.len() - 3000;
-        logs.drain(0..over);
+/// 向环形日志队列追加一条消息，超出上限时从队首弹出（O(1)）。
+/// 使用 VecDeque 替代原来的 Vec + drain，消除每次裁剪时的 O(n) 元素移动。
+#[inline]
+fn append_log(logs: &mut VecDeque<String>, message: String) {
+    const MAX_LOGS: usize = 3000;
+    if logs.len() >= MAX_LOGS {
+        logs.pop_front();
     }
+    logs.push_back(message);
+}
+
+pub fn send_log(message: String) {
+    append_log(&mut LOGS.write(), message);
 }
 
 pub fn send_log_with_app(app: &tauri::AppHandle, message: String) {
     {
-        let mut logs = LOGS.write();
-        logs.push(message.clone());
-        if logs.len() > 3000 {
-            let over = logs.len() - 3000;
-            logs.drain(0..over);
-        }
+        append_log(&mut LOGS.write(), message.clone());
     }
 
     let cfg = config::get_config();
@@ -574,68 +657,46 @@ async fn start_rule_server(
 
         send_log(format!("HTTPS 已启用: {}", addr));
 
-        let mut shutdown_rx = shutdown_rx;
-        
         if need_dual_stack && addr.is_ipv6() {
-            // 在 Linux 上，绑定 [::]:port 通常已经启用了 IPv6 dual-stack，
-            // 可以同时处理 IPv4 和 IPv6 连接，不需要再绑定 0.0.0.0:port
-            // 如果系统不支持 dual-stack，绑定会失败，此时可以回退到只绑定 IPv4
             send_log(format!("监听 IPv6 (dual-stack): {} (同时支持 IPv4 和 IPv6)", addr));
             info!("监听 IPv6 (dual-stack): {} (同时支持 IPv4 和 IPv6)", addr);
-            
-            let server_future = axum_server::bind_rustls(addr, tls_cfg).serve(app);
-            tokio::select! {
-                res = server_future => {
-                    res.map_err(|e| anyhow!("HTTPS 服务失败: {e}"))?;
-                }
-                _ = &mut shutdown_rx => {
-                    info!("收到关闭信号，HTTPS 服务 {} 即将停止", addr);
-                }
-            }
-        } else {
-            let server_future = axum_server::bind_rustls(addr, tls_cfg).serve(app);
-            tokio::select! {
-                res = server_future => {
-                    res.map_err(|e| anyhow!(e))?;
-                }
-                _ = &mut shutdown_rx => {
-                    info!("收到关闭信号，HTTPS 服务 {} 即将停止", addr);
-                }
-            }
         }
+
+        // 使用 axum_server::Handle 实现优雅关闭：收到信号后立即停止接受新连接，
+        // 并对所有已有的 keep-alive 连接发送 Connection: close，等待它们自然结束，
+        // 避免旧端口在服务停止后仍可被访问。
+        let ax_handle = axum_server::Handle::new();
+        let ax_shutdown_handle = ax_handle.clone();
+        tauri::async_runtime::spawn(async move {
+            let _ = shutdown_rx.await;
+            info!("收到关闭信号，HTTPS 服务 {} 即将停止", addr);
+            ax_shutdown_handle.graceful_shutdown(Some(Duration::from_secs(5)));
+        });
+
+        axum_server::bind_rustls(addr, tls_cfg)
+            .handle(ax_handle)
+            .serve(app)
+            .await
+            .map_err(|e| anyhow!("HTTPS 服务失败: {e}"))?;
     } else {
         send_log(format!("HTTP 已启用: {}", addr));
-        let mut shutdown_rx = shutdown_rx;
-        
+
         if need_dual_stack && addr.is_ipv6() {
-            // 在 Linux 上，绑定 [::]:port 通常已经启用了 IPv6 dual-stack，
-            // 可以同时处理 IPv4 和 IPv6 连接，不需要再绑定 0.0.0.0:port
-            // 如果系统不支持 dual-stack，绑定会失败，此时可以回退到只绑定 IPv4
             send_log(format!("监听 IPv6 (dual-stack): {} (同时支持 IPv4 和 IPv6)", addr));
             info!("监听 IPv6 (dual-stack): {} (同时支持 IPv4 和 IPv6)", addr);
-            
-            let listener = tokio::net::TcpListener::bind(addr).await?;
-            let server_future = axum::serve(listener, app);
-            tokio::select! {
-                res = server_future => {
-                    res.map_err(|e| anyhow!("HTTP 服务失败: {e}"))?;
-                }
-                _ = &mut shutdown_rx => {
-                    info!("收到关闭信号，HTTP 服务 {} 即将停止", addr);
-                }
-            }
-        } else {
-            let listener = tokio::net::TcpListener::bind(addr).await?;
-            let server_future = axum::serve(listener, app);
-            tokio::select! {
-                res = server_future => {
-                    res.map_err(|e| anyhow!(e))?;
-                }
-                _ = &mut shutdown_rx => {
-                    info!("收到关闭信号，HTTP 服务 {} 即将停止", addr);
-                }
-            }
         }
+
+        // with_graceful_shutdown：收到信号后立即停止接受新连接，
+        // 并对所有已有的 keep-alive 连接发送 Connection: close，等待它们自然结束，
+        // 避免旧端口在服务停止后仍可被访问。
+        let listener = tokio::net::TcpListener::bind(addr).await?;
+        axum::serve(listener, app)
+            .with_graceful_shutdown(async move {
+                let _ = shutdown_rx.await;
+                info!("收到关闭信号，HTTP 服务 {} 即将停止", addr);
+            })
+            .await
+            .map_err(|e| anyhow!("HTTP 服务失败: {e}"))?;
     }
 
     Ok(())
@@ -771,7 +832,7 @@ fn match_route<'a>(
                 // 支持精确匹配或包含匹配（如果 expected 包含 *）
                 if expected.contains('*') {
                     let pattern = expected.replace('*', ".*");
-                    if let Ok(re) = regex::Regex::new(&pattern) {
+                    if let Some(re) = cached_regex(&pattern) {
                         if !re.is_match(actual) {
                             headers_ok = false;
                             break;
@@ -845,7 +906,7 @@ fn pick_upstream_smooth(route: &config::Route) -> Option<String> {
     let state_lock = UPSTREAM_LB
         .entry(route_id.to_string())
         .or_insert_with(|| {
-            Arc::new(RwLock::new(SmoothLbState {
+            Arc::new(parking_lot::Mutex::new(SmoothLbState {
                 signature: String::new(),
                 total_weight: 0,
                 upstreams: Vec::new(),
@@ -853,7 +914,7 @@ fn pick_upstream_smooth(route: &config::Route) -> Option<String> {
         })
         .clone();
 
-    let mut entry = state_lock.write();
+    let mut entry = state_lock.lock();
 
     if entry.signature != sig || entry.upstreams.len() != route.upstreams.len() {
         let ups: Vec<SmoothUpstream> = route
@@ -984,12 +1045,7 @@ where
         }
     } else {
         let line = f();
-        let mut logs = LOGS.write();
-        logs.push(line);
-        if logs.len() > 3000 {
-            let over = logs.len() - 3000;
-            logs.drain(0..over);
-        }
+        append_log(&mut LOGS.write(), line);
     }
 }
 
@@ -1004,12 +1060,7 @@ fn init_log_task(app: tauri::AppHandle) {
     tauri::async_runtime::spawn(async move {
         while let Some(line) = rx.recv().await {
             {
-                let mut logs = LOGS.write();
-                logs.push(line.clone());
-                if logs.len() > 3000 {
-                    let over = logs.len() - 3000;
-                    logs.drain(0..over);
-                }
+                append_log(&mut LOGS.write(), line.clone());
             }
 
             let _ = app.emit("log-line", line);
@@ -1361,7 +1412,7 @@ async fn proxy_handler(
                 if !rule.enabled {
                     continue;
                 }
-                if let Ok(re) = Regex::new(&rule.pattern) {
+                if let Some(re) = cached_regex(&rule.pattern) {
                     let original = final_uri.to_string();
                     let rewritten = re.replace_all(&original, &rule.replacement);
                     if rewritten != original {
@@ -1476,7 +1527,7 @@ async fn proxy_handler(
                         
                         // 执行替换
                         if rule.use_regex {
-                            if let Ok(re) = Regex::new(&rule.find) {
+                            if let Some(re) = cached_regex(&rule.find) {
                                 modified_body = re.replace_all(&modified_body, &rule.replace).to_string();
                             }
                         } else {
@@ -1746,7 +1797,7 @@ async fn proxy_handler(
                         
                         // 执行替换
                         if rule.use_regex {
-                            if let Ok(re) = Regex::new(&rule.find) {
+                            if let Some(re) = cached_regex(&rule.find) {
                                 modified_body = re.replace_all(&modified_body, &rule.replace).to_string();
                             }
                         } else {

@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Context, Result};
 use parking_lot::RwLock;
 use std::collections::hash_map::DefaultHasher;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -9,8 +9,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::io;
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::mpsc;
 use tokio::time;
+use dashmap::DashMap;
 
 use crate::{access_control, config};
 use crate::config::{StreamProxyConfig, StreamServer, StreamUpstream, StreamUpstreamServer};
@@ -29,8 +30,9 @@ struct FailState {
     down_until: Option<Instant>,
 }
 
-static FAIL_MAP: once_cell::sync::Lazy<RwLock<HashMap<String, FailState>>> =
-    once_cell::sync::Lazy::new(|| RwLock::new(HashMap::new()));
+// 使用 DashMap 替代 RwLock<HashMap> 以提升并发性能
+static FAIL_MAP: once_cell::sync::Lazy<DashMap<String, FailState>> =
+    once_cell::sync::Lazy::new(DashMap::new);
 
 pub async fn start_stream_servers(config: &StreamProxyConfig) -> Result<()> {
     stop_stream_servers().await;
@@ -70,7 +72,7 @@ pub async fn start_stream_servers(config: &StreamProxyConfig) -> Result<()> {
     Ok(())
 }
 
-fn validate_stream_config(cfg: &StreamProxyConfig) -> Result<()> {
+pub fn validate_stream_config(cfg: &StreamProxyConfig) -> Result<()> {
     let mut ports = HashSet::<(u16, bool)>::new();
     for s in &cfg.servers {
         if !s.enabled {
@@ -320,9 +322,11 @@ struct UdpSessionEntry {
 }
 
 static UDP_NOW_MS: AtomicU64 = AtomicU64::new(0);
+static UDP_START_TIME: once_cell::sync::Lazy<std::time::Instant> =
+    once_cell::sync::Lazy::new(std::time::Instant::now);
 
 fn now_ms() -> u64 {
-    let ms = time::Instant::now().elapsed().as_millis() as u64;
+    let ms = UDP_START_TIME.elapsed().as_millis() as u64;
     UDP_NOW_MS.fetch_max(ms, Ordering::Relaxed);
     ms
 }
@@ -352,22 +356,22 @@ async fn start_udp_server(
 
     tracing::info!("Stream UDP server listening on {}", listen_addr);
 
-    let sessions: Arc<Mutex<HashMap<SocketAddr, UdpSessionEntry>>> =
-        Arc::new(Mutex::new(HashMap::new()));
+    // 使用 DashMap 替代 Mutex<HashMap> 以提升并发性能
+    let sessions: Arc<DashMap<SocketAddr, UdpSessionEntry>> = Arc::new(DashMap::new());
 
     let listen_sock = Arc::new(listen_sock);
 
     // 为每个 upstream_addr 复用一个已 connect 的 UDP socket：避免每包 bind/connect
-    let mut upstream_socks: HashMap<SocketAddr, Arc<UdpSocket>> = HashMap::new();
+    let upstream_socks: Arc<DashMap<SocketAddr, Arc<UdpSocket>>> = Arc::new(DashMap::new());
 
-    let mut upstream_readers: HashMap<SocketAddr, tokio::task::JoinHandle<()>> = HashMap::new();
+    let mut upstream_readers = Vec::new();
     for s in &upstream.servers {
         let upstream_addr: SocketAddr = s
             .addr
             .parse()
             .with_context(|| format!("Invalid upstream udp addr: {}", s.addr))?;
 
-        if upstream_readers.contains_key(&upstream_addr) {
+        if upstream_socks.contains_key(&upstream_addr) {
             continue;
         }
 
@@ -387,18 +391,11 @@ async fn start_udp_server(
                     Ok(n) => {
                         let payload = &buf[..n];
 
-                        let mut to_send: Vec<SocketAddr> = Vec::new();
-                        {
-                            let map = sessions2.lock().await;
-                            for (client, entry) in map.iter() {
-                                if entry.upstream_addr == upstream_addr {
-                                    to_send.push(*client);
-                                }
+                        // 使用 DashMap 的迭代器，无需锁定整个 map
+                        for entry in sessions2.iter() {
+                            if entry.value().upstream_addr == upstream_addr {
+                                let _ = listen2.send_to(payload, *entry.key()).await;
                             }
-                        }
-
-                        for client in to_send {
-                            let _ = listen2.send_to(payload, client).await;
                         }
                     }
                     Err(_) => {}
@@ -406,10 +403,8 @@ async fn start_udp_server(
             }
         });
 
-        upstream_readers.insert(upstream_addr, h);
+        upstream_readers.push((upstream_addr, h));
     }
-
-    let upstream_socks = Arc::new(upstream_socks);
 
     let (shutdown_tx, mut shutdown_rx) = mpsc::channel(1);
     let server_task = tokio::spawn({
@@ -433,8 +428,7 @@ async fn start_udp_server(
                     }
                     _ = ticker.tick() => {
                         let deadline = now_ms().saturating_sub(session_ttl.as_millis() as u64);
-                        let mut map = sessions.lock().await;
-                        map.retain(|_, v| v.last_seen_ms >= deadline);
+                        sessions.retain(|_, v| v.last_seen_ms >= deadline);
                     }
                     res = listen.recv_from(&mut buf) => {
                         match res {
@@ -459,16 +453,13 @@ async fn start_udp_server(
                                     Err(_) => continue,
                                 };
 
-                                {
-                                    let mut map = sessions.lock().await;
-                                    map.insert(
-                                        client_addr,
-                                        UdpSessionEntry {
-                                            upstream_addr,
-                                            last_seen_ms: now_ms(),
-                                        },
-                                    );
-                                }
+                                sessions.insert(
+                                    client_addr,
+                                    UdpSessionEntry {
+                                        upstream_addr,
+                                        last_seen_ms: now_ms(),
+                                    },
+                                );
 
                                 if let Some(s) = upstream_socks.get(&upstream_addr) {
                                     let _ = s.send(&buf[..n]).await;
@@ -529,7 +520,7 @@ fn select_upstream_server_with_failover<'a>(
     let use_hash = key == "$remote_addr" || key.is_empty();
 
     if upstream.consistent && use_hash {
-        let ring = build_ring(servers);
+        let ring = get_or_build_ring(upstream);
         let mut hasher = DefaultHasher::new();
         client_addr.ip().to_string().hash(&mut hasher);
         let h = hasher.finish();
@@ -575,10 +566,29 @@ fn select_upstream_server_with_failover<'a>(
     None
 }
 
+// 缓存一致性哈希环，避免重复构建
+static HASH_RING_CACHE: once_cell::sync::Lazy<DashMap<String, Arc<Vec<(u64, usize)>>>> =
+    once_cell::sync::Lazy::new(DashMap::new);
+
+fn get_or_build_ring(upstream: &StreamUpstream) -> Arc<Vec<(u64, usize)>> {
+    let cache_key = upstream.servers.iter()
+        .map(|s| s.addr.as_str())
+        .collect::<Vec<_>>()
+        .join("|");
+
+    if let Some(cached) = HASH_RING_CACHE.get(&cache_key) {
+        return cached.value().clone();
+    }
+
+    let ring = Arc::new(build_ring(&upstream.servers));
+    HASH_RING_CACHE.insert(cache_key, ring.clone());
+    ring
+}
+
 fn build_ring(servers: &[StreamUpstreamServer]) -> Vec<(u64, usize)> {
     const VNODES: u32 = 160;
 
-    let mut ring: Vec<(u64, usize)> = Vec::new();
+    let mut ring: Vec<(u64, usize)> = Vec::with_capacity(servers.len() * VNODES as usize);
     for (i, s) in servers.iter().enumerate() {
         if s.addr.trim().is_empty() {
             continue;
@@ -590,43 +600,48 @@ fn build_ring(servers: &[StreamUpstreamServer]) -> Vec<(u64, usize)> {
         }
     }
 
-    ring.sort_by_key(|(k, _)| *k);
+    ring.sort_unstable_by_key(|(k, _)| *k);
     ring
 }
 
 fn is_down(addr: &str) -> bool {
     let now = Instant::now();
-    let map = FAIL_MAP.read();
-    let Some(st) = map.get(addr) else {
-        return false;
-    };
-
-    match st.down_until {
-        Some(t) => t > now,
-        None => false,
+    if let Some(st) = FAIL_MAP.get(addr) {
+        match st.down_until {
+            Some(t) => t > now,
+            None => false,
+        }
+    } else {
+        false
     }
 }
 
 fn record_upstream_success(addr: &str) {
-    let mut map = FAIL_MAP.write();
-    map.remove(addr);
+    FAIL_MAP.remove(addr);
 }
 
 fn record_upstream_failure(addr: &str, max_fails: i32, fail_timeout: &str) {
     let max_fails = if max_fails <= 0 { 1 } else { max_fails as u32 };
     let ft = parse_duration(fail_timeout).unwrap_or_else(|_| Duration::from_secs(30));
 
-    let mut map = FAIL_MAP.write();
-    let entry = map.entry(addr.to_string()).or_insert(FailState {
-        fails: 0,
-        down_until: None,
-    });
-
-    entry.fails = entry.fails.saturating_add(1);
-
-    if entry.fails >= max_fails {
-        entry.down_until = Some(Instant::now() + ft);
-    }
+    FAIL_MAP
+        .entry(addr.to_string())
+        .and_modify(|entry| {
+            entry.fails = entry.fails.saturating_add(1);
+            if entry.fails >= max_fails {
+                entry.down_until = Some(Instant::now() + ft);
+            }
+        })
+        .or_insert_with(|| {
+            let mut state = FailState {
+                fails: 1,
+                down_until: None,
+            };
+            if state.fails >= max_fails {
+                state.down_until = Some(Instant::now() + ft);
+            }
+            state
+        });
 }
 
 fn parse_duration(s: &str) -> Result<Duration> {

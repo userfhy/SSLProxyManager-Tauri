@@ -2,12 +2,74 @@ use crate::config;
 use crate::i18n;
 use crate::metrics;
 use crate::proxy;
+use crate::stream_proxy;
 use crate::tray;
 use crate::update;
 use anyhow::Result;
 use tauri::Manager;
 use tauri_plugin_dialog::DialogExt;
 use std::path::PathBuf;
+
+/// 在保存配置前做完整性校验，确保不会写入无法启动的配置到磁盘。
+/// 只做无副作用的检查（读文件、解析格式），不绑定端口、不修改任何状态。
+async fn validate_config(cfg: &config::Config) -> Result<(), String> {
+    // 1. HTTP 监听规则：SSL 启用时验证证书可正常加载
+    for rule in &cfg.rules {
+        if !rule.enabled || !rule.ssl_enable {
+            continue;
+        }
+        if rule.cert_file.trim().is_empty() || rule.key_file.trim().is_empty() {
+            return Err(format!(
+                "监听规则 ({}) SSL 已启用，但证书或私钥文件路径为空",
+                rule.listen_addr
+            ));
+        }
+        axum_server::tls_rustls::RustlsConfig::from_pem_file(
+            rule.cert_file.clone(),
+            rule.key_file.clone(),
+        )
+        .await
+        .map_err(|e| {
+            format!(
+                "监听规则 ({}) TLS 证书加载失败: {e}",
+                rule.listen_addr
+            )
+        })?;
+    }
+
+    // 2. WS 代理规则：SSL 启用时验证证书可正常加载
+    if let Some(ws_rules) = &cfg.ws_proxy {
+        for rule in ws_rules {
+            if !rule.enabled || !rule.ssl_enable {
+                continue;
+            }
+            if rule.cert_file.trim().is_empty() || rule.key_file.trim().is_empty() {
+                return Err(format!(
+                    "WS 规则 ({}) SSL 已启用，但证书或私钥文件路径为空",
+                    rule.listen_addr
+                ));
+            }
+            axum_server::tls_rustls::RustlsConfig::from_pem_file(
+                rule.cert_file.clone(),
+                rule.key_file.clone(),
+            )
+            .await
+            .map_err(|e| {
+                format!(
+                    "WS 规则 ({}) TLS 证书加载失败: {e}",
+                    rule.listen_addr
+                )
+            })?;
+        }
+    }
+
+    // 3. Stream 代理：验证端口不重复、上游引用合法等
+    if cfg.stream.enabled {
+        stream_proxy::validate_stream_config(&cfg.stream).map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
+}
 
 #[tauri::command]
 pub fn get_config() -> Result<config::Config, String> {
@@ -20,17 +82,21 @@ pub async fn save_config(
     app: tauri::AppHandle,
     mut cfg: config::Config,
 ) -> Result<config::Config, String> {
+    // 0. 预验证：在停服、写盘之前完成所有可检查的合法性校验。
+    //    若验证失败，直接返回错误，当前运行的服务不受任何影响。
+    config::ensure_config_ids_for_save(&mut cfg);
+    validate_config(&cfg).await?;
+
     let was_running = proxy::is_effectively_running();
 
     // 1. 如果正在运行，先停止服务
     if was_running {
         proxy::stop_server(app.clone()).map_err(|e| e.to_string())?;
-        // 增加延时，等待系统完全释放端口，这是避免“端口已占用”的关键
+        // 增加延时，等待系统完全释放端口，这是避免”端口已占用”的关键
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
     }
 
-    // 2. 写入新配置到内存和文件
-    config::ensure_config_ids_for_save(&mut cfg);
+    // 2. 写入新配置到内存和文件（验证已通过，此时写盘是安全的）
     config::set_config(cfg.clone());
     config::save_config().map_err(|e| e.to_string())?;
 
