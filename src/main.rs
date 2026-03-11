@@ -13,6 +13,7 @@ mod access_control;
 mod access_control_test;
 mod rate_limit;
 mod i18n;
+mod buffer_pool;
 
 use tauri::Manager;
 
@@ -93,6 +94,7 @@ fn main() {
             commands::set_listen_rule_enabled,
             commands::set_locale,
             commands::get_locale,
+            commands::get_buffer_pool_stats,
         ])
         .setup(|app| {
             // 初始化应用

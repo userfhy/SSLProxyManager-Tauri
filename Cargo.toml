@@ -40,6 +40,7 @@ chrono = "^0.4"
 base64 = "^0.22"
 sha2 = "^0.10"
 hex = "^0.4"
+bytes = "^1.9"
 
 axum = { version = "^0.8", features = ["ws"] }
 hyper = "^1.8"

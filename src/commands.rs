@@ -488,3 +488,13 @@ pub fn set_locale(locale: String) -> Result<(), String> {
 pub fn get_locale() -> Result<String, String> {
     Ok(i18n::get_locale())
 }
+
+#[tauri::command]
+pub fn get_buffer_pool_stats() -> Result<serde_json::Value, String> {
+    let stats = crate::buffer_pool::pool_stats();
+    Ok(serde_json::json!({
+        "size": stats.size,
+        "max_size": stats.max_size,
+        "usage_percent": (stats.size as f64 / stats.max_size as f64 * 100.0).round()
+    }))
+}

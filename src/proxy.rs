@@ -886,13 +886,25 @@ fn match_route<'a>(
 
 #[inline]
 fn upstream_signature(route: &config::Route) -> String {
+    // 使用缓冲池优化字符串拼接
+    use std::fmt::Write;
+    let mut buf = crate::buffer_pool::acquire_buffer();
+
     let mut parts: Vec<String> = route
         .upstreams
         .iter()
         .map(|u| format!("{}#{}", u.url, u.weight))
         .collect();
     parts.sort_unstable(); // 使用 sort_unstable 更快
-    parts.join("|")
+
+    for (i, part) in parts.iter().enumerate() {
+        if i > 0 {
+            let _ = write!(buf, "|");
+        }
+        let _ = write!(buf, "{}", part);
+    }
+
+    std::str::from_utf8(&buf).unwrap_or("").to_string()
 }
 
 #[inline]
@@ -1102,12 +1114,16 @@ async fn proxy_handler(
             let status = StatusCode::FORBIDDEN;
             push_log_lazy(&state.app, || format_access_log(node, &ctx, status));
 
-            // 403响应详细日志
-            let inbound_headers_line = req.headers()
-                .iter()
-                .map(|(k, v)| format!("{}: {}", k, v.to_str().unwrap_or("[invalid utf8]")))
-                .collect::<Vec<_>>()
-                .join(" ## ");
+            // 403响应详细日志 - 使用缓冲池优化
+            use std::fmt::Write;
+            let mut buf = crate::buffer_pool::acquire_buffer();
+            for (k, v) in req.headers().iter() {
+                if !buf.is_empty() {
+                    let _ = write!(buf, " ## ");
+                }
+                let _ = write!(buf, "{}: {}", k, v.to_str().unwrap_or("[invalid utf8]"));
+            }
+            let inbound_headers_line = std::str::from_utf8(&buf).unwrap_or("");
 
             send_log_with_app(&state.app, format!(
                 "反代错误(IN): {} {} -> [IP黑名单] status={} | inbound_headers=[{}]",
@@ -1156,12 +1172,16 @@ async fn proxy_handler(
             info!("{}", debug_msg);
             push_log_lazy(&state.app, || format_access_log(node, &ctx, status));
 
-            // 403响应详细日志
-            let inbound_headers_line = req.headers()
-                .iter()
-                .map(|(k, v)| format!("{}: {}", k, v.to_str().unwrap_or("[invalid utf8]")))
-                .collect::<Vec<_>>()
-                .join(" ## ");
+            // 403响应详细日志 - 使用缓冲池优化
+            use std::fmt::Write;
+            let mut buf = crate::buffer_pool::acquire_buffer();
+            for (k, v) in req.headers().iter() {
+                if !buf.is_empty() {
+                    let _ = write!(buf, " ## ");
+                }
+                let _ = write!(buf, "{}: {}", k, v.to_str().unwrap_or("[invalid utf8]"));
+            }
+            let inbound_headers_line = std::str::from_utf8(&buf).unwrap_or("");
 
             send_log_with_app(&state.app, format!(
                 "反代错误(IN): {} {} -> [访问控制拒绝] status={} | inbound_headers=[{}] | client_ip={}, remote_ip={}, allow_all_lan={}, allow_all_ip={}, whitelist_len={}",
@@ -1255,12 +1275,16 @@ async fn proxy_handler(
         let status = StatusCode::UNAUTHORIZED;
         push_log_lazy(&state.app, || format_access_log(node, &ctx, status));
 
-        // 401响应详细日志
-        let inbound_headers_line = req.headers()
-            .iter()
-            .map(|(k, v)| format!("{}: {}", k, v.to_str().unwrap_or("[invalid utf8]")))
-            .collect::<Vec<_>>()
-            .join(" ## ");
+        // 401响应详细日志 - 使用缓冲池优化
+        use std::fmt::Write;
+        let mut buf = crate::buffer_pool::acquire_buffer();
+        for (k, v) in req.headers().iter() {
+            if !buf.is_empty() {
+                let _ = write!(buf, " ## ");
+            }
+            let _ = write!(buf, "{}: {}", k, v.to_str().unwrap_or("[invalid utf8]"));
+        }
+        let inbound_headers_line = std::str::from_utf8(&buf).unwrap_or("");
 
         send_log_with_app(&state.app, format!(
             "反代错误(IN): {} {} -> [Basic Auth失败] status={} | inbound_headers=[{}]",
@@ -1834,17 +1858,26 @@ async fn proxy_handler(
 
         // 仅错误时记录详细日志
         if !status.is_success() {
-            let inbound_headers_line = inbound_headers
-                .iter()
-                .map(|(k, v)| format!("{}: {}", k, v.to_str().unwrap_or("[invalid utf8]")))
-                .collect::<Vec<_>>()
-                .join(" ## ");
+            // 使用缓冲池优化字符串拼接，减少内存分配
+            use std::fmt::Write;
 
-            let outbound_headers_line = outbound_headers_snapshot
-                .iter()
-                .map(|(k, v)| format!("{}: {}", k, v.to_str().unwrap_or("[invalid utf8]")))
-                .collect::<Vec<_>>()
-                .join(" ## ");
+            let mut inbound_buf = crate::buffer_pool::acquire_buffer();
+            for (k, v) in inbound_headers.iter() {
+                if !inbound_buf.is_empty() {
+                    let _ = write!(inbound_buf, " ## ");
+                }
+                let _ = write!(inbound_buf, "{}: {}", k, v.to_str().unwrap_or("[invalid utf8]"));
+            }
+            let inbound_headers_line = std::str::from_utf8(&inbound_buf).unwrap_or("");
+
+            let mut outbound_buf = crate::buffer_pool::acquire_buffer();
+            for (k, v) in outbound_headers_snapshot.iter() {
+                if !outbound_buf.is_empty() {
+                    let _ = write!(outbound_buf, " ## ");
+                }
+                let _ = write!(outbound_buf, "{}: {}", k, v.to_str().unwrap_or("[invalid utf8]"));
+            }
+            let outbound_headers_line = std::str::from_utf8(&outbound_buf).unwrap_or("");
 
             send_log_with_app(&state.app, format!(
                 "反代错误(IN): {} {} -> {} status={} | inbound_headers=[{}]",
