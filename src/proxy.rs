@@ -572,7 +572,13 @@ async fn start_rule_server(
             .tcp_keepalive(Duration::from_secs(60))
             .tcp_nodelay(true)
             .connect_timeout(Duration::from_millis(cfg.upstream_connect_timeout_ms))
-            .timeout(Duration::from_millis(cfg.upstream_read_timeout_ms));
+            .timeout(Duration::from_millis(cfg.upstream_read_timeout_ms))
+            // 新增优化配置
+            .http2_keep_alive_interval(Duration::from_secs(30))  // HTTP/2 保活
+            .http2_keep_alive_timeout(Duration::from_secs(10))   // HTTP/2 保活超时
+            .http2_adaptive_window(true)                          // HTTP/2 自适应窗口
+            .http2_max_frame_size(Some(16384 * 4))              // 增大 HTTP/2 帧大小（64KB）
+            .connection_verbose(false);                           // 禁用详细连接日志
 
         if !cfg.enable_http2 {
             builder = builder.http1_only();
@@ -1496,54 +1502,56 @@ async fn proxy_handler(
 
             // 3.2 请求体修改（如果配置了替换规则）
             let final_bytes = if let Some(rules) = route.request_body_replace.as_ref() {
-                if let Ok(body_str) = String::from_utf8(bytes.to_vec()) {
-                    let mut modified_body = body_str;
-                    for rule in rules {
-                        if !rule.enabled {
-                            continue;
-                        }
-                        
-                        // 检查 Content-Type 过滤
-                        if let Some(ref content_types) = rule.content_types {
-                            if !content_types.trim().is_empty() {
-                                // 获取请求的 Content-Type
-                                let request_content_type = inbound_headers
-                                    .get(axum::http::header::CONTENT_TYPE)
-                                    .and_then(|v: &HeaderValue| v.to_str().ok())
-                                    .unwrap_or("")
-                                    .to_lowercase();
-                                
-                                // 解析 Content-Type，去除 charset 等参数
-                                let pure_content_type = request_content_type
-                                    .split(';')
-                                    .next()
-                                    .unwrap_or("")
-                                    .trim();
-                                
-                                // 检查是否匹配任一 Content-Type
-                                let content_type_list: Vec<String> = content_types
-                                    .split(',')
-                                    .map(|s| s.trim().to_lowercase())
-                                    .collect();
-                                
-                                if !content_type_list.iter().any(|ct| ct.as_str() == pure_content_type) {
-                                    continue; // 不匹配，跳过此规则
+                // 优化：使用 from_utf8_lossy 避免失败时的 panic，并减少拷贝
+                match std::str::from_utf8(&bytes) {
+                    Ok(body_str) => {
+                        let mut modified_body = body_str.to_string();
+                        for rule in rules {
+                            if !rule.enabled {
+                                continue;
+                            }
+
+                            // 检查 Content-Type 过滤
+                            if let Some(ref content_types) = rule.content_types {
+                                if !content_types.trim().is_empty() {
+                                    // 获取请求的 Content-Type
+                                    let request_content_type = inbound_headers
+                                        .get(axum::http::header::CONTENT_TYPE)
+                                        .and_then(|v: &HeaderValue| v.to_str().ok())
+                                        .unwrap_or("")
+                                        .to_lowercase();
+
+                                    // 解析 Content-Type，去除 charset 等参数
+                                    let pure_content_type = request_content_type
+                                        .split(';')
+                                        .next()
+                                        .unwrap_or("")
+                                        .trim();
+
+                                    // 检查是否匹配任一 Content-Type
+                                    let content_type_list: Vec<String> = content_types
+                                        .split(',')
+                                        .map(|s| s.trim().to_lowercase())
+                                        .collect();
+
+                                    if !content_type_list.iter().any(|ct| ct.as_str() == pure_content_type) {
+                                        continue; // 不匹配，跳过此规则
+                                    }
                                 }
                             }
-                        }
-                        
-                        // 执行替换
-                        if rule.use_regex {
-                            if let Some(re) = cached_regex(&rule.find) {
-                                modified_body = re.replace_all(&modified_body, &rule.replace).to_string();
+
+                            // 执行替换
+                            if rule.use_regex {
+                                if let Some(re) = cached_regex(&rule.find) {
+                                    modified_body = re.replace_all(&modified_body, &rule.replace).to_string();
+                                }
+                            } else {
+                                modified_body = modified_body.replace(&rule.find, &rule.replace);
                             }
-                        } else {
-                            modified_body = modified_body.replace(&rule.find, &rule.replace);
                         }
+                        Bytes::from(modified_body.into_bytes())
                     }
-                    Bytes::from(modified_body.into_bytes())
-                } else {
-                    bytes
+                    Err(_) => bytes, // 非 UTF-8 内容，直接使用原始 bytes
                 }
             } else {
                 bytes
@@ -1763,57 +1771,59 @@ async fn proxy_handler(
 
             // 3.5 响应体修改（如果配置了替换规则）
             let final_bytes = if let Some(rules) = route.response_body_replace.as_ref() {
-                if let Ok(body_str) = String::from_utf8(bytes.to_vec()) {
-                    let mut modified_body = body_str;
-                    for rule in rules {
-                        if !rule.enabled {
-                            continue;
-                        }
-                        
-                        // 检查 Content-Type 过滤
-                        if let Some(ref content_types) = rule.content_types {
-                            if !content_types.trim().is_empty() {
-                                // 获取响应的 Content-Type（使用提前 clone 的 headers）
-                                let response_content_type = response_headers
-                                    .get(axum::http::header::CONTENT_TYPE)
-                                    .and_then(|v: &HeaderValue| v.to_str().ok())
-                                    .unwrap_or("")
-                                    .to_lowercase();
+                // 零拷贝 UTF-8 验证，避免 to_vec() 的内存分配
+                match std::str::from_utf8(&bytes) {
+                    Ok(body_str) => {
+                        let mut modified_body = body_str.to_string();
+                        for rule in rules {
+                            if !rule.enabled {
+                                continue;
+                            }
 
-                                // 解析 Content-Type，去除 charset 等参数
-                                let pure_content_type = response_content_type
-                                    .split(';')
-                                    .next()
-                                    .unwrap_or("")
-                                    .trim();
+                            // 检查 Content-Type 过滤
+                            if let Some(ref content_types) = rule.content_types {
+                                if !content_types.trim().is_empty() {
+                                    // 获取响应的 Content-Type（使用提前 clone 的 headers）
+                                    let response_content_type = response_headers
+                                        .get(axum::http::header::CONTENT_TYPE)
+                                        .and_then(|v: &HeaderValue| v.to_str().ok())
+                                        .unwrap_or("")
+                                        .to_lowercase();
 
-                                // 检查是否匹配任一 Content-Type
-                                let content_type_list: Vec<String> = content_types
-                                    .split(',')
-                                    .map(|s| s.trim().to_lowercase())
-                                    .collect();
+                                    // 解析 Content-Type，去除 charset 等参数
+                                    let pure_content_type = response_content_type
+                                        .split(';')
+                                        .next()
+                                        .unwrap_or("")
+                                        .trim();
 
-                                if !content_type_list
-                                    .iter()
-                                    .any(|ct| ct.as_str() == pure_content_type)
-                                {
-                                    continue; // 不匹配，跳过此规则
+                                    // 检查是否匹配任一 Content-Type
+                                    let content_type_list: Vec<String> = content_types
+                                        .split(',')
+                                        .map(|s| s.trim().to_lowercase())
+                                        .collect();
+
+                                    if !content_type_list
+                                        .iter()
+                                        .any(|ct| ct.as_str() == pure_content_type)
+                                    {
+                                        continue; // 不匹配，跳过此规则
+                                    }
                                 }
                             }
-                        }
-                        
-                        // 执行替换
-                        if rule.use_regex {
-                            if let Some(re) = cached_regex(&rule.find) {
-                                modified_body = re.replace_all(&modified_body, &rule.replace).to_string();
+
+                            // 执行替换
+                            if rule.use_regex {
+                                if let Some(re) = cached_regex(&rule.find) {
+                                    modified_body = re.replace_all(&modified_body, &rule.replace).to_string();
+                                }
+                            } else {
+                                modified_body = modified_body.replace(&rule.find, &rule.replace);
                             }
-                        } else {
-                            modified_body = modified_body.replace(&rule.find, &rule.replace);
                         }
+                        Bytes::from(modified_body.into_bytes())
                     }
-                    Bytes::from(modified_body.into_bytes())
-                } else {
-                    bytes
+                    Err(_) => bytes, // 非 UTF-8 内容，直接使用原始字节
                 }
             } else {
                 bytes

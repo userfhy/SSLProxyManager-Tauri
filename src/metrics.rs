@@ -495,7 +495,7 @@ impl RealtimeAgg {
             .filter(|k| k.as_str() != "全局")
             .cloned()
             .collect();
-        listen_addrs.sort();
+        listen_addrs.sort_unstable();
         listen_addrs.insert(0, "全局".to_string());
 
         let mut by_listen_addr = HashMap::with_capacity(self.per_sec.len());
@@ -510,7 +510,7 @@ impl RealtimeAgg {
                         value: *cc,
                     })
                     .collect();
-                vv.sort_by(|a, b| b.value.cmp(&a.value));
+                vv.sort_unstable_by(|a, b| b.value.cmp(&a.value));
                 if vv.len() > 20 {
                     vv.truncate(20);
                 }
@@ -538,7 +538,7 @@ impl RealtimeAgg {
                         count: *c,
                     })
                     .collect();
-                v.sort_by(|a, b| b.count.cmp(&a.count));
+                v.sort_unstable_by(|a, b| b.count.cmp(&a.count));
                 if v.len() > 10 {
                     v.truncate(10);
                 }
@@ -561,7 +561,7 @@ impl RealtimeAgg {
                         count: *c,
                     })
                     .collect();
-                v.sort_by(|a, b| b.count.cmp(&a.count));
+                v.sort_unstable_by(|a, b| b.count.cmp(&a.count));
                 if v.len() > 10 {
                     v.truncate(10);
                 }
@@ -580,7 +580,7 @@ impl RealtimeAgg {
                         count: *c,
                     })
                     .collect();
-                v.sort_by(|a, b| b.count.cmp(&a.count));
+                v.sort_unstable_by(|a, b| b.count.cmp(&a.count));
                 if v.len() > 10 {
                     v.truncate(10);
                 }
@@ -599,7 +599,7 @@ impl RealtimeAgg {
                         count: *c,
                     })
                     .collect();
-                v.sort_by(|a, b| b.count.cmp(&a.count));
+                v.sort_unstable_by(|a, b| b.count.cmp(&a.count));
                 if v.len() > 10 {
                     v.truncate(10);
                 }

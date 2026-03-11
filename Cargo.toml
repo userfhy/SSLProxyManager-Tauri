@@ -66,10 +66,12 @@ default = []
 
 [profile.release]
 opt-level = 3           # 最高优化级别
-lto = "thin"            # 链接时优化（thin LTO 平衡编译时间和性能）
+lto = "fat"             # 完整 LTO（更激进，编译慢但性能更好）
 codegen-units = 1       # 减少代码生成单元以提升优化效果
 strip = true            # 移除调试符号，减小二进制体积
 panic = "abort"         # panic 时直接中止，减小二进制体积
+overflow-checks = false # 禁用溢出检查（生产环境）
+incremental = false     # 禁用增量编译以获得更好的优化
 
 [profile.release.package."*"]
 opt-level = 3
