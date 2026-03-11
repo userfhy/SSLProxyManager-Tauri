@@ -1,4 +1,4 @@
-use crate::{access_control, config, metrics, ws_proxy, stream_proxy, rate_limit};
+use crate::{access_control, config, metrics, ws_proxy, stream_proxy, rate_limit, cache_optimizer};
 use regex::Regex;
 use anyhow::{anyhow, Context, Result};
 use axum::body::Bytes;
@@ -118,13 +118,23 @@ static UPSTREAM_LB: once_cell::sync::Lazy<DashMap<String, Arc<parking_lot::Mutex
 
 /// 全局正则缓存：将编译过的 Regex 按 pattern 字符串缓存，
 /// 避免热路径（header 匹配、URL 重写、body 替换）每次请求重新编译。
+/// 注意：现在使用统一的 cache_optimizer 模块
 static REGEX_CACHE: once_cell::sync::Lazy<DashMap<String, Arc<Regex>>> =
     once_cell::sync::Lazy::new(DashMap::new);
 
 /// 从缓存中获取或编译正则表达式。
-/// 若 pattern 非法则返回 None（与原来 `if let Ok(re) = Regex::new(...)` 语义一致）。
+/// 优先使用全局缓存管理器，回退到本地 DashMap 缓存。
 #[inline]
 pub fn cached_regex(pattern: &str) -> Option<Arc<Regex>> {
+    // 优先使用全局缓存管理器（LRU 缓存）
+    if let Ok(regex) = cache_optimizer::global_cache_manager()
+        .regex_cache()
+        .get_or_compile(pattern)
+    {
+        return Some(regex);
+    }
+
+    // 回退到本地 DashMap 缓存（兼容性）
     if let Some(entry) = REGEX_CACHE.get(pattern) {
         return Some(entry.clone());
     }
@@ -136,6 +146,37 @@ pub fn cached_regex(pattern: &str) -> Option<Arc<Regex>> {
         }
         Err(_) => None,
     }
+}
+
+/// DNS 解析辅助函数（带缓存）
+/// 注意：这是一个示例函数，展示如何使用 DNS 缓存
+/// 实际使用时需要根据具体场景调整
+#[allow(dead_code)]
+async fn resolve_hostname_with_cache(hostname: &str) -> Result<Vec<std::net::IpAddr>> {
+    use std::net::IpAddr;
+
+    let dns_cache = cache_optimizer::global_cache_manager().dns_cache();
+
+    // 先查缓存
+    if let Some(ips) = dns_cache.get(hostname) {
+        tracing::debug!("DNS cache hit: {}", hostname);
+        return Ok(ips);
+    }
+
+    // 缓存未命中，执行 DNS 查询
+    tracing::debug!("DNS cache miss, resolving: {}", hostname);
+    let ips: Vec<IpAddr> = tokio::net::lookup_host(format!("{}:0", hostname))
+        .await
+        .map_err(|e| anyhow!("DNS 解析失败: {}", e))?
+        .map(|addr| addr.ip())
+        .collect();
+
+    // 存入缓存
+    if !ips.is_empty() {
+        dns_cache.put(hostname.to_string(), ips.clone());
+    }
+
+    Ok(ips)
 }
 
 // 优化后的 AppState：缓存常用配置，减少热路径上的配置克隆
@@ -180,7 +221,7 @@ struct RequestContext {
 
 impl RequestContext {
     fn new(remote: SocketAddr, headers: &HeaderMap, method: &Method, uri: &Uri) -> Self {
-        let path = uri.path().to_string();
+        let path = uri.path();
 
         #[inline]
         fn header_to_string(headers: &HeaderMap, key: &'static str) -> String {
@@ -216,7 +257,7 @@ impl RequestContext {
             user_agent_header: ua,
             method: method.clone(),
             uri: uri.clone(),
-            path,
+            path: path.to_string(),
         }
     }
 
@@ -277,7 +318,7 @@ pub fn start_server(app: tauri::AppHandle) -> Result<()> {
             state.phase = Phase::Stopped;
             drop(state);
             let _ = app.emit("status", "stopped");
-            send_log("未配置监听规则，服务保持停止状态".to_string());
+            send_log("未配置监听规则，服务保持停止状态");
             return Ok(());
         }
         state.phase = Phase::Starting;
@@ -422,7 +463,7 @@ pub fn start_server(app: tauri::AppHandle) -> Result<()> {
         }
     }
 
-    send_log("代理服务器启动中...".to_string());
+    send_log("代理服务器启动中...");
     Ok(())
 }
 
@@ -503,11 +544,12 @@ fn append_log(logs: &mut VecDeque<String>, message: String) {
     logs.push_back(message);
 }
 
-pub fn send_log(message: String) {
-    append_log(&mut LOGS.write(), message);
+pub fn send_log(message: impl Into<String>) {
+    append_log(&mut LOGS.write(), message.into());
 }
 
-pub fn send_log_with_app(app: &tauri::AppHandle, message: String) {
+pub fn send_log_with_app(app: &tauri::AppHandle, message: impl Into<String>) {
+    let message = message.into();
     {
         append_log(&mut LOGS.write(), message.clone());
     }
@@ -573,12 +615,13 @@ async fn start_rule_server(
             .tcp_nodelay(true)
             .connect_timeout(Duration::from_millis(cfg.upstream_connect_timeout_ms))
             .timeout(Duration::from_millis(cfg.upstream_read_timeout_ms))
-            // 新增优化配置
-            .http2_keep_alive_interval(Duration::from_secs(30))  // HTTP/2 保活
-            .http2_keep_alive_timeout(Duration::from_secs(10))   // HTTP/2 保活超时
-            .http2_adaptive_window(true)                          // HTTP/2 自适应窗口
-            .http2_max_frame_size(Some(16384 * 4))              // 增大 HTTP/2 帧大小（64KB）
-            .connection_verbose(false);                           // 禁用详细连接日志
+            // HTTP/2 优化配置
+            .http2_prior_knowledge()                                 // 强制 HTTP/2
+            .http2_keep_alive_interval(Duration::from_secs(10))      // HTTP/2 保活间隔（优化）
+            .http2_keep_alive_timeout(Duration::from_secs(20))       // HTTP/2 保活超时（优化）
+            .http2_adaptive_window(true)                             // HTTP/2 自适应窗口
+            .http2_max_frame_size(Some(16384 * 4))                  // 增大 HTTP/2 帧大小（64KB）
+            .connection_verbose(false);                              // 禁用详细连接日志
 
         if !cfg.enable_http2 {
             builder = builder.http1_only();
@@ -695,7 +738,12 @@ async fn start_rule_server(
         // with_graceful_shutdown：收到信号后立即停止接受新连接，
         // 并对所有已有的 keep-alive 连接发送 Connection: close，等待它们自然结束，
         // 避免旧端口在服务停止后仍可被访问。
-        let listener = tokio::net::TcpListener::bind(addr).await?;
+
+        // 使用优化的 TCP 监听器
+        use crate::network_optimizer::TcpOptimizer;
+        let optimizer = TcpOptimizer::default();
+        let listener = optimizer.optimize_listener(addr).await?;
+
         axum::serve(listener, app)
             .with_graceful_shutdown(async move {
                 let _ = shutdown_rx.await;
@@ -1024,23 +1072,20 @@ fn format_access_log(node: &str, ctx: &RequestContext, status: StatusCode) -> St
     // 优先使用解析后的 client_ip（会从 XFF/X-Real-IP/remote 推导）
     // 兜底再回退到原始 header 字段，避免日志里出现空/"-"。
     let ip = if !ctx.client_ip.is_empty() {
-        ctx.client_ip.clone()
+        &ctx.client_ip
     } else if ctx.client_ip_header != "-" {
         ctx.client_ip_header
             .split(',')
             .next()
             .unwrap_or("-")
             .trim()
-            .to_string()
     } else if ctx.real_ip_header != "-" {
-        ctx.real_ip_header.to_string()
+        &ctx.real_ip_header
     } else {
-        "-".to_string()
+        "-"
     };
     let time_local = time_local_string();
     let req_line = request_line(&ctx.method, &ctx.uri);
-    let referer = ctx.referer_header.clone();
-    let ua = ctx.user_agent_header.clone();
 
     format!(
         "[NODE {}] [-] {} - - [{}] \"{}\" {} - \"{}\" \"{}\" {:.3}s",
@@ -1049,8 +1094,8 @@ fn format_access_log(node: &str, ctx: &RequestContext, status: StatusCode) -> St
         time_local,
         req_line,
         status.as_u16(),
-        referer,
-        ua,
+        ctx.referer_header,
+        ctx.user_agent_header,
         ctx.elapsed_s()
     )
 }

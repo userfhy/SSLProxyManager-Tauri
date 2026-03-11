@@ -5,6 +5,7 @@ use crate::proxy;
 use crate::stream_proxy;
 use crate::tray;
 use crate::update;
+use crate::cache_optimizer;
 use anyhow::Result;
 use tauri::Manager;
 use tauri_plugin_dialog::DialogExt;
@@ -497,4 +498,30 @@ pub fn get_buffer_pool_stats() -> Result<serde_json::Value, String> {
         "max_size": stats.max_size,
         "usage_percent": (stats.size as f64 / stats.max_size as f64 * 100.0).round()
     }))
+}
+
+#[tauri::command]
+pub fn get_cache_stats() -> Result<serde_json::Value, String> {
+    let manager = cache_optimizer::global_cache_manager();
+    let stats = manager.all_stats();
+
+    Ok(serde_json::json!({
+        "regex": {
+            "size": stats.regex.size,
+            "capacity": stats.regex.capacity,
+            "usage_percent": stats.regex.usage_percent().round()
+        },
+        "dns": {
+            "size": stats.dns.size,
+            "capacity": stats.dns.capacity,
+            "usage_percent": stats.dns.usage_percent().round()
+        }
+    }))
+}
+
+#[tauri::command]
+pub fn clear_all_caches() -> Result<(), String> {
+    let manager = cache_optimizer::global_cache_manager();
+    manager.clear_all();
+    Ok(())
 }

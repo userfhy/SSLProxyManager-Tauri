@@ -1,6 +1,6 @@
 [package]
 name = "SSLProxyManager"
-version = "1.0.13"
+version = "1.0.15"
 description = "SSL 代理管理工具"
 repository = "https://github.com/userfhy/SSLProxyManager-Tauri"
 authors = ["fhy"]
@@ -23,8 +23,8 @@ dashmap = "6.1"
 rfd = "^0.17"
 serde = { version = "^1.0", features = ["derive"] }
 serde_json = "^1.0"
-tokio = { version = "^1", features = ["rt-multi-thread", "net", "io-util", "time", "sync", "macros"] }
-reqwest = { version = "^0.13", features = ["json", "stream"] }
+tokio = { version = "^1", features = ["rt-multi-thread", "net", "io-util", "time", "sync", "macros", "parking_lot"] }
+reqwest = { version = "^0.13", features = ["json", "stream", "http2"] }
 toml = "^0.8"
 sqlx = { version = "^0.8", features = ["runtime-tokio-rustls", "sqlite"] }
 anyhow = "^1.0"
@@ -41,6 +41,7 @@ base64 = "^0.22"
 sha2 = "^0.10"
 hex = "^0.4"
 bytes = "^1.9"
+mimalloc = "0.1"
 
 axum = { version = "^0.8", features = ["ws"] }
 hyper = "^1.8"
@@ -60,6 +61,11 @@ futures-util = "^0.3"
 
 # 正则表达式支持（用于URL重写）
 regex = "^1.11"
+
+# 性能优化依赖
+lru = "^0.16"           # LRU 缓存
+socket2 = "^0.6"        # 底层 socket 控制
+smallvec = "^1.15"      # 栈上小数组优化
 
 [features]
 # 默认启用所有功能

@@ -1,6 +1,10 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+// 使用 mimalloc 作为全局内存分配器（性能优化）
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 mod app;
 mod commands;
 mod config;
@@ -14,6 +18,8 @@ mod access_control_test;
 mod rate_limit;
 mod i18n;
 mod buffer_pool;
+mod network_optimizer;
+mod cache_optimizer;
 
 use tauri::Manager;
 
@@ -95,6 +101,8 @@ fn main() {
             commands::set_locale,
             commands::get_locale,
             commands::get_buffer_pool_stats,
+            commands::get_cache_stats,
+            commands::clear_all_caches,
         ])
         .setup(|app| {
             // 初始化应用
