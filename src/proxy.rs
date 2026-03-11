@@ -124,7 +124,7 @@ static REGEX_CACHE: once_cell::sync::Lazy<DashMap<String, Arc<Regex>>> =
 /// 从缓存中获取或编译正则表达式。
 /// 若 pattern 非法则返回 None（与原来 `if let Ok(re) = Regex::new(...)` 语义一致）。
 #[inline]
-fn cached_regex(pattern: &str) -> Option<Arc<Regex>> {
+pub fn cached_regex(pattern: &str) -> Option<Arc<Regex>> {
     if let Some(entry) = REGEX_CACHE.get(pattern) {
         return Some(entry.clone());
     }
@@ -744,6 +744,7 @@ fn normalize_host(host: &str) -> &str {
 /// 支持：
 /// 1. 精确匹配（不区分大小写）
 /// 2. 通配符匹配：*.example.com 匹配 example.com, www.example.com, api.example.com 等
+#[inline]
 fn host_matches(route_host: &str, request_host: &str) -> bool {
     let route_host = normalize_host(route_host);
     let request_host = normalize_host(request_host);
@@ -877,22 +878,24 @@ fn match_route<'a>(
     }
 }
 
+#[inline]
 fn upstream_signature(route: &config::Route) -> String {
     let mut parts: Vec<String> = route
         .upstreams
         .iter()
         .map(|u| format!("{}#{}", u.url, u.weight))
         .collect();
-    parts.sort();
+    parts.sort_unstable(); // 使用 sort_unstable 更快
     parts.join("|")
 }
 
+#[inline]
 fn pick_upstream_smooth(route: &config::Route) -> Option<String> {
-    if route.upstreams.is_empty() {
-        return None;
-    }
-    if route.upstreams.len() == 1 {
-        return Some(route.upstreams[0].url.clone());
+    // 快速路径：单个 upstream 直接返回引用克隆
+    match route.upstreams.len() {
+        0 => return None,
+        1 => return Some(route.upstreams[0].url.clone()),
+        _ => {}
     }
 
     let route_id = route.id.as_deref().unwrap_or("").trim();
@@ -998,6 +1001,7 @@ fn request_line(method: &Method, uri: &Uri) -> String {
     format!("{} {} HTTP/1.1", method.as_str(), uri)
 }
 
+#[inline]
 fn format_access_log(node: &str, ctx: &RequestContext, status: StatusCode) -> String {
     // 优先使用解析后的 client_ip（会从 XFF/X-Real-IP/remote 推导）
     // 兜底再回退到原始 header 字段，避免日志里出现空/"-"。
@@ -1310,7 +1314,10 @@ async fn proxy_handler(
 
     // 2. 优先处理静态资源
     if let Some(dir) = route.static_dir.as_ref() {
-        let serve_dir = ServeDir::new(dir);
+        // 优化静态文件服务：支持预压缩文件
+        let serve_dir = ServeDir::new(dir)
+            .precompressed_gzip()    // 支持 .gz 预压缩文件
+            .precompressed_br();     // 支持 .br 预压缩文件
 
         match serve_dir.oneshot(req).await {
             Ok(response) => {
@@ -1934,6 +1941,7 @@ fn is_hop_header_fast(name: &str) -> bool {
         || name.eq_ignore_ascii_case("upgrade")
 }
 
+#[inline]
 fn expand_proxy_header_value(raw: &str, remote: &SocketAddr, inbound_headers: &HeaderMap, is_tls: bool) -> String {
     // 仅在真的包含变量时才分配
     if !(raw.contains('$')) {

@@ -20,9 +20,28 @@ mod tray;
 mod update;
 
 fn main() {
-    // 初始化日志
-    tracing_subscriber::fmt()
-        .with_timer(tracing_subscriber::fmt::time::ChronoLocal::rfc_3339())
+    // 初始化日志系统
+    // 根据构建模式优化日志配置：
+    // - Debug 模式：详细日志，包含目标模块
+    // - Release 模式：紧凑格式，仅 info 及以上级别
+    use tracing_subscriber::{fmt, EnvFilter, prelude::*};
+
+    let filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| {
+            if cfg!(debug_assertions) {
+                EnvFilter::new("debug")
+            } else {
+                EnvFilter::new("info")
+            }
+        });
+
+    let fmt_layer = fmt::layer()
+        .with_timer(fmt::time::ChronoLocal::rfc_3339())
+        .with_target(cfg!(debug_assertions));  // Release 模式不显示 target
+
+    tracing_subscriber::registry()
+        .with(filter)
+        .with(fmt_layer)
         .init();
 
     tauri::Builder::default()

@@ -40,16 +40,16 @@ fn default_stream_access_control_enabled() -> bool {
 
 // 新增的默认值函数
 fn default_upstream_connect_timeout_ms() -> u64 {
-    5000
+    3000  // 从 5000 降低到 3000，更快失败
 }
 fn default_upstream_read_timeout_ms() -> u64 {
     30000
 }
 fn default_upstream_pool_max_idle() -> usize {
-    100
+    200  // 从 100 增加到 200，提升高并发性能
 }
 fn default_upstream_pool_idle_timeout_sec() -> u64 {
-    60
+    90  // 从 60 增加到 90，减少连接重建
 }
 fn default_max_response_body_size() -> usize {
     10 * 1024 * 1024
@@ -560,8 +560,54 @@ pub fn load_config() -> Result<()> {
     // 确保所有 ID 都存在（加载时补齐，并写回内存）
     ensure_config_ids(&mut config);
 
+    // 预编译所有正则表达式以提升运行时性能
+    precompile_regexes(&config);
+
     *CONFIG.write() = config;
     Ok(())
+}
+
+/// 预编译配置中的所有正则表达式，提升运行时性能
+fn precompile_regexes(config: &Config) {
+    for rule in &config.rules {
+        for route in &rule.routes {
+            // 预编译 URL 重写规则
+            if let Some(rewrite_rules) = &route.url_rewrite_rules {
+                for rule in rewrite_rules {
+                    let _ = crate::proxy::cached_regex(&rule.pattern);
+                }
+            }
+
+            // 预编译请求体替换规则
+            if let Some(replace_rules) = &route.request_body_replace {
+                for rule in replace_rules {
+                    if rule.use_regex && rule.enabled {
+                        let _ = crate::proxy::cached_regex(&rule.find);
+                    }
+                }
+            }
+
+            // 预编译响应体替换规则
+            if let Some(replace_rules) = &route.response_body_replace {
+                for rule in replace_rules {
+                    if rule.use_regex && rule.enabled {
+                        let _ = crate::proxy::cached_regex(&rule.find);
+                    }
+                }
+            }
+
+            // 预编译 header 匹配规则（如果使用了通配符）
+            if let Some(headers) = &route.headers {
+                for expected in headers.values() {
+                    if expected.contains('*') {
+                        // 将通配符转换为正则表达式模式
+                        let pattern = expected.replace('.', r"\.").replace('*', ".*");
+                        let _ = crate::proxy::cached_regex(&pattern);
+                    }
+                }
+            }
+        }
+    }
 }
 
 pub fn save_config() -> Result<()> {

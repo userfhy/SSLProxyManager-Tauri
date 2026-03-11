@@ -6,8 +6,11 @@
     "dev": "echo \"No frontend dev server configured. Edit package.json scripts.dev or src-tauri/tauri.conf.json build.beforeDevCommand\" && exit 1",
     "build": "echo \"No frontend build configured. Edit package.json scripts.build or src-tauri/tauri.conf.json build.beforeBuildCommand\" && exit 1",
     "tauri": "tauri",
+    "tauri:dev:debug": "RUST_LOG=debug tauri dev --config tauri.conf.json",
+    "tauri:dev:info": "RUST_LOG=info tauri dev --config tauri.conf.json",
     "tauri:dev": "tauri dev --config tauri.conf.json",
-    "tauri:build": "tauri build --config tauri.conf.json"
+    "tauri:build": "tauri build --config tauri.conf.json",
+    "tauri:build:debug": "RUST_LOG=debug tauri build --config tauri.conf.json"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.10.1"

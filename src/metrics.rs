@@ -710,13 +710,19 @@ pub async fn init_db(db_path: String) -> Result<()> {
         // - busy_timeout：避免高并发下立即报 database is locked
         // - cache_size：增大 page cache（负数表示 KB）
         // - temp_store：临时表尽量走内存
+        // 性能优化 PRAGMA 设置
         let _ = sqlx::query("PRAGMA busy_timeout = 5000;")
             .execute(&pool)
             .await;
-        let _ = sqlx::query("PRAGMA cache_size = -16384;")
+        // 增大缓存到 64MB（-64000 KB）以提升查询性能
+        let _ = sqlx::query("PRAGMA cache_size = -64000;")
             .execute(&pool)
             .await;
         let _ = sqlx::query("PRAGMA temp_store = MEMORY;")
+            .execute(&pool)
+            .await;
+        // 启用 mmap 以提升读取性能（256MB）
+        let _ = sqlx::query("PRAGMA mmap_size = 268435456;")
             .execute(&pool)
             .await;
 
