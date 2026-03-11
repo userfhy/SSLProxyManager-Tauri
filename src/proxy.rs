@@ -614,18 +614,20 @@ async fn start_rule_server(
             .tcp_keepalive(Duration::from_secs(60))
             .tcp_nodelay(true)
             .connect_timeout(Duration::from_millis(cfg.upstream_connect_timeout_ms))
-            .timeout(Duration::from_millis(cfg.upstream_read_timeout_ms))
-            // HTTP/2 优化配置
-            .http2_prior_knowledge()                                 // 强制 HTTP/2
-            .http2_keep_alive_interval(Duration::from_secs(10))      // HTTP/2 保活间隔（优化）
-            .http2_keep_alive_timeout(Duration::from_secs(20))       // HTTP/2 保活超时（优化）
-            .http2_adaptive_window(true)                             // HTTP/2 自适应窗口
-            .http2_max_frame_size(Some(16384 * 4))                  // 增大 HTTP/2 帧大小（64KB）
-            .connection_verbose(false);                              // 禁用详细连接日志
+            .timeout(Duration::from_millis(cfg.upstream_read_timeout_ms));
 
-        if !cfg.enable_http2 {
+        // HTTP/2 优化配置（仅在启用 HTTP/2 时应用）
+        if cfg.enable_http2 {
+            builder = builder
+                .http2_keep_alive_interval(Duration::from_secs(10))      // HTTP/2 保活间隔
+                .http2_keep_alive_timeout(Duration::from_secs(20))       // HTTP/2 保活超时
+                .http2_adaptive_window(true)                             // HTTP/2 自适应窗口
+                .http2_max_frame_size(Some(16384 * 4));                 // 增大 HTTP/2 帧大小（64KB）
+        } else {
             builder = builder.http1_only();
         }
+
+        builder = builder.connection_verbose(false);                     // 禁用详细连接日志
 
         builder
     };
