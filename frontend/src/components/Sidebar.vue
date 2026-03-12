@@ -90,14 +90,20 @@ const handleMenuSelect = (key: string) => {
   border-radius: var(--radius-lg);
   background: var(--card-bg);
   border: 1px solid var(--border);
-  backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px) saturate(180%);
+  -webkit-backdrop-filter: blur(12px) saturate(180%);
   height: 100%;
-  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: var(--shadow-sm);
+}
+
+.sidebar-nav:hover {
+  box-shadow: var(--shadow-md);
 }
 
 .sidebar-nav.sidebar-collapsed {
   width: 64px;
-  overflow: hidden; /* 彻底禁止滚动 */
+  overflow: hidden;
 }
 
 .sidebar-nav :deep(.el-card__body) {
@@ -110,7 +116,7 @@ const handleMenuSelect = (key: string) => {
 
 .sidebar-collapsed :deep(.el-card__body) {
   padding: 12px 4px;
-  overflow: hidden; /* 彻底禁止滚动 */
+  overflow: hidden;
 }
 
 .sidebar-header {
@@ -128,10 +134,14 @@ const handleMenuSelect = (key: string) => {
 
 .collapse-btn {
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  background: var(--btn-bg);
+  border: 1px solid var(--border);
 }
 
 .collapse-btn:hover {
-  transform: scale(1.1);
+  transform: scale(1.1) rotate(180deg);
+  background: var(--btn-hover);
+  box-shadow: var(--shadow-sm);
 }
 
 .nav-menu {
@@ -148,6 +158,7 @@ const handleMenuSelect = (key: string) => {
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  transition: all 0.3s ease;
   transition: opacity 0.3s;
 }
 
@@ -165,6 +176,20 @@ const handleMenuSelect = (key: string) => {
   color: var(--text-muted);
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   white-space: nowrap;
+  position: relative;
+  overflow: hidden;
+}
+
+.nav-menu :deep(.el-menu-item)::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 3px;
+  height: 100%;
+  background: var(--primary);
+  transform: scaleY(0);
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .sidebar-collapsed .nav-menu :deep(.el-menu-item) {
@@ -188,12 +213,22 @@ const handleMenuSelect = (key: string) => {
 .nav-menu :deep(.el-menu-item:hover) {
   background: var(--primary-light);
   color: var(--primary);
+  transform: translateX(4px);
+}
+
+.nav-menu :deep(.el-menu-item:hover)::before {
+  transform: scaleY(1);
 }
 
 .nav-menu :deep(.el-menu-item.is-active) {
   background: var(--primary-light);
   color: var(--primary);
   font-weight: 600;
+  box-shadow: 0 2px 8px rgba(79, 156, 249, 0.2);
+}
+
+.nav-menu :deep(.el-menu-item.is-active)::before {
+  transform: scaleY(1);
 }
 
 .nav-menu :deep(.el-menu-item .el-icon) {

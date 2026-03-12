@@ -88,20 +88,7 @@ pub async fn save_config(
     config::ensure_config_ids_for_save(&mut cfg);
     validate_config(&cfg).await?;
 
-    let was_running = proxy::is_effectively_running();
-
-    // 1. 如果正在运行，先停止服务
-    if was_running {
-        proxy::stop_server(app.clone()).map_err(|e| e.to_string())?;
-        // 增加延时，等待系统完全释放端口，这是避免”端口已占用”的关键
-        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-    }
-
-    // 2. 写入新配置到内存和文件（验证已通过，此时写盘是安全的）
-    config::set_config(cfg.clone());
-    config::save_config().map_err(|e| e.to_string())?;
-
-    // 3. 更新数据库配置（如果需要）
+    // 更新数据库配置（如果需要）
     if let Some(metrics_storage) = cfg.metrics_storage.as_ref() {
         if metrics_storage.enabled {
             metrics::init_db(metrics_storage.db_path.clone())
@@ -111,13 +98,10 @@ pub async fn save_config(
         }
     }
 
-    // 4. 如果之前在运行，则用新配置重启服务
-    if was_running {
-        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-        proxy::start_server(app).map_err(|e| e.to_string())?;
-    }
-
-    Ok(cfg)
+    // 使用优雅重载机制
+    crate::hot_reload::graceful_reload(app, cfg)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

@@ -20,6 +20,7 @@ mod i18n;
 mod buffer_pool;
 mod network_optimizer;
 mod cache_optimizer;
+mod hot_reload;
 
 use tauri::Manager;
 

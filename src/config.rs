@@ -5,6 +5,90 @@ use serde::{Deserialize, Serialize};
 
 use crate::ws_proxy;
 
+// 为 Config 派生 PartialEq，用于配置变更检测
+impl PartialEq for Config {
+    fn eq(&self, other: &Self) -> bool {
+        // 比较所有关键字段
+        self.rules == other.rules
+            && self.ws_proxy_enabled == other.ws_proxy_enabled
+            && self.ws_proxy == other.ws_proxy
+            && self.stream.enabled == other.stream.enabled
+            && self.stream.upstreams == other.stream.upstreams
+            && self.stream.servers == other.stream.servers
+            && self.http_access_control_enabled == other.http_access_control_enabled
+            && self.ws_access_control_enabled == other.ws_access_control_enabled
+            && self.stream_access_control_enabled == other.stream_access_control_enabled
+            && self.allow_all_lan == other.allow_all_lan
+            && self.allow_all_ip == other.allow_all_ip
+            && self.whitelist == other.whitelist
+            && self.enable_http2 == other.enable_http2
+            && self.compression_enabled == other.compression_enabled
+            && self.max_body_size == other.max_body_size
+    }
+}
+
+// 为其他结构体派生 PartialEq
+impl PartialEq for ListenRule {
+    fn eq(&self, other: &Self) -> bool {
+        self.enabled == other.enabled
+            && self.listen_addr == other.listen_addr
+            && self.listen_addrs == other.listen_addrs
+            && self.ssl_enable == other.ssl_enable
+            && self.cert_file == other.cert_file
+            && self.key_file == other.key_file
+            && self.routes == other.routes
+    }
+}
+
+impl PartialEq for Route {
+    fn eq(&self, other: &Self) -> bool {
+        self.enabled == other.enabled
+            && self.host == other.host
+            && self.path == other.path
+            && self.upstreams == other.upstreams
+    }
+}
+
+impl PartialEq for Upstream {
+    fn eq(&self, other: &Self) -> bool {
+        self.url == other.url && self.weight == other.weight
+    }
+}
+
+impl PartialEq for WhitelistEntry {
+    fn eq(&self, other: &Self) -> bool {
+        self.ip == other.ip
+    }
+}
+
+impl PartialEq for StreamProxyConfig {
+    fn eq(&self, other: &Self) -> bool {
+        self.enabled == other.enabled
+            && self.upstreams == other.upstreams
+            && self.servers == other.servers
+    }
+}
+
+impl PartialEq for StreamUpstream {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name && self.servers == other.servers
+    }
+}
+
+impl PartialEq for StreamUpstreamServer {
+    fn eq(&self, other: &Self) -> bool {
+        self.addr == other.addr && self.weight == other.weight
+    }
+}
+
+impl PartialEq for StreamServer {
+    fn eq(&self, other: &Self) -> bool {
+        self.enabled == other.enabled
+            && self.listen_port == other.listen_port
+            && self.proxy_pass == other.proxy_pass
+    }
+}
+
 // 默认 true 帮助函数，供 serde 使用
 fn default_true() -> bool {
     true

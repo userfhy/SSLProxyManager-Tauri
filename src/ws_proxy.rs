@@ -35,13 +35,13 @@ impl WsServerHandle {
     }
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 pub struct WsRoute {
     pub path: String,
     pub upstream_url: String,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 pub struct WsListenRule {
     pub enabled: bool,
     pub listen_addr: String,
