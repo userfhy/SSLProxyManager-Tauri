@@ -51,6 +51,13 @@
         </el-menu-item>
       </el-menu-item-group>
 
+      <el-menu-item-group :title="isCollapsed ? '' : $t('sidebar.tools')">
+        <el-menu-item index="testTools">
+          <el-icon><Tools /></el-icon>
+          <template #title>{{ $t('sidebar.testTools') }}</template>
+        </el-menu-item>
+      </el-menu-item-group>
+
       <el-menu-item-group :title="isCollapsed ? '' : $t('sidebar.system')">
         <el-menu-item index="about">
           <el-icon><InfoFilled /></el-icon>
@@ -62,7 +69,7 @@
 </template>
 
 <script setup lang="ts">
-import { Setting, DataAnalysis, Document, Lock, Search, Fold, Expand, InfoFilled } from '@element-plus/icons-vue'
+import { Setting, DataAnalysis, Document, Lock, Search, Fold, Expand, InfoFilled, Tools } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()

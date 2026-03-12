@@ -21,6 +21,7 @@ mod buffer_pool;
 mod network_optimizer;
 mod cache_optimizer;
 mod hot_reload;
+mod test_tools;
 
 use tauri::Manager;
 
@@ -104,6 +105,10 @@ fn main() {
             commands::get_buffer_pool_stats,
             commands::get_cache_stats,
             commands::clear_all_caches,
+            commands::send_http_test,
+            commands::test_route_match,
+            commands::run_performance_test,
+            commands::validate_config_tool,
         ])
         .setup(|app| {
             // 初始化应用

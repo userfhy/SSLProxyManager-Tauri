@@ -6,6 +6,7 @@ use crate::stream_proxy;
 use crate::tray;
 use crate::update;
 use crate::cache_optimizer;
+use crate::test_tools;
 use anyhow::Result;
 use tauri::Manager;
 use tauri_plugin_dialog::DialogExt;
@@ -509,3 +510,33 @@ pub fn clear_all_caches() -> Result<(), String> {
     manager.clear_all();
     Ok(())
 }
+
+// ==================== 测试工具命令 ====================
+
+#[tauri::command]
+pub async fn send_http_test(req: test_tools::HttpTestRequest) -> Result<test_tools::HttpTestResponse, String> {
+    test_tools::send_http_test_request(req)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn test_route_match(req: test_tools::RouteTestRequest) -> Result<test_tools::RouteTestResult, String> {
+    test_tools::test_route_matching(req)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn run_performance_test(req: test_tools::PerformanceTestRequest) -> Result<test_tools::PerformanceTestResult, String> {
+    test_tools::run_performance_test(req)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn validate_config_tool(req: test_tools::ConfigValidationRequest) -> Result<test_tools::ConfigValidationResult, String> {
+    test_tools::validate_configuration(req)
+        .await
+        .map_err(|e| e.to_string())
+}
+

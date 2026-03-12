@@ -86,12 +86,13 @@
           ref="accessControlRef"
           :config="globalConfig"
         />
-        <MetricsStorage 
+        <MetricsStorage
           v-show="activeTab === 'storage'"
           ref="metricsStorageRef"
           :config="globalConfig"
         />
         <RequestLogs v-show="activeTab === 'requestLogs'" />
+        <TestTools v-show="activeTab === 'testTools'" />
         <LogViewer v-show="activeTab === 'logs'" />
         <About v-show="activeTab === 'about'" ref="aboutRef" />
       </div>
@@ -121,6 +122,7 @@ import About from './components/About.vue'
 import Sidebar from './components/Sidebar.vue'
 import TermsDialog from './components/TermsDialog.vue'
 import LanguageSelector from './components/LanguageSelector.vue'
+import TestTools from './components/TestTools.vue'
 import { Sunny, Moon, Check } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox, ElNotification } from 'element-plus'
 import { GetConfig, SaveConfig } from './api'
@@ -129,7 +131,7 @@ import { useI18n } from 'vue-i18n'
 
 const { t, locale } = useI18n()
 
-const activeTab = ref<'base' | 'config' | 'ws' | 'stream' | 'logs' | 'dashboard' | 'access' | 'storage' | 'requestLogs' | 'about'>('config')
+const activeTab = ref<'base' | 'config' | 'ws' | 'stream' | 'logs' | 'dashboard' | 'access' | 'storage' | 'requestLogs' | 'about' | 'testTools'>('config')
 const status = ref('stopped')
 const starting = ref(false)
 const saving = ref(false)
