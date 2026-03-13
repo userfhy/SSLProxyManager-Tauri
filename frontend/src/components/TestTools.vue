@@ -34,9 +34,14 @@
                   <el-input v-model="header.value" placeholder="Header Value" style="flex: 1; margin: 0 8px;" />
                   <el-button @click="removeHeader(index)" type="danger" :icon="Delete" circle />
                 </div>
-                <el-button @click="addHeader" type="primary" :icon="Plus" size="small">
-                  {{ $t('testTools.addHeader') }}
-                </el-button>
+                <div style="margin-top: 8px;">
+                  <el-button @click="addHeader" type="primary" :icon="Plus" size="small">
+                    {{ $t('testTools.addHeader') }}
+                  </el-button>
+                  <el-button @click="addCommonHeaders" :icon="DocumentCopy" size="small">
+                    {{ $t('testTools.addCommonHeaders') }}
+                  </el-button>
+                </div>
               </div>
             </el-form-item>
 
@@ -80,7 +85,13 @@
             </div>
 
             <div v-else>
-              <el-descriptions :column="2" border>
+              <h5 style="margin-top: 0;">{{ $t('testTools.requestHeaders') }}</h5>
+              <el-table :data="formatHeaders(httpResponse.request_headers || {})" border size="small" max-height="200">
+                <el-table-column prop="key" :label="$t('testTools.headerName')" width="200" />
+                <el-table-column prop="value" :label="$t('testTools.headerValue')" />
+              </el-table>
+
+              <el-descriptions :column="2" border style="margin-top: 16px;">
                 <el-descriptions-item :label="$t('testTools.statusCode')">
                   <el-tag :type="getStatusType(httpResponse.status)">
                     {{ httpResponse.status }} {{ httpResponse.status_text }}
@@ -98,6 +109,11 @@
               </el-table>
 
               <h5 style="margin-top: 16px;">{{ $t('testTools.responseBody') }}</h5>
+              <div style="margin-bottom: 8px;">
+                <el-button @click="previewHtml" size="small" :icon="View">
+                  {{ $t('testTools.previewHtml') }}
+                </el-button>
+              </div>
               <el-input
                 v-model="httpResponse.body"
                 type="textarea"
@@ -670,13 +686,18 @@
         </el-card>
       </el-tab-pane>
     </el-tabs>
+
+    <!-- HTML 预览对话框 -->
+    <el-dialog v-model="htmlPreviewVisible" :title="$t('testTools.htmlPreview')" width="80%" top="5vh">
+      <iframe :srcdoc="htmlPreviewContent" style="width: 100%; height: 70vh; border: 1px solid var(--border); border-radius: 4px;"></iframe>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Delete, Plus, Promotion, Search, Timer, CircleCheck, Lock, DocumentCopy, Connection, Close } from '@element-plus/icons-vue'
+import { Delete, Plus, Promotion, Search, Timer, CircleCheck, Lock, DocumentCopy, Connection, Close, View } from '@element-plus/icons-vue'
 import { invoke } from '@tauri-apps/api/core'
 import { useI18n } from 'vue-i18n'
 
@@ -696,6 +717,8 @@ const httpForm = reactive({
 
 const httpLoading = ref(false)
 const httpResponse = ref<any>(null)
+const htmlPreviewVisible = ref(false)
+const htmlPreviewContent = ref('')
 
 const addHeader = () => {
   httpForm.headers.push({ key: '', value: '' })
@@ -703,6 +726,17 @@ const addHeader = () => {
 
 const removeHeader = (index: number) => {
   httpForm.headers.splice(index, 1)
+}
+
+const addCommonHeaders = () => {
+  const commonHeaders = [
+    { key: 'User-Agent', value: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+    { key: 'Accept', value: 'application/json, text/plain, */*' },
+    { key: 'Content-Type', value: 'application/json' },
+    { key: 'Accept-Language', value: 'zh-CN,zh;q=0.9,en;q=0.8' },
+  ]
+  httpForm.headers.push(...commonHeaders)
+  ElMessage.success(t('testTools.commonHeadersAdded'))
 }
 
 const sendHttpRequest = async () => {
@@ -733,7 +767,11 @@ const sendHttpRequest = async () => {
       }
     })
 
-    httpResponse.value = response
+    // 添加请求头信息到响应中
+    httpResponse.value = {
+      ...response,
+      request_headers: headers
+    }
   } catch (error: any) {
     ElMessage.error(t('testTools.requestFailed') + ': ' + error)
   } finally {
@@ -743,6 +781,17 @@ const sendHttpRequest = async () => {
 
 const clearHttpResponse = () => {
   httpResponse.value = null
+}
+
+const previewHtml = async () => {
+  if (!httpResponse.value || !httpResponse.value.body) {
+    ElMessage.warning(t('testTools.noContentToPreview'))
+    return
+  }
+  htmlPreviewContent.value = ''
+  htmlPreviewVisible.value = true
+  await nextTick()
+  htmlPreviewContent.value = httpResponse.value.body
 }
 
 const formatHeaders = (headers: Record<string, string>) => {
