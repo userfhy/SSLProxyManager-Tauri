@@ -553,3 +553,16 @@ pub async fn get_ssl_cert_info(req: test_tools::SslCertInfoRequest) -> Result<te
         .await
         .map_err(|e| e.to_string())
 }
+
+#[tauri::command]
+pub async fn scan_ports(req: test_tools::PortScanRequest) -> Result<test_tools::PortScanResult, String> {
+    test_tools::scan_ports(req)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn encode_decode(req: test_tools::EncodeDecodeRequest) -> Result<test_tools::EncodeDecodeResult, String> {
+    test_tools::encode_decode(req)
+        .map_err(|e| e.to_string())
+}

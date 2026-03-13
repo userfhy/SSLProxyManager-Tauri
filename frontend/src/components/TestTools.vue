@@ -388,6 +388,174 @@
         </el-card>
       </el-tab-pane>
 
+      <!-- 端口扫描 -->
+      <el-tab-pane :label="$t('testTools.portScan')" name="portscan">
+        <el-card class="tool-card">
+          <template #header>
+            <div class="card-header">
+              <span>{{ $t('testTools.portScanTitle') }}</span>
+            </div>
+          </template>
+
+          <el-form :model="portScanForm" label-width="100px">
+            <el-form-item :label="$t('testTools.host')">
+              <el-input v-model="portScanForm.host" placeholder="127.0.0.1" />
+            </el-form-item>
+
+            <el-form-item :label="$t('testTools.ports')">
+              <el-input v-model="portScanForm.portsInput" placeholder="80,443,3306,8080" />
+              <div style="margin-top: 8px;">
+                <el-button @click="setCommonPorts" size="small">{{ $t('testTools.commonPorts') }}</el-button>
+                <el-button @click="setWebPorts" size="small">{{ $t('testTools.webPorts') }}</el-button>
+                <el-button @click="setDbPorts" size="small">{{ $t('testTools.dbPorts') }}</el-button>
+              </div>
+            </el-form-item>
+
+            <el-form-item :label="$t('testTools.timeout')">
+              <el-input-number v-model="portScanForm.timeout" :min="100" :max="5000" :step="100" />
+              <span style="margin-left: 8px;">ms</span>
+            </el-form-item>
+
+            <el-form-item>
+              <el-button @click="scanPorts" type="primary" :loading="portScanLoading" :icon="Search">
+                {{ $t('testTools.startScan') }}
+              </el-button>
+            </el-form-item>
+          </el-form>
+
+          <el-divider />
+
+          <div v-if="portScanResult" class="response-section">
+            <h4>{{ $t('testTools.scanResults') }}</h4>
+            <p>{{ $t('testTools.totalTime') }}: {{ portScanResult.total_time_ms }} ms</p>
+            <el-table :data="portScanResult.results" border size="small">
+              <el-table-column prop="port" :label="$t('testTools.port')" width="100" />
+              <el-table-column :label="$t('testTools.status')" width="100">
+                <template #default="{ row }">
+                  <el-tag :type="row.open ? 'success' : 'info'">
+                    {{ row.open ? $t('testTools.open') : $t('testTools.closed') }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column prop="service" :label="$t('testTools.service')">
+                <template #default="{ row }">
+                  {{ row.service || '-' }}
+                </template>
+              </el-table-column>
+            </el-table>
+          </div>
+        </el-card>
+      </el-tab-pane>
+
+      <!-- 编码/解码工具 -->
+      <el-tab-pane :label="$t('testTools.encodeDecode')" name="encode">
+        <el-card class="tool-card">
+          <template #header>
+            <div class="card-header">
+              <span>{{ $t('testTools.encodeDecodeTitle') }}</span>
+            </div>
+          </template>
+
+          <el-form :model="encodeForm" label-width="100px">
+            <el-form-item :label="$t('testTools.operation')">
+              <el-select v-model="encodeForm.operation">
+                <el-option label="Base64 编码" value="base64_encode" />
+                <el-option label="Base64 解码" value="base64_decode" />
+                <el-option label="URL 编码" value="url_encode" />
+                <el-option label="URL 解码" value="url_decode" />
+                <el-option label="Hex 编码" value="hex_encode" />
+                <el-option label="Hex 解码" value="hex_decode" />
+              </el-select>
+            </el-form-item>
+
+            <el-form-item :label="$t('testTools.input')">
+              <el-input v-model="encodeForm.input" type="textarea" :rows="6" placeholder="输入要编码/解码的文本" />
+            </el-form-item>
+
+            <el-form-item>
+              <el-button @click="doEncodeDecode" type="primary" :icon="Promotion">
+                {{ $t('testTools.execute') }}
+              </el-button>
+              <el-button @click="copyOutput" :icon="DocumentCopy">
+                {{ $t('testTools.copyOutput') }}
+              </el-button>
+            </el-form-item>
+          </el-form>
+
+          <el-divider />
+
+          <div v-if="encodeResult" class="response-section">
+            <div v-if="encodeResult.error">
+              <el-alert :title="$t('testTools.operationFailed')" type="error" :closable="false">
+                {{ encodeResult.error }}
+              </el-alert>
+            </div>
+            <div v-else>
+              <h5>{{ $t('testTools.output') }}</h5>
+              <el-input v-model="encodeResult.output" type="textarea" :rows="10" readonly class="response-body" />
+            </div>
+          </div>
+        </el-card>
+      </el-tab-pane>
+
+      <!-- WebSocket 测试 -->
+      <el-tab-pane :label="$t('testTools.websocket')" name="websocket">
+        <el-card class="tool-card">
+          <template #header>
+            <div class="card-header">
+              <span>{{ $t('testTools.websocketTitle') }}</span>
+              <el-tag :type="wsStatusType">{{ wsStatusText }}</el-tag>
+            </div>
+          </template>
+
+          <el-form :model="wsForm" label-width="100px">
+            <el-form-item :label="$t('testTools.url')">
+              <el-input v-model="wsForm.url" placeholder="ws://localhost:8800/ws" :disabled="wsConnected" />
+            </el-form-item>
+
+            <el-form-item>
+              <el-button v-if="!wsConnected" @click="connectWebSocket" type="primary" :icon="Connection">
+                {{ $t('testTools.connect') }}
+              </el-button>
+              <el-button v-else @click="disconnectWebSocket" type="danger" :icon="Close">
+                {{ $t('testTools.disconnect') }}
+              </el-button>
+              <el-button @click="clearWsMessages" :icon="Delete">
+                {{ $t('testTools.clearMessages') }}
+              </el-button>
+            </el-form-item>
+
+            <el-form-item :label="$t('testTools.message')" v-if="wsConnected">
+              <el-input v-model="wsForm.message" type="textarea" :rows="3" placeholder="输入要发送的消息" />
+            </el-form-item>
+
+            <el-form-item v-if="wsConnected">
+              <el-button @click="sendWsMessage" type="primary" :icon="Promotion">
+                {{ $t('testTools.sendMessage') }}
+              </el-button>
+            </el-form-item>
+          </el-form>
+
+          <el-divider />
+
+          <div class="response-section">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+              <h4 style="margin: 0;">{{ $t('testTools.messageLog') }} ({{ wsMessages.length }})</h4>
+              <el-switch v-model="wsShowHtml" :active-text="$t('testTools.renderHtml')" />
+            </div>
+            <div class="ws-messages">
+              <div v-for="(msg, index) in wsMessages" :key="index" class="ws-message" :class="msg.type">
+                <span class="ws-time">{{ msg.time }}</span>
+                <span class="ws-type">{{ msg.type === 'sent' ? '发送' : msg.type === 'received' ? '接收' : '系统' }}</span>
+                <span v-if="wsShowHtml" class="ws-content" v-html="msg.content"></span>
+                <span v-else class="ws-content">{{ msg.content }}</span>
+              </div>
+              <el-empty v-if="wsMessages.length === 0" :description="$t('testTools.noMessages')" />
+            </div>
+          </div>
+        </el-card>
+      </el-tab-pane>
+
       <!-- 配置验证 -->
       <el-tab-pane :label="$t('testTools.configValidation')" name="validation">
         <el-card class="tool-card">
@@ -506,9 +674,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+import { ref, reactive, computed } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Delete, Plus, Promotion, Search, Timer, CircleCheck, Lock } from '@element-plus/icons-vue'
+import { Delete, Plus, Promotion, Search, Timer, CircleCheck, Lock, DocumentCopy, Connection, Close } from '@element-plus/icons-vue'
 import { invoke } from '@tauri-apps/api/core'
 import { useI18n } from 'vue-i18n'
 
@@ -770,6 +938,174 @@ const getSslInfo = async () => {
     sslLoading.value = false
   }
 }
+
+// 端口扫描
+const portScanForm = reactive({
+  host: '127.0.0.1',
+  portsInput: '80,443,3306,8080',
+  timeout: 1000,
+})
+
+const portScanLoading = ref(false)
+const portScanResult = ref<any>(null)
+
+const setCommonPorts = () => {
+  portScanForm.portsInput = '21,22,23,25,53,80,110,143,443,3306,3389,5432,6379,8080,8888,27017'
+}
+
+const setWebPorts = () => {
+  portScanForm.portsInput = '80,443,8000,8080,8443,8888,9000'
+}
+
+const setDbPorts = () => {
+  portScanForm.portsInput = '3306,5432,6379,27017,1433,5984'
+}
+
+const scanPorts = async () => {
+  if (!portScanForm.host) {
+    ElMessage.warning(t('testTools.pleaseEnterHost'))
+    return
+  }
+
+  const ports = portScanForm.portsInput.split(',').map(p => parseInt(p.trim())).filter(p => !isNaN(p) && p > 0 && p <= 65535)
+  if (ports.length === 0) {
+    ElMessage.warning(t('testTools.pleaseEnterValidPorts'))
+    return
+  }
+
+  portScanLoading.value = true
+  portScanResult.value = null
+
+  try {
+    const result = await invoke('scan_ports', {
+      req: {
+        host: portScanForm.host,
+        ports,
+        timeout_ms: portScanForm.timeout,
+      }
+    })
+    portScanResult.value = result
+    ElMessage.success(t('testTools.scanCompleted'))
+  } catch (error: any) {
+    ElMessage.error(t('testTools.scanFailed') + ': ' + error)
+  } finally {
+    portScanLoading.value = false
+  }
+}
+
+// 编码/解码
+const encodeForm = reactive({
+  operation: 'base64_encode',
+  input: '',
+})
+
+const encodeResult = ref<any>(null)
+
+const doEncodeDecode = async () => {
+  if (!encodeForm.input) {
+    ElMessage.warning(t('testTools.pleaseEnterInput'))
+    return
+  }
+
+  try {
+    const result = await invoke('encode_decode', {
+      req: {
+        operation: encodeForm.operation,
+        input: encodeForm.input,
+      }
+    })
+    encodeResult.value = result
+  } catch (error: any) {
+    ElMessage.error(t('testTools.operationFailed') + ': ' + error)
+  }
+}
+
+const copyOutput = () => {
+  if (!encodeResult.value || !encodeResult.value.output) {
+    ElMessage.warning(t('testTools.noOutputToCopy'))
+    return
+  }
+  navigator.clipboard.writeText(encodeResult.value.output)
+  ElMessage.success(t('testTools.copiedToClipboard'))
+}
+
+// WebSocket 测试
+const wsForm = reactive({
+  url: 'ws://localhost:8800/ws',
+  message: '',
+})
+
+const wsConnected = ref(false)
+const wsShowHtml = ref(false)
+const wsMessages = ref<Array<{ time: string; type: string; content: string }>>([])
+let wsClient: WebSocket | null = null
+
+const wsStatusType = computed(() => wsConnected.value ? 'success' : 'info')
+const wsStatusText = computed(() => wsConnected.value ? t('testTools.connected') : t('testTools.disconnected'))
+
+const connectWebSocket = () => {
+  if (!wsForm.url) {
+    ElMessage.warning(t('testTools.pleaseEnterUrl'))
+    return
+  }
+
+  try {
+    wsClient = new WebSocket(wsForm.url)
+
+    wsClient.onopen = () => {
+      wsConnected.value = true
+      addWsMessage('system', t('testTools.connectionEstablished'))
+      ElMessage.success(t('testTools.connected'))
+    }
+
+    wsClient.onmessage = (event) => {
+      addWsMessage('received', event.data)
+    }
+
+    wsClient.onerror = (error) => {
+      addWsMessage('system', t('testTools.connectionError') + ': ' + error)
+      ElMessage.error(t('testTools.connectionError'))
+    }
+
+    wsClient.onclose = () => {
+      wsConnected.value = false
+      addWsMessage('system', t('testTools.connectionClosed'))
+    }
+  } catch (error: any) {
+    ElMessage.error(t('testTools.connectionFailed') + ': ' + error)
+  }
+}
+
+const disconnectWebSocket = () => {
+  if (wsClient) {
+    wsClient.close()
+    wsClient = null
+    wsConnected.value = false
+  }
+}
+
+const sendWsMessage = () => {
+  if (!wsForm.message) {
+    ElMessage.warning(t('testTools.pleaseEnterMessage'))
+    return
+  }
+
+  if (wsClient && wsConnected.value) {
+    wsClient.send(wsForm.message)
+    addWsMessage('sent', wsForm.message)
+    wsForm.message = ''
+  }
+}
+
+const addWsMessage = (type: string, content: string) => {
+  const now = new Date()
+  const time = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`
+  wsMessages.value.push({ time, type, content })
+}
+
+const clearWsMessages = () => {
+  wsMessages.value = []
+}
 </script>
 
 <style scoped>
@@ -844,4 +1180,54 @@ const getSslInfo = async () => {
   border-radius: var(--radius-md);
   border: 1px solid var(--border);
 }
+
+.ws-messages {
+  max-height: 400px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  background: var(--card-bg);
+}
+
+.ws-message {
+  padding: 8px;
+  margin-bottom: 8px;
+  border-radius: var(--radius-sm);
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+  display: flex;
+  gap: 8px;
+}
+
+.ws-message.sent {
+  background: #e3f2fd;
+  border-left: 3px solid #2196f3;
+}
+
+.ws-message.received {
+  background: #e8f5e9;
+  border-left: 3px solid #4caf50;
+}
+
+.ws-message.system {
+  background: #fff3e0;
+  border-left: 3px solid #ff9800;
+}
+
+.ws-time {
+  color: #666;
+  min-width: 60px;
+}
+
+.ws-type {
+  font-weight: bold;
+  min-width: 40px;
+}
+
+.ws-content {
+  flex: 1;
+  word-break: break-all;
+}
+
 </style>

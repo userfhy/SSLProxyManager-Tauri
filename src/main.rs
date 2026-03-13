@@ -111,6 +111,8 @@ fn main() {
             commands::validate_config_tool,
             commands::dns_lookup,
             commands::get_ssl_cert_info,
+            commands::scan_ports,
+            commands::encode_decode,
         ])
         .setup(|app| {
             // 初始化应用

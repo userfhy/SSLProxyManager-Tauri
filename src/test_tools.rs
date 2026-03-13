@@ -133,6 +133,43 @@ pub struct SslCertInfoResult {
     pub error: Option<String>,
 }
 
+/// 端口扫描请求
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PortScanRequest {
+    pub host: String,
+    pub ports: Vec<u16>,
+    pub timeout_ms: u64,
+}
+
+/// 端口扫描结果
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PortScanResult {
+    pub host: String,
+    pub results: Vec<PortStatus>,
+    pub total_time_ms: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PortStatus {
+    pub port: u16,
+    pub open: bool,
+    pub service: Option<String>,
+}
+
+/// 编码/解码请求
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EncodeDecodeRequest {
+    pub operation: String, // "base64_encode", "base64_decode", "url_encode", "url_decode"
+    pub input: String,
+}
+
+/// 编码/解码结果
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EncodeDecodeResult {
+    pub output: String,
+    pub error: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CertificateCheckResult {
     pub listen_addr: String,
@@ -725,4 +762,66 @@ pub async fn get_ssl_cert_info(req: SslCertInfoRequest) -> Result<SslCertInfoRes
             error: Some(e.to_string()),
         }),
     }
+}
+
+/// 端口扫描
+pub async fn scan_ports(req: PortScanRequest) -> Result<PortScanResult> {
+    use tokio::time::timeout;
+    use std::time::Duration;
+
+    let start = Instant::now();
+    let timeout_duration = Duration::from_millis(req.timeout_ms);
+    let mut results = Vec::new();
+
+    for port in req.ports {
+        let addr = format!("{}:{}", req.host, port);
+        let is_open = timeout(timeout_duration, tokio::net::TcpStream::connect(&addr)).await.is_ok();
+        let service = if is_open { get_service_name(port) } else { None };
+        results.push(PortStatus { port, open: is_open, service });
+    }
+
+    Ok(PortScanResult {
+        host: req.host,
+        results,
+        total_time_ms: start.elapsed().as_millis() as u64,
+    })
+}
+
+fn get_service_name(port: u16) -> Option<String> {
+    match port {
+        21 => Some("FTP".to_string()),
+        22 => Some("SSH".to_string()),
+        80 => Some("HTTP".to_string()),
+        443 => Some("HTTPS".to_string()),
+        3306 => Some("MySQL".to_string()),
+        5432 => Some("PostgreSQL".to_string()),
+        6379 => Some("Redis".to_string()),
+        8080 => Some("HTTP-Alt".to_string()),
+        27017 => Some("MongoDB".to_string()),
+        _ => None,
+    }
+}
+
+/// 编码/解码
+pub fn encode_decode(req: EncodeDecodeRequest) -> Result<EncodeDecodeResult> {
+    use base64::Engine;
+    let output = match req.operation.as_str() {
+        "base64_encode" => base64::engine::general_purpose::STANDARD.encode(&req.input),
+        "base64_decode" => match base64::engine::general_purpose::STANDARD.decode(&req.input) {
+            Ok(bytes) => String::from_utf8(bytes).unwrap_or_else(|_| "无法解码为UTF-8".to_string()),
+            Err(e) => return Ok(EncodeDecodeResult { output: String::new(), error: Some(e.to_string()) }),
+        },
+        "url_encode" => urlencoding::encode(&req.input).to_string(),
+        "url_decode" => match urlencoding::decode(&req.input) {
+            Ok(s) => s.to_string(),
+            Err(e) => return Ok(EncodeDecodeResult { output: String::new(), error: Some(e.to_string()) }),
+        },
+        "hex_encode" => hex::encode(&req.input),
+        "hex_decode" => match hex::decode(&req.input) {
+            Ok(bytes) => String::from_utf8(bytes).unwrap_or_else(|_| "无法解码为UTF-8".to_string()),
+            Err(e) => return Ok(EncodeDecodeResult { output: String::new(), error: Some(e.to_string()) }),
+        },
+        _ => return Ok(EncodeDecodeResult { output: String::new(), error: Some("不支持的操作".to_string()) }),
+    };
+    Ok(EncodeDecodeResult { output, error: None })
 }
