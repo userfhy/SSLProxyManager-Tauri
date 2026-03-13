@@ -695,7 +695,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, nextTick } from 'vue'
+import { ref, reactive, computed, nextTick, onBeforeUnmount } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Delete, Plus, Promotion, Search, Timer, CircleCheck, Lock, DocumentCopy, Connection, Close, View } from '@element-plus/icons-vue'
 import { invoke } from '@tauri-apps/api/core'
@@ -1087,6 +1087,7 @@ const wsForm = reactive({
 const wsConnected = ref(false)
 const wsShowHtml = ref(false)
 const wsMessages = ref<Array<{ time: string; type: string; content: string }>>([])
+const WS_MAX_MESSAGES = 1000
 let wsClient: WebSocket | null = null
 
 const wsStatusType = computed(() => wsConnected.value ? 'success' : 'info')
@@ -1150,11 +1151,18 @@ const addWsMessage = (type: string, content: string) => {
   const now = new Date()
   const time = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`
   wsMessages.value.push({ time, type, content })
+  if (wsMessages.value.length > WS_MAX_MESSAGES) {
+    wsMessages.value.splice(0, wsMessages.value.length - WS_MAX_MESSAGES)
+  }
 }
 
 const clearWsMessages = () => {
   wsMessages.value = []
 }
+
+onBeforeUnmount(() => {
+  disconnectWebSocket()
+})
 </script>
 
 <style scoped>

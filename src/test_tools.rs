@@ -1,4 +1,6 @@
 use anyhow::{Context, Result};
+use dashmap::DashMap;
+use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
 use tokio::time::timeout;
@@ -194,19 +196,45 @@ pub struct PortCheckResult {
     pub error: Option<String>,
 }
 
-/// 发送 HTTP 测试请求
-pub async fn send_http_test_request(req: HttpTestRequest) -> Result<HttpTestResponse> {
-    let start = Instant::now();
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+struct HttpClientCacheKey {
+    timeout_ms: u64,
+    follow_redirects: bool,
+}
+
+static HTTP_TEST_CLIENT_CACHE: Lazy<DashMap<HttpClientCacheKey, reqwest::Client>> =
+    Lazy::new(DashMap::new);
+
+fn get_or_build_http_test_client(timeout_ms: u64, follow_redirects: bool) -> Result<reqwest::Client> {
+    let key = HttpClientCacheKey {
+        timeout_ms,
+        follow_redirects,
+    };
+    if let Some(client) = HTTP_TEST_CLIENT_CACHE.get(&key) {
+        return Ok(client.clone());
+    }
 
     let client = reqwest::Client::builder()
-        .timeout(Duration::from_millis(req.timeout_ms.unwrap_or(30000)))
-        .redirect(if req.follow_redirects.unwrap_or(true) {
+        .timeout(Duration::from_millis(timeout_ms))
+        .redirect(if follow_redirects {
             reqwest::redirect::Policy::limited(10)
         } else {
             reqwest::redirect::Policy::none()
         })
         .danger_accept_invalid_certs(true) // 用于测试环境
-        .build()?;
+        .build()
+        .context("创建 HTTP 客户端失败")?;
+
+    HTTP_TEST_CLIENT_CACHE.insert(key, client.clone());
+    Ok(client)
+}
+
+/// 发送 HTTP 测试请求
+pub async fn send_http_test_request(req: HttpTestRequest) -> Result<HttpTestResponse> {
+    let start = Instant::now();
+    let timeout_ms = req.timeout_ms.unwrap_or(30000);
+    let follow_redirects = req.follow_redirects.unwrap_or(true);
+    let client = get_or_build_http_test_client(timeout_ms, follow_redirects)?;
 
     let method = reqwest::Method::from_bytes(req.method.as_bytes())
         .context("无效的 HTTP 方法")?;
@@ -378,38 +406,39 @@ pub fn test_route_matching(req: RouteTestRequest) -> Result<RouteTestResult> {
 
 /// 执行性能测试
 pub async fn run_performance_test(req: PerformanceTestRequest) -> Result<PerformanceTestResult> {
-    use tokio::sync::Mutex;
-    use std::sync::Arc;
+    use std::collections::HashMap;
+
+    #[derive(Default)]
+    struct WorkerStats {
+        total_requests: u64,
+        successful_requests: u64,
+        failed_requests: u64,
+        response_times: Vec<u64>,
+        status_codes: HashMap<u16, u64>,
+    }
 
     let start = Instant::now();
     let end_time = start + Duration::from_secs(req.duration_seconds as u64);
+    let concurrent = req.concurrent.max(1);
+    let method = reqwest::Method::from_bytes(req.method.as_bytes()).context("无效的 HTTP 方法")?;
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .danger_accept_invalid_certs(true)
+        .build()
+        .context("创建性能测试 HTTP 客户端失败")?;
 
-    let total_requests = Arc::new(Mutex::new(0u64));
-    let successful_requests = Arc::new(Mutex::new(0u64));
-    let failed_requests = Arc::new(Mutex::new(0u64));
-    let response_times = Arc::new(Mutex::new(Vec::new()));
-    let status_codes = Arc::new(Mutex::new(std::collections::HashMap::new()));
-
-    let mut handles = vec![];
+    let mut handles = Vec::with_capacity(concurrent as usize);
 
     // 启动并发任务
-    for _ in 0..req.concurrent {
+    for _ in 0..concurrent {
         let url = req.url.clone();
-        let method = req.method.clone();
+        let method = method.clone();
         let headers = req.headers.clone();
         let body = req.body.clone();
-        let total_requests = Arc::clone(&total_requests);
-        let successful_requests = Arc::clone(&successful_requests);
-        let failed_requests = Arc::clone(&failed_requests);
-        let response_times = Arc::clone(&response_times);
-        let status_codes = Arc::clone(&status_codes);
+        let client = client.clone();
 
         let handle = tokio::spawn(async move {
-            let client = reqwest::Client::builder()
-                .timeout(Duration::from_secs(30))
-                .danger_accept_invalid_certs(true)
-                .build()
-                .unwrap();
+            let mut stats = WorkerStats::default();
 
             loop {
                 if Instant::now() >= end_time {
@@ -417,9 +446,7 @@ pub async fn run_performance_test(req: PerformanceTestRequest) -> Result<Perform
                 }
 
                 let req_start = Instant::now();
-
-                let method = reqwest::Method::from_bytes(method.as_bytes()).unwrap();
-                let mut request = client.request(method, &url);
+                let mut request = client.request(method.clone(), &url);
 
                 if let Some(ref headers) = headers {
                     for (key, value) in headers {
@@ -431,38 +458,47 @@ pub async fn run_performance_test(req: PerformanceTestRequest) -> Result<Perform
                     request = request.body(body.clone());
                 }
 
+                stats.total_requests += 1;
                 match request.send().await {
                     Ok(response) => {
                         let elapsed = req_start.elapsed().as_millis() as u64;
                         let status = response.status().as_u16();
 
-                        *total_requests.lock().await += 1;
-                        *successful_requests.lock().await += 1;
-                        response_times.lock().await.push(elapsed);
-                        *status_codes.lock().await.entry(status).or_insert(0) += 1;
+                        stats.successful_requests += 1;
+                        stats.response_times.push(elapsed);
+                        *stats.status_codes.entry(status).or_insert(0) += 1;
                     }
                     Err(_) => {
-                        *total_requests.lock().await += 1;
-                        *failed_requests.lock().await += 1;
+                        stats.failed_requests += 1;
                     }
                 }
             }
+
+            stats
         });
 
         handles.push(handle);
     }
 
+    let mut total_requests = 0u64;
+    let mut successful_requests = 0u64;
+    let mut failed_requests = 0u64;
+    let mut response_times = Vec::new();
+    let mut status_codes: HashMap<u16, u64> = HashMap::new();
+
     // 等待所有任务完成
     for handle in handles {
-        handle.await?;
+        let worker = handle.await.context("性能测试任务执行失败")?;
+        total_requests += worker.total_requests;
+        successful_requests += worker.successful_requests;
+        failed_requests += worker.failed_requests;
+        response_times.extend(worker.response_times);
+        for (status, count) in worker.status_codes {
+            *status_codes.entry(status).or_insert(0) += count;
+        }
     }
 
     let total_duration_ms = start.elapsed().as_millis() as u64;
-    let total_requests = *total_requests.lock().await;
-    let successful_requests = *successful_requests.lock().await;
-    let failed_requests = *failed_requests.lock().await;
-    let mut response_times = response_times.lock().await.clone();
-    let status_codes = status_codes.lock().await.clone();
 
     // 计算统计数据
     response_times.sort_unstable();
@@ -508,6 +544,10 @@ pub async fn run_performance_test(req: PerformanceTestRequest) -> Result<Perform
 
 /// 验证配置
 pub async fn validate_configuration(req: ConfigValidationRequest) -> Result<ConfigValidationResult> {
+    use futures_util::stream::{self, StreamExt};
+
+    const VALIDATION_CONCURRENCY: usize = 16;
+
     let config = config::get_config();
     let mut errors = Vec::new();
     let mut warnings = Vec::new();
@@ -517,37 +557,59 @@ pub async fn validate_configuration(req: ConfigValidationRequest) -> Result<Conf
 
     // 检查证书
     if req.check_certificates {
-        for rule in &config.rules {
-            if !rule.enabled || !rule.ssl_enable {
-                continue;
+        let cert_targets: Vec<(String, String, String)> = config
+            .rules
+            .iter()
+            .filter(|rule| rule.enabled && rule.ssl_enable)
+            .map(|rule| {
+                (
+                    rule.listen_addr.clone(),
+                    rule.cert_file.clone(),
+                    rule.key_file.clone(),
+                )
+            })
+            .collect();
+
+        let mut cert_results: Vec<_> = stream::iter(
+            cert_targets
+                .into_iter()
+                .enumerate()
+                .map(|(idx, (listen_addr, cert_file, key_file))| async move {
+                    let check = match axum_server::tls_rustls::RustlsConfig::from_pem_file(
+                        &cert_file,
+                        &key_file,
+                    )
+                    .await
+                    {
+                        Ok(_) => CertificateCheckResult {
+                            listen_addr: listen_addr.clone(),
+                            cert_file,
+                            key_file,
+                            valid: true,
+                            error: None,
+                        },
+                        Err(e) => CertificateCheckResult {
+                            listen_addr: listen_addr.clone(),
+                            cert_file,
+                            key_file,
+                            valid: false,
+                            error: Some(e.to_string()),
+                        },
+                    };
+
+                    (idx, check)
+                }),
+        )
+        .buffer_unordered(VALIDATION_CONCURRENCY)
+        .collect()
+        .await;
+
+        cert_results.sort_by_key(|(idx, _)| *idx);
+        for (_, check) in cert_results {
+            if let Some(err) = &check.error {
+                errors.push(format!("证书加载失败 ({}): {}", check.listen_addr, err));
             }
-
-            let result = match axum_server::tls_rustls::RustlsConfig::from_pem_file(
-                &rule.cert_file,
-                &rule.key_file,
-            )
-            .await
-            {
-                Ok(_) => CertificateCheckResult {
-                    listen_addr: rule.listen_addr.clone(),
-                    cert_file: rule.cert_file.clone(),
-                    key_file: rule.key_file.clone(),
-                    valid: true,
-                    error: None,
-                },
-                Err(e) => {
-                    errors.push(format!("证书加载失败 ({}): {}", rule.listen_addr, e));
-                    CertificateCheckResult {
-                        listen_addr: rule.listen_addr.clone(),
-                        cert_file: rule.cert_file.clone(),
-                        key_file: rule.key_file.clone(),
-                        valid: false,
-                        error: Some(e.to_string()),
-                    }
-                }
-            };
-
-            certificate_checks.push(result);
+            certificate_checks.push(check);
         }
     }
 
@@ -558,49 +620,63 @@ pub async fn validate_configuration(req: ConfigValidationRequest) -> Result<Conf
             .danger_accept_invalid_certs(true)
             .build()?;
 
-        for rule in &config.rules {
-            if !rule.enabled {
-                continue;
-            }
+        let upstream_targets: Vec<String> = config
+            .rules
+            .iter()
+            .filter(|rule| rule.enabled)
+            .flat_map(|rule| rule.routes.iter().filter(|route| route.enabled))
+            .flat_map(|route| route.upstreams.iter().map(|upstream| upstream.url.clone()))
+            .collect();
 
-            for route in &rule.routes {
-                if !route.enabled {
-                    continue;
-                }
-
-                for upstream in &route.upstreams {
-                    let start = Instant::now();
-                    match timeout(Duration::from_secs(5), client.get(&upstream.url).send()).await {
-                        Ok(Ok(_)) => {
-                            let elapsed = start.elapsed().as_millis() as u64;
-                            upstream_checks.push(UpstreamCheckResult {
-                                url: upstream.url.clone(),
+        let mut upstream_results: Vec<_> = stream::iter(
+            upstream_targets
+                .into_iter()
+                .enumerate()
+                .map(|(idx, url)| {
+                    let client = client.clone();
+                    async move {
+                        let start = Instant::now();
+                        let check = match timeout(Duration::from_secs(5), client.get(&url).send()).await {
+                            Ok(Ok(_)) => UpstreamCheckResult {
+                                url,
                                 reachable: true,
-                                response_time_ms: Some(elapsed),
+                                response_time_ms: Some(start.elapsed().as_millis() as u64),
                                 error: None,
-                            });
-                        }
-                        Ok(Err(e)) => {
-                            warnings.push(format!("上游服务不可达: {} - {}", upstream.url, e));
-                            upstream_checks.push(UpstreamCheckResult {
-                                url: upstream.url.clone(),
+                            },
+                            Ok(Err(e)) => UpstreamCheckResult {
+                                url,
                                 reachable: false,
                                 response_time_ms: None,
                                 error: Some(e.to_string()),
-                            });
-                        }
-                        Err(_) => {
-                            warnings.push(format!("上游服务超时: {}", upstream.url));
-                            upstream_checks.push(UpstreamCheckResult {
-                                url: upstream.url.clone(),
+                            },
+                            Err(_) => UpstreamCheckResult {
+                                url,
                                 reachable: false,
                                 response_time_ms: None,
                                 error: Some("请求超时".to_string()),
-                            });
-                        }
+                            },
+                        };
+
+                        (idx, check)
+                    }
+                }),
+        )
+        .buffer_unordered(VALIDATION_CONCURRENCY)
+        .collect()
+        .await;
+
+        upstream_results.sort_by_key(|(idx, _)| *idx);
+        for (_, check) in upstream_results {
+            if !check.reachable {
+                if let Some(err) = &check.error {
+                    if err == "请求超时" {
+                        warnings.push(format!("上游服务超时: {}", check.url));
+                    } else {
+                        warnings.push(format!("上游服务不可达: {} - {}", check.url, err));
                     }
                 }
             }
+            upstream_checks.push(check);
         }
     }
 
@@ -612,37 +688,56 @@ pub async fn validate_configuration(req: ConfigValidationRequest) -> Result<Conf
         if is_running {
             warnings.push("服务正在运行，跳过端口可用性检查".to_string());
         } else {
-            for rule in &config.rules {
-                if !rule.enabled {
-                    continue;
-                }
-
-                for addr in &rule.listen_addrs {
-                    // 规范化地址：如果以 : 开头，补全为 0.0.0.0:
-                    let normalized_addr = if addr.starts_with(':') {
-                        format!("0.0.0.0{}", addr)
+            let listen_targets: Vec<String> = config
+                .rules
+                .iter()
+                .filter(|rule| rule.enabled)
+                .flat_map(|rule| {
+                    if rule.listen_addrs.is_empty() {
+                        vec![rule.listen_addr.clone()]
                     } else {
-                        addr.clone()
-                    };
+                        rule.listen_addrs.clone()
+                    }
+                })
+                .collect();
 
-                    match tokio::net::TcpListener::bind(&normalized_addr).await {
-                        Ok(_) => {
-                            port_checks.push(PortCheckResult {
-                                listen_addr: addr.clone(),
+            let mut port_results: Vec<_> = stream::iter(
+                listen_targets
+                    .into_iter()
+                    .enumerate()
+                    .map(|(idx, listen_addr)| async move {
+                        let normalized_addr = if listen_addr.starts_with(':') {
+                            format!("0.0.0.0{}", listen_addr)
+                        } else {
+                            listen_addr.clone()
+                        };
+
+                        let check = match tokio::net::TcpListener::bind(&normalized_addr).await {
+                            Ok(_) => PortCheckResult {
+                                listen_addr,
                                 available: true,
                                 error: None,
-                            });
-                        }
-                        Err(e) => {
-                            errors.push(format!("端口不可用: {} - {}", addr, e));
-                            port_checks.push(PortCheckResult {
-                                listen_addr: addr.clone(),
+                            },
+                            Err(e) => PortCheckResult {
+                                listen_addr,
                                 available: false,
                                 error: Some(e.to_string()),
-                            });
-                        }
-                    }
+                            },
+                        };
+
+                        (idx, check)
+                    }),
+            )
+            .buffer_unordered(VALIDATION_CONCURRENCY)
+            .collect()
+            .await;
+
+            port_results.sort_by_key(|(idx, _)| *idx);
+            for (_, check) in port_results {
+                if let Some(err) = &check.error {
+                    errors.push(format!("端口不可用: {} - {}", check.listen_addr, err));
                 }
+                port_checks.push(check);
             }
         }
     }
@@ -766,19 +861,33 @@ pub async fn get_ssl_cert_info(req: SslCertInfoRequest) -> Result<SslCertInfoRes
 
 /// 端口扫描
 pub async fn scan_ports(req: PortScanRequest) -> Result<PortScanResult> {
-    use tokio::time::timeout;
     use std::time::Duration;
+    use futures_util::stream::{self, StreamExt};
+    use tokio::time::timeout;
 
     let start = Instant::now();
     let timeout_duration = Duration::from_millis(req.timeout_ms);
-    let mut results = Vec::new();
+    let host = req.host.clone();
+    let ports = req.ports;
+    let port_count = ports.len();
+    let concurrency = port_count.clamp(1, 128);
 
-    for port in req.ports {
-        let addr = format!("{}:{}", req.host, port);
-        let is_open = timeout(timeout_duration, tokio::net::TcpStream::connect(&addr)).await.is_ok();
-        let service = if is_open { get_service_name(port) } else { None };
-        results.push(PortStatus { port, open: is_open, service });
+    let mut tasks = stream::iter(ports.into_iter().enumerate().map(|(index, port)| {
+        let host = host.clone();
+        async move {
+            let addr = format!("{}:{}", host, port);
+            let is_open = timeout(timeout_duration, tokio::net::TcpStream::connect(&addr)).await.is_ok();
+            let service = if is_open { get_service_name(port) } else { None };
+            (index, PortStatus { port, open: is_open, service })
+        }
+    }))
+    .buffer_unordered(concurrency);
+
+    let mut ordered_results = vec![None; port_count];
+    while let Some((index, status)) = tasks.next().await {
+        ordered_results[index] = Some(status);
     }
+    let results = ordered_results.into_iter().flatten().collect();
 
     Ok(PortScanResult {
         host: req.host,
