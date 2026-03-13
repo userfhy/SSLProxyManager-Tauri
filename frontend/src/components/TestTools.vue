@@ -295,6 +295,99 @@
         </el-card>
       </el-tab-pane>
 
+      <!-- DNS 查询 -->
+      <el-tab-pane :label="$t('testTools.dnsLookup')" name="dns">
+        <el-card class="tool-card">
+          <template #header>
+            <div class="card-header">
+              <span>{{ $t('testTools.dnsLookupTitle') }}</span>
+            </div>
+          </template>
+
+          <el-form :model="dnsForm" label-width="100px">
+            <el-form-item :label="$t('testTools.domain')">
+              <el-input v-model="dnsForm.domain" placeholder="example.com" />
+            </el-form-item>
+
+            <el-form-item>
+              <el-button @click="lookupDns" type="primary" :loading="dnsLoading" :icon="Search">
+                {{ $t('testTools.lookup') }}
+              </el-button>
+            </el-form-item>
+          </el-form>
+
+          <el-divider />
+
+          <div v-if="dnsResult" class="response-section">
+            <div v-if="dnsResult.error">
+              <el-alert :title="$t('testTools.lookupFailed')" type="error" :closable="false">
+                {{ dnsResult.error }}
+              </el-alert>
+            </div>
+            <div v-else>
+              <h5>{{ $t('testTools.ipv4Addresses') }}</h5>
+              <el-tag v-for="ip in dnsResult.ipv4_addresses" :key="ip" style="margin: 4px;">{{ ip }}</el-tag>
+              <el-empty v-if="dnsResult.ipv4_addresses.length === 0" :description="$t('testTools.noRecords')" />
+
+              <h5 style="margin-top: 16px;">{{ $t('testTools.ipv6Addresses') }}</h5>
+              <el-tag v-for="ip in dnsResult.ipv6_addresses" :key="ip" type="info" style="margin: 4px;">{{ ip }}</el-tag>
+              <el-empty v-if="dnsResult.ipv6_addresses.length === 0" :description="$t('testTools.noRecords')" />
+            </div>
+          </div>
+        </el-card>
+      </el-tab-pane>
+
+      <!-- SSL 证书信息 -->
+      <el-tab-pane :label="$t('testTools.sslCertInfo')" name="ssl">
+        <el-card class="tool-card">
+          <template #header>
+            <div class="card-header">
+              <span>{{ $t('testTools.sslCertInfoTitle') }}</span>
+            </div>
+          </template>
+
+          <el-form :model="sslForm" label-width="100px">
+            <el-form-item :label="$t('testTools.url')">
+              <el-input v-model="sslForm.url" placeholder="https://example.com" />
+            </el-form-item>
+
+            <el-form-item>
+              <el-button @click="getSslInfo" type="primary" :loading="sslLoading" :icon="Lock">
+                {{ $t('testTools.getCertInfo') }}
+              </el-button>
+            </el-form-item>
+          </el-form>
+
+          <el-divider />
+
+          <div v-if="sslResult" class="response-section">
+            <div v-if="sslResult.error">
+              <el-alert :title="$t('testTools.certCheckFailed')" type="error" :closable="false">
+                {{ sslResult.error }}
+              </el-alert>
+            </div>
+            <div v-else>
+              <el-descriptions :column="1" border>
+                <el-descriptions-item :label="$t('testTools.certStatus')">
+                  <el-tag :type="sslResult.valid ? 'success' : 'danger'">
+                    {{ sslResult.valid ? $t('testTools.valid') : $t('testTools.invalid') }}
+                  </el-tag>
+                </el-descriptions-item>
+                <el-descriptions-item :label="$t('testTools.subject')">{{ sslResult.subject }}</el-descriptions-item>
+                <el-descriptions-item :label="$t('testTools.issuer')">{{ sslResult.issuer }}</el-descriptions-item>
+                <el-descriptions-item :label="$t('testTools.notBefore')">{{ sslResult.not_before }}</el-descriptions-item>
+                <el-descriptions-item :label="$t('testTools.notAfter')">{{ sslResult.not_after }}</el-descriptions-item>
+                <el-descriptions-item :label="$t('testTools.daysUntilExpiry')">
+                  <el-tag :type="sslResult.days_until_expiry < 30 ? 'danger' : 'success'">
+                    {{ sslResult.days_until_expiry }} {{ $t('testTools.days') }}
+                  </el-tag>
+                </el-descriptions-item>
+              </el-descriptions>
+            </div>
+          </div>
+        </el-card>
+      </el-tab-pane>
+
       <!-- 配置验证 -->
       <el-tab-pane :label="$t('testTools.configValidation')" name="validation">
         <el-card class="tool-card">
@@ -415,7 +508,7 @@
 <script setup lang="ts">
 import { ref, reactive } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Delete, Plus, Promotion, Search, Timer, CircleCheck } from '@element-plus/icons-vue'
+import { Delete, Plus, Promotion, Search, Timer, CircleCheck, Lock } from '@element-plus/icons-vue'
 import { invoke } from '@tauri-apps/api/core'
 import { useI18n } from 'vue-i18n'
 
@@ -426,7 +519,7 @@ const activeTab = ref('http')
 // HTTP 客户端
 const httpForm = reactive({
   method: 'GET',
-  url: 'http://localhost:8888/',
+  url: 'https://127.0.0.1:8888/',
   headers: [] as Array<{ key: string; value: string }>,
   body: '',
   timeout: 30000,
@@ -619,6 +712,64 @@ const validateConfig = async () => {
     validationLoading.value = false
   }
 }
+
+// DNS 查询
+const dnsForm = reactive({
+  domain: '',
+})
+
+const dnsLoading = ref(false)
+const dnsResult = ref<any>(null)
+
+const lookupDns = async () => {
+  if (!dnsForm.domain) {
+    ElMessage.warning(t('testTools.pleaseEnterDomain'))
+    return
+  }
+
+  dnsLoading.value = true
+  dnsResult.value = null
+
+  try {
+    const result = await invoke('dns_lookup', {
+      req: { domain: dnsForm.domain }
+    })
+    dnsResult.value = result
+  } catch (error: any) {
+    ElMessage.error(t('testTools.lookupFailed') + ': ' + error)
+  } finally {
+    dnsLoading.value = false
+  }
+}
+
+// SSL 证书信息
+const sslForm = reactive({
+  url: 'https://',
+})
+
+const sslLoading = ref(false)
+const sslResult = ref<any>(null)
+
+const getSslInfo = async () => {
+  if (!sslForm.url || !sslForm.url.startsWith('https://')) {
+    ElMessage.warning(t('testTools.pleaseEnterHttpsUrl'))
+    return
+  }
+
+  sslLoading.value = true
+  sslResult.value = null
+
+  try {
+    const result = await invoke('get_ssl_cert_info', {
+      req: { url: sslForm.url }
+    })
+    sslResult.value = result
+  } catch (error: any) {
+    ElMessage.error(t('testTools.certCheckFailed') + ': ' + error)
+  } finally {
+    sslLoading.value = false
+  }
+}
 </script>
 
 <style scoped>
@@ -630,6 +781,7 @@ const validateConfig = async () => {
 }
 
 .tools-tabs {
+  margin-left: 10px;
   flex: 1;
   display: flex;
   flex-direction: column;

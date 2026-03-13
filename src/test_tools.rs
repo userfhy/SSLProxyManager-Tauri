@@ -100,6 +100,39 @@ pub struct ConfigValidationResult {
     pub port_checks: Vec<PortCheckResult>,
 }
 
+/// DNS 查询请求
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DnsLookupRequest {
+    pub domain: String,
+}
+
+/// DNS 查询结果
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DnsLookupResult {
+    pub domain: String,
+    pub ipv4_addresses: Vec<String>,
+    pub ipv6_addresses: Vec<String>,
+    pub error: Option<String>,
+}
+
+/// SSL 证书信息请求
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SslCertInfoRequest {
+    pub url: String,
+}
+
+/// SSL 证书信息结果
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SslCertInfoResult {
+    pub valid: bool,
+    pub subject: String,
+    pub issuer: String,
+    pub not_before: String,
+    pub not_after: String,
+    pub days_until_expiry: i64,
+    pub error: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CertificateCheckResult {
     pub listen_addr: String,
@@ -585,4 +618,111 @@ pub async fn validate_configuration(req: ConfigValidationRequest) -> Result<Conf
         upstream_checks,
         port_checks,
     })
+}
+
+/// DNS 查询
+pub async fn dns_lookup(req: DnsLookupRequest) -> Result<DnsLookupResult> {
+    use tokio::net::lookup_host;
+
+    let mut ipv4_addresses = Vec::new();
+    let mut ipv6_addresses = Vec::new();
+
+    match lookup_host(format!("{}:0", req.domain)).await {
+        Ok(addrs) => {
+            for addr in addrs {
+                let ip = addr.ip();
+                if ip.is_ipv4() {
+                    ipv4_addresses.push(ip.to_string());
+                } else if ip.is_ipv6() {
+                    ipv6_addresses.push(ip.to_string());
+                }
+            }
+            Ok(DnsLookupResult {
+                domain: req.domain,
+                ipv4_addresses,
+                ipv6_addresses,
+                error: None,
+            })
+        }
+        Err(e) => Ok(DnsLookupResult {
+            domain: req.domain,
+            ipv4_addresses: vec![],
+            ipv6_addresses: vec![],
+            error: Some(e.to_string()),
+        }),
+    }
+}
+
+/// 获取 SSL 证书信息
+pub async fn get_ssl_cert_info(req: SslCertInfoRequest) -> Result<SslCertInfoResult> {
+    use rustls::pki_types::ServerName;
+    use std::sync::Arc;
+
+    let url = req.url.parse::<reqwest::Url>().context("无效的 URL")?;
+    let host = url.host_str().context("无法解析主机名")?;
+    let port = url.port().unwrap_or(443);
+
+    let mut root_store = rustls::RootCertStore::empty();
+    root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+
+    let config = rustls::ClientConfig::builder()
+        .with_root_certificates(root_store)
+        .with_no_client_auth();
+
+    let connector = tokio_rustls::TlsConnector::from(Arc::new(config));
+    let stream = tokio::net::TcpStream::connect((host, port)).await?;
+    let server_name = ServerName::try_from(host.to_string())?;
+
+    match connector.connect(server_name, stream).await {
+        Ok(tls_stream) => {
+            let (_, session) = tls_stream.into_inner();
+            if let Some(certs) = session.peer_certificates() {
+                if let Some(cert) = certs.first() {
+                    use x509_parser::prelude::*;
+                    let parsed = X509Certificate::from_der(cert.as_ref())
+                        .context("解析证书失败")?
+                        .1;
+
+                    let subject = parsed.subject().to_string();
+                    let issuer = parsed.issuer().to_string();
+                    let not_before = parsed.validity().not_before.to_string();
+                    let not_after = parsed.validity().not_after.to_string();
+
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)?
+                        .as_secs() as i64;
+                    let expiry = parsed.validity().not_after.timestamp();
+                    let days_until_expiry = (expiry - now) / 86400;
+
+                    return Ok(SslCertInfoResult {
+                        valid: true,
+                        subject,
+                        issuer,
+                        not_before,
+                        not_after,
+                        days_until_expiry,
+                        error: None,
+                    });
+                }
+            }
+            Ok(SslCertInfoResult {
+                valid: false,
+                subject: String::new(),
+                issuer: String::new(),
+                not_before: String::new(),
+                not_after: String::new(),
+                days_until_expiry: 0,
+                error: Some("未找到证书".to_string()),
+            })
+        }
+        Err(e) => Ok(SslCertInfoResult {
+            valid: false,
+            subject: String::new(),
+            issuer: String::new(),
+            not_before: String::new(),
+            not_after: String::new(),
+            days_until_expiry: 0,
+            error: Some(e.to_string()),
+        }),
+    }
 }

@@ -50,6 +50,8 @@ http-body-util = "^0.1"
 tokio-rustls = "^0.26"
 rustls = "^0.23"
 rustls-pemfile = "^2.2"
+webpki-roots = "^0.26"
+x509-parser = "^0.16"
 tower = "^0.5"
 tower-http = { version = "^0.6", features = ["fs", "compression-gzip", "compression-br"] }
 axum-server = { version = "^0.8", features = ["tls-rustls"] }

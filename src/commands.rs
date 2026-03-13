@@ -540,3 +540,16 @@ pub async fn validate_config_tool(req: test_tools::ConfigValidationRequest) -> R
         .map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+pub async fn dns_lookup(req: test_tools::DnsLookupRequest) -> Result<test_tools::DnsLookupResult, String> {
+    test_tools::dns_lookup(req)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_ssl_cert_info(req: test_tools::SslCertInfoRequest) -> Result<test_tools::SslCertInfoResult, String> {
+    test_tools::get_ssl_cert_info(req)
+        .await
+        .map_err(|e| e.to_string())
+}

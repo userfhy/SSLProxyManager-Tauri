@@ -597,6 +597,27 @@
     "testCompleted": "测试完成",
     "validationPassed": "验证通过",
     "validationFailed": "验证失败",
-    "validationError": "验证出错"
+    "validationError": "验证出错",
+    "dnsLookup": "DNS 查询",
+    "dnsLookupTitle": "DNS 域名解析工具",
+    "domain": "域名",
+    "lookup": "查询",
+    "lookupFailed": "查询失败",
+    "ipv4Addresses": "IPv4 地址",
+    "ipv6Addresses": "IPv6 地址",
+    "noRecords": "无记录",
+    "pleaseEnterDomain": "请输入域名",
+    "sslCertInfo": "SSL 证书",
+    "sslCertInfoTitle": "SSL 证书信息查看",
+    "getCertInfo": "获取证书信息",
+    "certCheckFailed": "证书检查失败",
+    "certStatus": "证书状态",
+    "subject": "主题",
+    "issuer": "颁发者",
+    "notBefore": "生效时间",
+    "notAfter": "过期时间",
+    "daysUntilExpiry": "剩余天数",
+    "days": "天",
+    "pleaseEnterHttpsUrl": "请输入 HTTPS URL"
   }
 }

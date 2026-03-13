@@ -109,6 +109,8 @@ fn main() {
             commands::test_route_match,
             commands::run_performance_test,
             commands::validate_config_tool,
+            commands::dns_lookup,
+            commands::get_ssl_cert_info,
         ])
         .setup(|app| {
             // 初始化应用

@@ -8,15 +8,15 @@
     <el-menu :default-active="activeTab" class="nav-menu" :collapse="isCollapsed" :collapse-transition="true" @select="handleMenuSelect">
       <el-menu-item-group :title="isCollapsed ? '' : $t('sidebar.configManagement')">
         <el-menu-item index="config">
-          <el-icon><Setting /></el-icon>
+          <el-icon><Connection /></el-icon>
           <template #title>{{ $t('sidebar.proxyConfig') }}</template>
         </el-menu-item>
         <el-menu-item index="ws">
-          <el-icon><Setting /></el-icon>
+          <el-icon><Promotion /></el-icon>
           <template #title>{{ $t('sidebar.wsProxyConfig') }}</template>
         </el-menu-item>
         <el-menu-item index="stream">
-          <el-icon><Setting /></el-icon>
+          <el-icon><Share /></el-icon>
           <template #title>{{ $t('sidebar.streamConfig') }}</template>
         </el-menu-item>
         <el-menu-item index="access">
@@ -69,7 +69,7 @@
 </template>
 
 <script setup lang="ts">
-import { Setting, DataAnalysis, Document, Lock, Search, Fold, Expand, InfoFilled, Tools } from '@element-plus/icons-vue'
+import { Setting, DataAnalysis, Document, Lock, Search, Fold, Expand, InfoFilled, Tools, Connection, Promotion, Share } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()

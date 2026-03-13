@@ -601,6 +601,27 @@
     "testCompleted": "Test completed",
     "validationPassed": "Validation passed",
     "validationFailed": "Validation failed",
-    "validationError": "Validation error"
+    "validationError": "Validation error",
+    "dnsLookup": "DNS Lookup",
+    "dnsLookupTitle": "DNS Domain Resolution Tool",
+    "domain": "Domain",
+    "lookup": "Lookup",
+    "lookupFailed": "Lookup failed",
+    "ipv4Addresses": "IPv4 Addresses",
+    "ipv6Addresses": "IPv6 Addresses",
+    "noRecords": "No records",
+    "pleaseEnterDomain": "Please enter domain",
+    "sslCertInfo": "SSL Certificate",
+    "sslCertInfoTitle": "SSL Certificate Information",
+    "getCertInfo": "Get Certificate Info",
+    "certCheckFailed": "Certificate check failed",
+    "certStatus": "Certificate Status",
+    "subject": "Subject",
+    "issuer": "Issuer",
+    "notBefore": "Valid From",
+    "notAfter": "Valid Until",
+    "daysUntilExpiry": "Days Until Expiry",
+    "days": "days",
+    "pleaseEnterHttpsUrl": "Please enter HTTPS URL"
   }
 }
