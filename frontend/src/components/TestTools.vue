@@ -401,6 +401,65 @@
               </el-descriptions>
             </div>
           </div>
+
+          <el-divider />
+
+          <h4>{{ $t('testTools.selfSignedCertTitle') }}</h4>
+          <el-form :model="selfSignedForm" label-width="130px">
+            <el-form-item :label="$t('testTools.commonName')">
+              <el-input v-model="selfSignedForm.commonName" placeholder="localhost" />
+            </el-form-item>
+
+            <el-form-item :label="$t('testTools.organization')">
+              <el-input v-model="selfSignedForm.organization" :placeholder="$t('testTools.organizationHint')" />
+            </el-form-item>
+
+            <el-form-item :label="$t('testTools.organizationalUnit')">
+              <el-input v-model="selfSignedForm.organizationalUnit" :placeholder="$t('testTools.organizationalUnitHint')" />
+            </el-form-item>
+
+            <el-form-item :label="$t('testTools.subjectAltNames')">
+              <el-input
+                v-model="selfSignedForm.subjectAltNames"
+                :placeholder="$t('testTools.subjectAltNamesHint')"
+              />
+            </el-form-item>
+
+            <el-form-item :label="$t('testTools.validDays')">
+              <el-input-number v-model="selfSignedForm.validDays" :min="1" :max="3650" />
+            </el-form-item>
+
+            <el-form-item :label="$t('testTools.outputDir')">
+              <div class="file-selector">
+                <el-input
+                  v-model="selfSignedForm.outputDir"
+                  :placeholder="$t('testTools.outputDirHint')"
+                  readonly
+                />
+                <el-button @click="selectSelfSignedOutputDir" :icon="Folder">
+                  {{ $t('testTools.selectDir') }}
+                </el-button>
+              </div>
+            </el-form-item>
+
+            <el-form-item>
+              <el-button @click="generateSelfSignedCert" type="primary" :loading="selfSignedLoading" :icon="Lock">
+                {{ $t('testTools.generateSelfSignedCert') }}
+              </el-button>
+            </el-form-item>
+          </el-form>
+
+          <div v-if="selfSignedResult" class="response-section">
+            <el-alert :title="$t('testTools.generateSuccess')" type="success" :closable="false" />
+            <el-descriptions :column="1" border style="margin-top: 12px;">
+              <el-descriptions-item :label="$t('testTools.generatedCertFile')">
+                {{ selfSignedResult.cert_file }}
+              </el-descriptions-item>
+              <el-descriptions-item :label="$t('testTools.generatedKeyFile')">
+                {{ selfSignedResult.key_file }}
+              </el-descriptions-item>
+            </el-descriptions>
+          </div>
         </el-card>
       </el-tab-pane>
 
@@ -697,7 +756,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, nextTick, onBeforeUnmount } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Delete, Plus, Promotion, Search, Timer, CircleCheck, Lock, DocumentCopy, Connection, Close, View } from '@element-plus/icons-vue'
+import { Delete, Plus, Promotion, Search, Timer, CircleCheck, Lock, DocumentCopy, Connection, Close, View, Folder } from '@element-plus/icons-vue'
 import { invoke } from '@tauri-apps/api/core'
 import { useI18n } from 'vue-i18n'
 
@@ -966,6 +1025,16 @@ const sslForm = reactive({
 
 const sslLoading = ref(false)
 const sslResult = ref<any>(null)
+const selfSignedLoading = ref(false)
+const selfSignedResult = ref<any>(null)
+const selfSignedForm = reactive({
+  commonName: 'localhost',
+  organization: '',
+  organizationalUnit: '',
+  subjectAltNames: 'localhost,127.0.0.1',
+  validDays: 365,
+  outputDir: '',
+})
 
 const getSslInfo = async () => {
   if (!sslForm.url || !sslForm.url.startsWith('https://')) {
@@ -985,6 +1054,52 @@ const getSslInfo = async () => {
     ElMessage.error(t('testTools.certCheckFailed') + ': ' + error)
   } finally {
     sslLoading.value = false
+  }
+}
+
+const selectSelfSignedOutputDir = async () => {
+  try {
+    const selected = await invoke('open_directory_dialog')
+    if (selected) {
+      selfSignedForm.outputDir = String(selected)
+    }
+  } catch (error: any) {
+    ElMessage.error(t('testTools.generateFailed') + ': ' + error)
+  }
+}
+
+const generateSelfSignedCert = async () => {
+  if (!selfSignedForm.commonName.trim()) {
+    ElMessage.warning(t('testTools.pleaseEnterCommonName'))
+    return
+  }
+
+  selfSignedLoading.value = true
+  selfSignedResult.value = null
+
+  try {
+    const subjectAltNames = selfSignedForm.subjectAltNames
+      .split(',')
+      .map(s => s.trim())
+      .filter(Boolean)
+
+    const result = await invoke('generate_self_signed_cert', {
+      req: {
+        common_name: selfSignedForm.commonName.trim(),
+        organization: selfSignedForm.organization.trim() || null,
+        organizational_unit: selfSignedForm.organizationalUnit.trim() || null,
+        subject_alt_names: subjectAltNames.length > 0 ? subjectAltNames : null,
+        valid_days: selfSignedForm.validDays,
+        output_dir: selfSignedForm.outputDir.trim() || null,
+      }
+    })
+
+    selfSignedResult.value = result
+    ElMessage.success(t('testTools.generateSuccess'))
+  } catch (error: any) {
+    ElMessage.error(t('testTools.generateFailed') + ': ' + error)
+  } finally {
+    selfSignedLoading.value = false
   }
 }
 
@@ -1206,6 +1321,12 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   margin-bottom: 8px;
+}
+
+.file-selector {
+  display: flex;
+  width: 100%;
+  gap: 8px;
 }
 
 .response-section {

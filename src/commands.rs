@@ -555,6 +555,12 @@ pub async fn get_ssl_cert_info(req: test_tools::SslCertInfoRequest) -> Result<te
 }
 
 #[tauri::command]
+pub fn generate_self_signed_cert(req: test_tools::SelfSignedCertRequest) -> Result<test_tools::SelfSignedCertResult, String> {
+    test_tools::generate_self_signed_cert(req)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub async fn scan_ports(req: test_tools::PortScanRequest) -> Result<test_tools::PortScanResult, String> {
     test_tools::scan_ports(req)
         .await

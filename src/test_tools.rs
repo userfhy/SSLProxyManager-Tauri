@@ -135,6 +135,27 @@ pub struct SslCertInfoResult {
     pub error: Option<String>,
 }
 
+/// 生成自签名证书请求
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SelfSignedCertRequest {
+    pub common_name: String,
+    pub organization: Option<String>,
+    pub organizational_unit: Option<String>,
+    pub subject_alt_names: Option<Vec<String>>,
+    pub valid_days: Option<u32>,
+    pub output_dir: Option<String>,
+}
+
+/// 生成自签名证书结果
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SelfSignedCertResult {
+    pub cert_file: String,
+    pub key_file: String,
+    pub common_name: String,
+    pub subject_alt_names: Vec<String>,
+    pub valid_days: u32,
+}
+
 /// 端口扫描请求
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PortScanRequest {
@@ -783,6 +804,140 @@ pub async fn dns_lookup(req: DnsLookupRequest) -> Result<DnsLookupResult> {
             error: Some(e.to_string()),
         }),
     }
+}
+
+fn sanitize_filename_component(input: &str) -> String {
+    let mut s = String::with_capacity(input.len());
+    for ch in input.chars() {
+        if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' || ch == '.' {
+            s.push(ch);
+        } else {
+            s.push('_');
+        }
+    }
+
+    let trimmed = s.trim_matches('_');
+    if trimmed.is_empty() {
+        "selfsigned".to_string()
+    } else {
+        trimmed.chars().take(48).collect()
+    }
+}
+
+/// 生成自签名证书（PEM）
+pub fn generate_self_signed_cert(req: SelfSignedCertRequest) -> Result<SelfSignedCertResult> {
+    use anyhow::anyhow;
+    use chrono::{Datelike, Duration as ChronoDuration, Local, Utc};
+    use rcgen::{CertificateParams, DistinguishedName, DnType, KeyPair};
+    use std::collections::HashSet;
+    use std::path::PathBuf;
+
+    let common_name = req.common_name.trim();
+    if common_name.is_empty() {
+        return Err(anyhow!("通用名称不能为空"));
+    }
+    let organization = req.organization.as_deref().map(str::trim).filter(|s| !s.is_empty());
+    let organizational_unit = req
+        .organizational_unit
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+
+    let valid_days = req.valid_days.unwrap_or(365).clamp(1, 3650);
+
+    let mut subject_alt_names = vec![common_name.to_string()];
+    if let Some(items) = req.subject_alt_names {
+        for item in items {
+            let item = item.trim();
+            if !item.is_empty() {
+                subject_alt_names.push(item.to_string());
+            }
+        }
+    }
+
+    // 按字面值去重（不区分大小写）
+    let mut seen = HashSet::new();
+    subject_alt_names.retain(|s| seen.insert(s.to_ascii_lowercase()));
+
+    let mut params = CertificateParams::new(subject_alt_names.clone())
+        .context("无效的备用名称(SAN)")?;
+    params.distinguished_name = DistinguishedName::new();
+    params
+        .distinguished_name
+        .push(DnType::CommonName, common_name.to_string());
+    if let Some(org) = organization {
+        params
+            .distinguished_name
+            .push(DnType::OrganizationName, org.to_string());
+    }
+    if let Some(ou) = organizational_unit {
+        params
+            .distinguished_name
+            .push(DnType::OrganizationalUnitName, ou.to_string());
+    }
+
+    // 回拨一天容忍轻微时钟偏移
+    let not_before = Utc::now() - ChronoDuration::days(1);
+    let not_after = Utc::now() + ChronoDuration::days(valid_days as i64);
+    params.not_before = rcgen::date_time_ymd(
+        not_before.year(),
+        not_before.month() as u8,
+        not_before.day() as u8,
+    );
+    params.not_after = rcgen::date_time_ymd(
+        not_after.year(),
+        not_after.month() as u8,
+        not_after.day() as u8,
+    );
+
+    let key_pair = KeyPair::generate().context("生成私钥失败")?;
+    let cert = params.self_signed(&key_pair).context("生成自签名证书失败")?;
+    let cert_pem = cert.pem();
+    let key_pem = key_pair.serialize_pem();
+
+    let output_dir = if let Some(dir) = req.output_dir.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        PathBuf::from(dir)
+    } else {
+        let cfg_path = config::get_config_path().context("获取配置路径失败")?;
+        let base = cfg_path
+            .parent()
+            .ok_or_else(|| anyhow!("无法确定配置目录"))?;
+        base.join("ssl")
+    };
+
+    std::fs::create_dir_all(&output_dir)
+        .with_context(|| format!("创建输出目录失败: {}", output_dir.display()))?;
+
+    let safe_cn = sanitize_filename_component(common_name);
+    let ts = Local::now().format("%Y%m%d-%H%M%S").to_string();
+    let uid = uuid::Uuid::new_v4().to_string().replace('-', "");
+    let suffix = uid.chars().take(8).collect::<String>();
+
+    let cert_path = output_dir.join(format!("{}-{}-{}.crt", safe_cn, ts, suffix));
+    let key_path = output_dir.join(format!("{}-{}-{}.key", safe_cn, ts, suffix));
+
+    std::fs::write(&cert_path, cert_pem)
+        .with_context(|| format!("写入证书文件失败: {}", cert_path.display()))?;
+    std::fs::write(&key_path, key_pem)
+        .with_context(|| format!("写入私钥文件失败: {}", key_path.display()))?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(meta) = std::fs::metadata(&key_path) {
+            let mut perm = meta.permissions();
+            perm.set_mode(0o600);
+            let _ = std::fs::set_permissions(&key_path, perm);
+        }
+    }
+
+    Ok(SelfSignedCertResult {
+        cert_file: cert_path.to_string_lossy().to_string(),
+        key_file: key_path.to_string_lossy().to_string(),
+        common_name: common_name.to_string(),
+        subject_alt_names,
+        valid_days,
+    })
 }
 
 /// 获取 SSL 证书信息

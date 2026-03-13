@@ -111,6 +111,7 @@ fn main() {
             commands::validate_config_tool,
             commands::dns_lookup,
             commands::get_ssl_cert_info,
+            commands::generate_self_signed_cert,
             commands::scan_ports,
             commands::encode_decode,
         ])
