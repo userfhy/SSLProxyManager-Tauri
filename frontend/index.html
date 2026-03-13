@@ -2,10 +2,151 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>数据反向代理</title>
+  <style>
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #0a0e1a;
+    }
+
+    #boot-loading {
+      position: fixed;
+      inset: 0;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background:
+        linear-gradient(150deg, rgba(8, 14, 28, 0.72) 0%, rgba(14, 24, 44, 0.58) 100%),
+        radial-gradient(ellipse 1200px 700px at 20% 10%, rgba(79, 156, 249, 0.2), transparent 55%),
+        radial-gradient(ellipse 900px 600px at 80% 30%, rgba(34, 197, 94, 0.12), transparent 60%);
+      z-index: 99999;
+      transition: opacity .24s ease, visibility .24s ease;
+      opacity: 1;
+      visibility: visible;
+    }
+
+    #boot-loading.boot-loading--hide {
+      opacity: 0;
+      visibility: hidden;
+    }
+
+    .boot-bg {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      opacity: 0.95;
+      z-index: 0;
+      pointer-events: none;
+    }
+
+    .boot-inner {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+      color: #e2e8f0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      user-select: none;
+    }
+
+    .boot-ring {
+      width: 56px;
+      height: 56px;
+      border-radius: 9999px;
+      border: 3px solid rgba(148, 163, 184, 0.25);
+      border-top-color: #4f9cf9;
+      border-right-color: #22c55e;
+      animation: boot-spin 0.9s linear infinite;
+      box-shadow: 0 0 24px rgba(79, 156, 249, 0.28);
+    }
+
+    .boot-title {
+      font-size: 18px;
+      font-weight: 600;
+      letter-spacing: 0.2px;
+    }
+
+    .boot-sub {
+      font-size: 13px;
+      color: rgba(226, 232, 240, 0.72);
+    }
+
+    @keyframes boot-spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
   <script type="module" src="/src/main.ts"></script>
 </head>
 <body>
+  <div id="boot-loading" aria-live="polite" aria-label="应用启动中">
+    <svg class="boot-bg" viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#091125"/>
+          <stop offset="52%" stop-color="#101b35"/>
+          <stop offset="100%" stop-color="#0a1428"/>
+        </linearGradient>
+        <radialGradient id="glowA" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(420 240) rotate(20) scale(520 320)">
+          <stop offset="0%" stop-color="#52a7ff" stop-opacity="0.42"/>
+          <stop offset="100%" stop-color="#52a7ff" stop-opacity="0"/>
+        </radialGradient>
+        <radialGradient id="glowB" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(1480 360) rotate(-12) scale(500 280)">
+          <stop offset="0%" stop-color="#23d08c" stop-opacity="0.3"/>
+          <stop offset="100%" stop-color="#23d08c" stop-opacity="0"/>
+        </radialGradient>
+        <pattern id="grid" width="60" height="60" patternUnits="userSpaceOnUse">
+          <path d="M60 0H0V60" fill="none" stroke="#8cb3ff" stroke-opacity="0.08" stroke-width="1"/>
+        </pattern>
+        <filter id="softGlow" x="-20%" y="-20%" width="140%" height="140%">
+          <feGaussianBlur stdDeviation="6"/>
+        </filter>
+      </defs>
+      <rect width="1920" height="1080" fill="url(#bg)"/>
+      <rect width="1920" height="1080" fill="url(#glowA)"/>
+      <rect width="1920" height="1080" fill="url(#glowB)"/>
+      <rect width="1920" height="1080" fill="url(#grid)"/>
+
+      <g stroke="#86aef7" stroke-opacity="0.22" stroke-width="1.2" fill="none">
+        <path d="M180 820L420 640L640 700L900 520L1120 560L1350 430L1660 510"/>
+        <path d="M220 320L480 390L760 260L980 310L1240 190L1540 280"/>
+        <path d="M260 960L520 860L760 910L1010 760L1320 820L1640 700"/>
+      </g>
+
+      <g fill="#6ba8ff" fill-opacity="0.8">
+        <circle cx="420" cy="640" r="3"/>
+        <circle cx="900" cy="520" r="3"/>
+        <circle cx="1350" cy="430" r="3"/>
+        <circle cx="760" cy="260" r="3"/>
+        <circle cx="1240" cy="190" r="3"/>
+        <circle cx="1010" cy="760" r="3"/>
+      </g>
+
+      <g fill="#7adfb2" fill-opacity="0.55" filter="url(#softGlow)">
+        <circle cx="420" cy="640" r="8"/>
+        <circle cx="1240" cy="190" r="8"/>
+        <circle cx="1010" cy="760" r="8"/>
+      </g>
+
+      <g stroke="#8cb3ff" stroke-opacity="0.12" stroke-width="1">
+        <line x1="0" y1="860" x2="1920" y2="860"/>
+        <line x1="0" y1="540" x2="1920" y2="540"/>
+        <line x1="0" y1="220" x2="1920" y2="220"/>
+      </g>
+    </svg>
+    <div class="boot-inner">
+      <div class="boot-ring"></div>
+      <div class="boot-title">Welcome to SSLProxyManager</div>
+      <div class="boot-sub">Loading...</div>
+    </div>
+  </div>
   <div id="app"></div>
 </body>
 </html>

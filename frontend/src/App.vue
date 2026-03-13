@@ -80,7 +80,11 @@
         />
         <WsProxyConfig v-show="activeTab === 'ws'" ref="wsProxyConfigRef" />
         <StreamProxyConfig v-show="activeTab === 'stream'" ref="streamProxyConfigRef" />
-        <Dashboard :is-active="activeTab === 'dashboard'" v-show="activeTab === 'dashboard'" />
+        <Dashboard
+          v-if="isLazyTabLoaded('dashboard')"
+          :is-active="activeTab === 'dashboard'"
+          v-show="activeTab === 'dashboard'"
+        />
         <AccessControl 
           v-show="activeTab === 'access'"
           ref="accessControlRef"
@@ -91,9 +95,9 @@
           ref="metricsStorageRef"
           :config="globalConfig"
         />
-        <RequestLogs v-show="activeTab === 'requestLogs'" />
-        <TestTools v-show="activeTab === 'testTools'" />
-        <LogViewer v-show="activeTab === 'logs'" />
+        <RequestLogs v-if="isLazyTabLoaded('requestLogs')" v-show="activeTab === 'requestLogs'" />
+        <TestTools v-if="isLazyTabLoaded('testTools')" v-show="activeTab === 'testTools'" />
+        <LogViewer v-if="isLazyTabLoaded('logs')" v-show="activeTab === 'logs'" />
         <About v-show="activeTab === 'about'" ref="aboutRef" />
       </div>
     </div>
@@ -104,7 +108,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
+import { ref, reactive, computed, onMounted, onBeforeUnmount, watch, defineAsyncComponent } from 'vue'
 import { StartServer, StopServer, GetStatus, QuitApp, EventsOn, SetTrayProxyState } from './api'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { enable as enableAutostart, disable as disableAutostart, isEnabled as isAutostartEnabled } from '@tauri-apps/plugin-autostart'
@@ -113,21 +117,22 @@ import BaseConfig from './components/BaseConfig.vue'
 import ConfigCard from './components/ConfigCard.vue'
 import WsProxyConfig from './components/WsProxyConfig.vue'
 import StreamProxyConfig from './components/StreamProxyConfig.vue'
-import LogViewer from './components/LogViewer.vue'
-import Dashboard from './components/Dashboard.vue'
 import AccessControl from './components/AccessControl.vue'
 import MetricsStorage from './components/MetricsStorage.vue'
-import RequestLogs from './components/RequestLogs.vue'
 import About from './components/About.vue'
 import Sidebar from './components/Sidebar.vue'
 import TermsDialog from './components/TermsDialog.vue'
 import LanguageSelector from './components/LanguageSelector.vue'
-import TestTools from './components/TestTools.vue'
 import { Sunny, Moon, Check } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox, ElNotification } from 'element-plus'
 import { GetConfig, SaveConfig } from './api'
 import { GetTermsAccepted } from './api'
 import { useI18n } from 'vue-i18n'
+
+const Dashboard = defineAsyncComponent(() => import('./components/Dashboard.vue'))
+const RequestLogs = defineAsyncComponent(() => import('./components/RequestLogs.vue'))
+const TestTools = defineAsyncComponent(() => import('./components/TestTools.vue'))
+const LogViewer = defineAsyncComponent(() => import('./components/LogViewer.vue'))
 
 const { t, locale } = useI18n()
 
@@ -144,6 +149,27 @@ const metricsStorageRef = ref<InstanceType<typeof MetricsStorage> | null>(null)
 const aboutRef = ref<InstanceType<typeof About> | null>(null)
 const globalConfig = ref<any>({})
 const showTermsDialog = ref(false)
+
+// 仅对重量级页面做懒加载，减少首屏黑屏等待
+const lazyLoadedTabs = reactive<Record<string, boolean>>({
+  dashboard: false,
+  requestLogs: false,
+  testTools: false,
+  logs: false,
+})
+
+const markLazyTabLoaded = (key: string) => {
+  if (Object.prototype.hasOwnProperty.call(lazyLoadedTabs, key)) {
+    lazyLoadedTabs[key] = true
+  }
+}
+
+const isLazyTabLoaded = (key: string) => {
+  if (!Object.prototype.hasOwnProperty.call(lazyLoadedTabs, key)) {
+    return true
+  }
+  return !!lazyLoadedTabs[key]
+}
 
 // 运行时间相关
 const startTime = ref<number | null>(null)
@@ -551,12 +577,14 @@ watch(isDark, applyTheme)
 // 菜单选择处理
 const handleMenuSelect = (key: string) => {
   activeTab.value = key as typeof activeTab.value
+  markLazyTabLoaded(key)
 }
 
 // 初始化
 onMounted(async () => {
   loadTheme()
   loadSidebarState()
+  markLazyTabLoaded(activeTab.value)
   
   // 同步语言设置到后端（更新托盘菜单）
   // 语言选择器组件会在初始化时自动同步，这里不需要手动调用
@@ -565,7 +593,9 @@ onMounted(async () => {
   startAutoTheme()
   
   // 立即设置退出事件监听，确保无论是否接受条款都能响应退出请求
-  await setupQuitHandler()
+  setupQuitHandler().catch(() => {
+    // ignore
+  })
   
   // 检查条款接受状态（使用 localStorage）
   try {

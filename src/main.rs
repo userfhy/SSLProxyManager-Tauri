@@ -119,8 +119,14 @@ fn main() {
             // 初始化应用
             app::init(app.handle())?;
 
-            // 初始化托盘
-            tray::init_tray(app.handle())?;
+            // 托盘初始化延后执行，避免阻塞首屏显示
+            let app_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_millis(120)).await;
+                if let Err(e) = tray::init_tray(&app_handle) {
+                    eprintln!("Tray init failed: {e}");
+                }
+            });
 
             Ok(())
         })

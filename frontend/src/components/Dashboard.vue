@@ -226,12 +226,28 @@ import { InfoFilled } from '@element-plus/icons-vue'
 import zhCn from 'element-plus/dist/locale/zh-cn.mjs'
 import { EventsOn, EventsOff } from '../api'
 import { GetListenAddrs, GetMetrics, QueryHistoricalMetrics, GetDashboardStats, GetConfig } from '../api'
+import VChart from 'vue-echarts'
+import { use } from 'echarts/core'
+import { CanvasRenderer } from 'echarts/renderers'
+import { LineChart, BarChart, PieChart } from 'echarts/charts'
+import { GridComponent, TooltipComponent, LegendComponent, GraphicComponent } from 'echarts/components'
 import type { EChartsOption } from 'echarts'
 import { useI18n } from 'vue-i18n'
 import { useDateShortcuts } from '../composables/useDateShortcuts'
 
 const { t } = useI18n()
 const { dateShortcuts } = useDateShortcuts()
+
+use([
+  CanvasRenderer,
+  LineChart,
+  BarChart,
+  PieChart,
+  GridComponent,
+  TooltipComponent,
+  LegendComponent,
+  GraphicComponent,
+])
 
 const props = defineProps<{ isActive: boolean }>()
 
