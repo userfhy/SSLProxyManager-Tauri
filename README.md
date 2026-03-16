@@ -57,7 +57,7 @@ It provides one UI to manage:
 
 ## Screenshots
 
-[![PreviewVideo](./screenshots/1.jpg)](https://github.com/userfhy/SSLProxyManager-Tauri/raw/refs/heads/main/screenshots/SSLProxyManager_20260316.mp4)
+https://github.com/user-attachments/assets/b41b3d38-19c5-4124-a439-c4c011c16a5b
 
 ![ScreenShot1](./screenshots/1.jpg)
 ![ScreenShot2](./screenshots/2.jpg)
