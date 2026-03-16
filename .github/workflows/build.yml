@@ -86,6 +86,12 @@ jobs:
           releaseDraft: false
           prerelease: false
           generateReleaseNotes: true
-          uploadWorkflowArtifacts: true
-          workflowArtifactNamePattern: SSLProxyManager-${{ matrix.name }}-[bundle]
+          assetNamePattern: "[name]_[version]_[platform]_[arch]_[bundle][ext]"
           args: ${{ matrix.args }}
+
+      - name: Upload artifacts (workflow)
+        uses: actions/upload-artifact@v7
+        with:
+          name: SSLProxyManager-${{ matrix.name }}
+          path: target/${{ matrix.tauri_target }}/release/bundle/**
+          if-no-files-found: error
