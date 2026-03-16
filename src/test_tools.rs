@@ -36,6 +36,7 @@ pub struct RouteTestRequest {
     pub method: Option<String>,
     pub host: Option<String>,
     pub headers: Option<std::collections::HashMap<String, String>>,
+    pub listen_addr: Option<String>,
 }
 
 /// 路由测试结果
@@ -53,6 +54,48 @@ pub struct RouteTestResult {
     pub proxy_pass_path: Option<String>,
     pub basic_auth_required: bool,
     pub ssl_enabled: bool,
+}
+
+/// 路由回归测试用例
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RouteTestSuiteCase {
+    pub name: String,
+    pub path: String,
+    pub method: Option<String>,
+    pub host: Option<String>,
+    pub headers: Option<std::collections::HashMap<String, String>>,
+    pub listen_addr: Option<String>,
+    pub expect_matched: bool,
+    pub expect_listen_rule_id: Option<String>,
+    pub expect_route_id: Option<String>,
+    pub expect_listen_addr: Option<String>,
+}
+
+/// 路由回归测试请求
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RouteTestSuiteRequest {
+    pub cases: Vec<RouteTestSuiteCase>,
+    pub stop_on_failure: Option<bool>,
+}
+
+/// 路由回归测试单用例结果
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RouteTestSuiteCaseResult {
+    pub name: String,
+    pub passed: bool,
+    pub failure_reason: Option<String>,
+    pub elapsed_ms: u64,
+    pub actual: RouteTestResult,
+}
+
+/// 路由回归测试结果
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RouteTestSuiteResult {
+    pub total_cases: u64,
+    pub passed_cases: u64,
+    pub failed_cases: u64,
+    pub elapsed_ms: u64,
+    pub cases: Vec<RouteTestSuiteCaseResult>,
 }
 
 /// 性能测试请求
@@ -317,80 +360,34 @@ pub async fn send_http_test_request(req: HttpTestRequest) -> Result<HttpTestResp
 /// 测试路由匹配
 pub fn test_route_matching(req: RouteTestRequest) -> Result<RouteTestResult> {
     let config = config::get_config();
+    let req_headers = normalize_request_headers(req.headers.as_ref());
+    let req_host = req.host.as_deref().unwrap_or("").trim();
+    let listen_addr_filter = req.listen_addr.as_deref().map(str::trim).filter(|s| !s.is_empty());
 
-    // 遍历所有监听规则
     for rule in &config.rules {
         if !rule.enabled {
             continue;
         }
-
-        // 遍历路由
-        for route in &rule.routes {
-            if !route.enabled {
+        if let Some(filter) = listen_addr_filter {
+            let in_listen_addrs = rule
+                .listen_addrs
+                .iter()
+                .any(|addr| addr.trim().eq_ignore_ascii_case(filter));
+            if !rule.listen_addr.trim().eq_ignore_ascii_case(filter) && !in_listen_addrs {
                 continue;
             }
+        }
 
-            // 检查路径匹配
-            let path_matches = if let Some(route_path) = &route.path {
-                req.path.starts_with(route_path)
-            } else {
-                true
-            };
+        let route = find_best_matching_route(
+            &rule.routes,
+            req.path.as_str(),
+            req.method.as_deref(),
+            req_host,
+            &req_headers,
+        );
 
-            if !path_matches {
-                continue;
-            }
-
-            // 检查 Host 匹配
-            let host_matches = if let Some(route_host) = &route.host {
-                if let Some(req_host) = &req.host {
-                    route_host == req_host
-                } else {
-                    false
-                }
-            } else {
-                true
-            };
-
-            if !host_matches {
-                continue;
-            }
-
-            // 检查 HTTP 方法匹配
-            let method_matches = if let Some(route_methods) = &route.methods {
-                if let Some(req_method) = &req.method {
-                    route_methods.iter().any(|m| m.eq_ignore_ascii_case(req_method))
-                } else {
-                    true
-                }
-            } else {
-                true
-            };
-
-            if !method_matches {
-                continue;
-            }
-
-            // 检查 Header 匹配
-            let headers_match = if let Some(route_headers) = &route.headers {
-                if let Some(req_headers) = &req.headers {
-                    route_headers.iter().all(|(key, expected)| {
-                        req_headers.get(key).map(|v| v == expected).unwrap_or(false)
-                    })
-                } else {
-                    false
-                }
-            } else {
-                true
-            };
-
-            if !headers_match {
-                continue;
-            }
-
-            // 找到匹配的路由
+        if let Some(route) = route {
             let upstream_url = route.upstreams.first().map(|u| u.url.clone());
-
             return Ok(RouteTestResult {
                 matched: true,
                 listen_rule_id: rule.id.clone(),
@@ -422,6 +419,244 @@ pub fn test_route_matching(req: RouteTestRequest) -> Result<RouteTestResult> {
         proxy_pass_path: None,
         basic_auth_required: false,
         ssl_enabled: false,
+    })
+}
+
+fn normalize_request_headers(
+    headers: Option<&std::collections::HashMap<String, String>>,
+) -> std::collections::HashMap<String, String> {
+    let mut normalized = std::collections::HashMap::new();
+    if let Some(headers) = headers {
+        for (k, v) in headers {
+            normalized.insert(k.to_ascii_lowercase(), v.clone());
+        }
+    }
+    normalized
+}
+
+#[inline]
+fn normalize_host(host: &str) -> &str {
+    host.split(':').next().unwrap_or(host).trim()
+}
+
+#[inline]
+fn host_matches(route_host: &str, request_host: &str) -> bool {
+    let route_host = normalize_host(route_host);
+    let request_host = normalize_host(request_host);
+
+    if request_host.is_empty() {
+        return route_host.is_empty();
+    }
+
+    if route_host.eq_ignore_ascii_case(request_host) {
+        return true;
+    }
+
+    if route_host.starts_with("*.") {
+        let suffix = &route_host[2..];
+        if !suffix.is_empty() && request_host.ends_with(suffix) {
+            let prefix_len = request_host.len() - suffix.len();
+            if prefix_len > 0 {
+                let prefix = &request_host[..prefix_len];
+                if !prefix.contains('.') && !prefix.is_empty() {
+                    return true;
+                }
+            }
+        }
+    }
+
+    false
+}
+
+fn headers_match(
+    required_headers: &std::collections::HashMap<String, String>,
+    req_headers: &std::collections::HashMap<String, String>,
+) -> bool {
+    for (key, expected) in required_headers {
+        let actual = req_headers
+            .get(&key.to_ascii_lowercase())
+            .map(String::as_str)
+            .unwrap_or("");
+
+        if expected.contains('*') {
+            let pattern = expected.replace('*', ".*");
+            if let Some(re) = crate::proxy::cached_regex(&pattern) {
+                if !re.is_match(actual) {
+                    return false;
+                }
+            } else if !actual.contains(expected.replace('*', "").as_str()) {
+                return false;
+            }
+        } else if !actual.eq_ignore_ascii_case(expected.trim()) {
+            return false;
+        }
+    }
+
+    true
+}
+
+fn find_best_matching_route<'a>(
+    routes: &'a [config::Route],
+    path: &str,
+    method: Option<&str>,
+    request_host: &str,
+    req_headers: &std::collections::HashMap<String, String>,
+) -> Option<&'a config::Route> {
+    let host = normalize_host(request_host);
+    let mut best: Option<(&config::Route, bool, usize)> = None;
+
+    for route in routes {
+        if !route.enabled {
+            continue;
+        }
+
+        let route_path = match route.path.as_deref() {
+            Some(v) => v,
+            None => continue,
+        };
+        if !path.starts_with(route_path) {
+            continue;
+        }
+
+        let route_host = route.host.as_deref().map(str::trim).filter(|s| !s.is_empty());
+        let host_ok = match route_host {
+            None => true,
+            Some(h) => host_matches(h, host),
+        };
+        if !host_ok {
+            continue;
+        }
+
+        if let Some(route_methods) = &route.methods {
+            if let Some(req_method) = method {
+                if !route_methods.iter().any(|m| m.eq_ignore_ascii_case(req_method)) {
+                    continue;
+                }
+            }
+        }
+
+        if let Some(required_headers) = &route.headers {
+            if !headers_match(required_headers, req_headers) {
+                continue;
+            }
+        }
+
+        let cand = (route, route.host.is_some(), route_path.len());
+        best = match best {
+            None => Some(cand),
+            Some((best_route, best_has_host, best_plen)) => {
+                if cand.1 != best_has_host {
+                    if cand.1 {
+                        Some(cand)
+                    } else {
+                        Some((best_route, best_has_host, best_plen))
+                    }
+                } else if cand.2 > best_plen {
+                    Some(cand)
+                } else {
+                    Some((best_route, best_has_host, best_plen))
+                }
+            }
+        };
+    }
+
+    best.map(|(route, _, _)| route)
+}
+
+/// 执行路由回归测试集（最小版）
+pub fn run_route_test_suite(req: RouteTestSuiteRequest) -> Result<RouteTestSuiteResult> {
+    use anyhow::anyhow;
+
+    if req.cases.is_empty() {
+        return Err(anyhow!("测试集不能为空"));
+    }
+    if req.cases.len() > 1000 {
+        return Err(anyhow!("测试集过大，最多支持 1000 条用例"));
+    }
+
+    let started = Instant::now();
+    let stop_on_failure = req.stop_on_failure.unwrap_or(false);
+    let mut results = Vec::with_capacity(req.cases.len());
+    let mut passed_cases = 0u64;
+    let mut failed_cases = 0u64;
+
+    for case in req.cases {
+        let case_started = Instant::now();
+        let actual = test_route_matching(RouteTestRequest {
+            path: case.path.clone(),
+            method: case.method.clone(),
+            host: case.host.clone(),
+            headers: case.headers.clone(),
+            listen_addr: case.listen_addr.clone(),
+        })?;
+
+        let mut failure_reason = None;
+        if actual.matched != case.expect_matched {
+            failure_reason = Some(format!(
+                "匹配状态不符: expect_matched={}, actual_matched={}",
+                case.expect_matched, actual.matched
+            ));
+        }
+        if failure_reason.is_none() {
+            if let Some(expected) = case.expect_listen_rule_id.as_deref() {
+                if actual.listen_rule_id.as_deref() != Some(expected) {
+                    failure_reason = Some(format!(
+                        "listen_rule_id 不符: expected={}, actual={}",
+                        expected,
+                        actual.listen_rule_id.as_deref().unwrap_or("")
+                    ));
+                }
+            }
+        }
+        if failure_reason.is_none() {
+            if let Some(expected) = case.expect_route_id.as_deref() {
+                if actual.route_id.as_deref() != Some(expected) {
+                    failure_reason = Some(format!(
+                        "route_id 不符: expected={}, actual={}",
+                        expected,
+                        actual.route_id.as_deref().unwrap_or("")
+                    ));
+                }
+            }
+        }
+        if failure_reason.is_none() {
+            if let Some(expected) = case.expect_listen_addr.as_deref() {
+                if actual.listen_addr.as_deref() != Some(expected) {
+                    failure_reason = Some(format!(
+                        "listen_addr 不符: expected={}, actual={}",
+                        expected,
+                        actual.listen_addr.as_deref().unwrap_or("")
+                    ));
+                }
+            }
+        }
+
+        let passed = failure_reason.is_none();
+        if passed {
+            passed_cases += 1;
+        } else {
+            failed_cases += 1;
+        }
+
+        results.push(RouteTestSuiteCaseResult {
+            name: case.name,
+            passed,
+            failure_reason,
+            elapsed_ms: case_started.elapsed().as_millis() as u64,
+            actual,
+        });
+
+        if stop_on_failure && !passed {
+            break;
+        }
+    }
+
+    Ok(RouteTestSuiteResult {
+        total_cases: results.len() as u64,
+        passed_cases,
+        failed_cases,
+        elapsed_ms: started.elapsed().as_millis() as u64,
+        cases: results,
     })
 }
 

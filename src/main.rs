@@ -107,6 +107,7 @@ fn main() {
             commands::clear_all_caches,
             commands::send_http_test,
             commands::test_route_match,
+            commands::run_route_test_suite,
             commands::run_performance_test,
             commands::validate_config_tool,
             commands::dns_lookup,

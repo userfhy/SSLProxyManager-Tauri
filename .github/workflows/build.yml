@@ -86,7 +86,7 @@ jobs:
           releaseDraft: false
           prerelease: false
           generateReleaseNotes: true
-          assetNamePattern: "[name]_[version]_[platform]_[arch]_[bundle][ext]"
+          assetNamePattern: "[name]_[version]_[platform]_[arch][ext]"
           args: ${{ matrix.args }}
 
       - name: Upload artifacts (workflow)

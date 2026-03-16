@@ -527,6 +527,12 @@ pub fn test_route_match(req: test_tools::RouteTestRequest) -> Result<test_tools:
 }
 
 #[tauri::command]
+pub fn run_route_test_suite(req: test_tools::RouteTestSuiteRequest) -> Result<test_tools::RouteTestSuiteResult, String> {
+    test_tools::run_route_test_suite(req)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub async fn run_performance_test(req: test_tools::PerformanceTestRequest) -> Result<test_tools::PerformanceTestResult, String> {
     test_tools::run_performance_test(req)
         .await

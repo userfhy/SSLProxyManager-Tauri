@@ -135,10 +135,10 @@
             </div>
           </template>
 
-          <el-form :model="routeForm" label-width="100px">
-            <el-form-item :label="$t('testTools.path')">
-              <el-input v-model="routeForm.path" placeholder="/api/users" />
-            </el-form-item>
+            <el-form :model="routeForm" label-width="100px">
+              <el-form-item :label="$t('testTools.path')">
+                <el-input v-model="routeForm.path" placeholder="/api/users" />
+              </el-form-item>
 
             <el-form-item :label="$t('testTools.method')">
               <el-select v-model="routeForm.method" clearable>
@@ -149,14 +149,27 @@
               </el-select>
             </el-form-item>
 
-            <el-form-item :label="$t('testTools.host')">
-              <el-input v-model="routeForm.host" placeholder="example.com" clearable />
-            </el-form-item>
+              <el-form-item :label="$t('testTools.host')">
+                <el-input v-model="routeForm.host" placeholder="example.com" clearable />
+              </el-form-item>
 
-            <el-form-item>
-              <el-button @click="testRoute" type="primary" :loading="routeLoading" :icon="Search">
-                {{ $t('testTools.testRoute') }}
-              </el-button>
+              <el-form-item :label="$t('testTools.listenAddrFilter')">
+                <el-input v-model="routeForm.listenAddr" placeholder=":8888" clearable />
+              </el-form-item>
+
+              <el-form-item :label="$t('testTools.headersJson')">
+                <el-input
+                  v-model="routeForm.headersJson"
+                  type="textarea"
+                  :rows="4"
+                  placeholder='{"x-env":"prod","x-version":"v1"}'
+                />
+              </el-form-item>
+
+              <el-form-item>
+                <el-button @click="testRoute" type="primary" :loading="routeLoading" :icon="Search">
+                  {{ $t('testTools.testRoute') }}
+                </el-button>
             </el-form-item>
           </el-form>
 
@@ -198,10 +211,85 @@
             </el-result>
           </div>
         </el-card>
-      </el-tab-pane>
+        </el-tab-pane>
 
-      <!-- 性能测试 -->
-      <el-tab-pane :label="$t('testTools.performanceTest')" name="performance">
+        <!-- 场景回归（Route Suite） -->
+        <el-tab-pane :label="$t('testTools.routeSuite')" name="routeSuite">
+          <el-card class="tool-card">
+            <template #header>
+              <div class="card-header">
+                <span>{{ $t('testTools.routeSuiteTitle') }}</span>
+              </div>
+            </template>
+
+            <el-form :model="routeSuiteForm" label-width="130px">
+              <el-form-item :label="$t('testTools.stopOnFailure')">
+                <el-switch v-model="routeSuiteForm.stopOnFailure" />
+              </el-form-item>
+
+              <el-form-item :label="$t('testTools.casesJson')">
+                <el-input
+                  v-model="routeSuiteForm.casesJson"
+                  type="textarea"
+                  :rows="14"
+                  :placeholder="$t('testTools.casesJsonHint')"
+                />
+              </el-form-item>
+
+              <el-form-item>
+                <el-button @click="runRouteSuite" type="primary" :loading="routeSuiteLoading" :icon="Search">
+                  {{ $t('testTools.runSuite') }}
+                </el-button>
+                <el-button @click="loadRouteSuiteExample" :icon="DocumentCopy">
+                  {{ $t('testTools.loadExample') }}
+                </el-button>
+              </el-form-item>
+            </el-form>
+
+            <el-divider />
+
+            <div v-if="routeSuiteResult" class="response-section">
+              <h4>{{ $t('testTools.suiteResults') }}</h4>
+              <el-row :gutter="16">
+                <el-col :span="8">
+                  <el-statistic :title="$t('testTools.totalRequests')" :value="routeSuiteResult.total_cases" />
+                </el-col>
+                <el-col :span="8">
+                  <el-statistic :title="$t('testTools.passed')" :value="routeSuiteResult.passed_cases" />
+                </el-col>
+                <el-col :span="8">
+                  <el-statistic :title="$t('testTools.failed')" :value="routeSuiteResult.failed_cases" />
+                </el-col>
+              </el-row>
+              <p style="margin-top: 12px;">{{ $t('testTools.totalTime') }}: {{ routeSuiteResult.elapsed_ms }} ms</p>
+
+              <el-table :data="routeSuiteResult.cases" border size="small">
+                <el-table-column prop="name" :label="$t('testTools.caseName')" width="180" />
+                <el-table-column :label="$t('testTools.assertionResult')" width="120">
+                  <template #default="{ row }">
+                    <el-tag :type="row.passed ? 'success' : 'danger'">
+                      {{ row.passed ? $t('testTools.passed') : $t('testTools.failed') }}
+                    </el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="failure_reason" :label="$t('testTools.failureReason')" />
+                <el-table-column :label="$t('testTools.actualRoute')">
+                  <template #default="{ row }">
+                    {{ row.actual?.listen_addr || '-' }} / {{ row.actual?.route_id || '-' }}
+                  </template>
+                </el-table-column>
+                <el-table-column prop="elapsed_ms" :label="$t('testTools.responseTime')" width="120">
+                  <template #default="{ row }">
+                    {{ row.elapsed_ms }} ms
+                  </template>
+                </el-table-column>
+              </el-table>
+            </div>
+          </el-card>
+        </el-tab-pane>
+
+        <!-- 性能测试 -->
+        <el-tab-pane :label="$t('testTools.performanceTest')" name="performance">
         <el-card class="tool-card">
           <template #header>
             <div class="card-header">
@@ -585,18 +673,42 @@
 
           <el-form :model="wsForm" label-width="100px">
             <el-form-item :label="$t('testTools.url')">
-              <el-input v-model="wsForm.url" placeholder="ws://localhost:8800/ws" :disabled="wsConnected" />
+              <el-input v-model="wsForm.url" placeholder="ws://localhost:8800/ws" :disabled="wsConnected || wsConnecting" />
+            </el-form-item>
+
+            <el-form-item :label="$t('testTools.connectionOptions')">
+              <div class="ws-options-grid">
+                <el-switch v-model="wsForm.autoReconnect" :active-text="$t('testTools.autoReconnect')" />
+                <div class="ws-inline-item">
+                  <span class="ws-inline-label">{{ $t('testTools.reconnectIntervalMs') }}</span>
+                  <el-input-number v-model="wsForm.reconnectIntervalMs" :min="200" :max="60000" :step="100" />
+                </div>
+                <div class="ws-inline-item">
+                  <span class="ws-inline-label">{{ $t('testTools.maxReconnectAttempts') }}</span>
+                  <el-input-number v-model="wsForm.maxReconnectAttempts" :min="1" :max="100" />
+                </div>
+                <div class="ws-inline-item">
+                  <span class="ws-inline-label">{{ $t('testTools.connectTimeoutMs') }}</span>
+                  <el-input-number v-model="wsForm.connectTimeoutMs" :min="1000" :max="120000" :step="500" />
+                </div>
+              </div>
             </el-form-item>
 
             <el-form-item>
-              <el-button v-if="!wsConnected" @click="connectWebSocket" type="primary" :icon="Connection">
+              <el-button v-if="!wsConnected" @click="connectWebSocket" type="primary" :icon="Connection" :loading="wsConnecting">
                 {{ $t('testTools.connect') }}
               </el-button>
               <el-button v-else @click="disconnectWebSocket" type="danger" :icon="Close">
                 {{ $t('testTools.disconnect') }}
               </el-button>
+              <el-button v-if="wsPeriodicSending" @click="stopPeriodicSend" type="warning">
+                {{ $t('testTools.stopPeriodicSend') }}
+              </el-button>
               <el-button @click="clearWsMessages" :icon="Delete">
                 {{ $t('testTools.clearMessages') }}
+              </el-button>
+              <el-button @click="copyWsLogs" :icon="DocumentCopy">
+                {{ $t('testTools.copyLogs') }}
               </el-button>
             </el-form-item>
 
@@ -608,6 +720,16 @@
               <el-button @click="sendWsMessage" type="primary" :icon="Promotion">
                 {{ $t('testTools.sendMessage') }}
               </el-button>
+              <el-button @click="sendWsPing">
+                {{ $t('testTools.sendPing') }}
+              </el-button>
+              <div class="ws-inline-item ws-inline-item-tight">
+                <span class="ws-inline-label">{{ $t('testTools.sendIntervalMs') }}</span>
+                <el-input-number v-model="wsForm.sendIntervalMs" :min="100" :max="60000" :step="100" />
+              </div>
+              <el-button @click="startPeriodicSend" :disabled="wsPeriodicSending">
+                {{ $t('testTools.startPeriodicSend') }}
+              </el-button>
             </el-form-item>
           </el-form>
 
@@ -615,17 +737,29 @@
 
           <div class="response-section">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-              <h4 style="margin: 0;">{{ $t('testTools.messageLog') }} ({{ wsMessages.length }})</h4>
+              <h4 style="margin: 0;">{{ $t('testTools.messageLog') }} ({{ filteredWsMessages.length }}/{{ wsMessages.length }})</h4>
               <el-switch v-model="wsShowHtml" :active-text="$t('testTools.renderHtml')" />
             </div>
+
+            <div class="ws-filter-bar">
+              <el-select v-model="wsFilterType" style="width: 160px;">
+                <el-option :label="$t('testTools.filterAll')" value="all" />
+                <el-option :label="$t('testTools.filterSent')" value="sent" />
+                <el-option :label="$t('testTools.filterReceived')" value="received" />
+                <el-option :label="$t('testTools.filterSystem')" value="system" />
+              </el-select>
+              <el-input v-model="wsKeyword" :placeholder="$t('testTools.filterKeyword')" clearable />
+            </div>
+
             <div class="ws-messages">
-              <div v-for="(msg, index) in wsMessages" :key="index" class="ws-message" :class="msg.type">
+              <div v-for="(msg, index) in filteredWsMessages" :key="index" class="ws-message" :class="msg.type">
                 <span class="ws-time">{{ msg.time }}</span>
-                <span class="ws-type">{{ msg.type === 'sent' ? '发送' : msg.type === 'received' ? '接收' : '系统' }}</span>
+                <span class="ws-type">{{ wsTypeLabel(msg.type) }}</span>
+                <span class="ws-size">{{ msg.bytes }}B</span>
                 <span v-if="wsShowHtml" class="ws-content" v-html="msg.content"></span>
                 <span v-else class="ws-content">{{ msg.content }}</span>
               </div>
-              <el-empty v-if="wsMessages.length === 0" :description="$t('testTools.noMessages')" />
+              <el-empty v-if="filteredWsMessages.length === 0" :description="$t('testTools.noMessages')" />
             </div>
           </div>
         </el-card>
@@ -870,6 +1004,8 @@ const routeForm = reactive({
   path: '/api/test',
   method: 'GET',
   host: '',
+  listenAddr: '',
+  headersJson: '',
 })
 
 const routeLoading = ref(false)
@@ -881,6 +1017,24 @@ const testRoute = async () => {
     return
   }
 
+  let parsedHeaders: Record<string, string> | null = null
+  if (routeForm.headersJson.trim()) {
+    try {
+      const obj = JSON.parse(routeForm.headersJson)
+      if (!obj || typeof obj !== 'object' || Array.isArray(obj)) {
+        ElMessage.warning(t('testTools.pleaseEnterValidHeadersJson'))
+        return
+      }
+      parsedHeaders = Object.entries(obj).reduce((acc, [key, value]) => {
+        acc[String(key)] = String(value)
+        return acc
+      }, {} as Record<string, string>)
+    } catch {
+      ElMessage.warning(t('testTools.pleaseEnterValidHeadersJson'))
+      return
+    }
+  }
+
   routeLoading.value = true
   routeResult.value = null
 
@@ -890,7 +1044,8 @@ const testRoute = async () => {
         path: routeForm.path,
         method: routeForm.method || null,
         host: routeForm.host || null,
-        headers: null,
+        headers: parsedHeaders,
+        listen_addr: routeForm.listenAddr || null,
       }
     })
 
@@ -899,6 +1054,82 @@ const testRoute = async () => {
     ElMessage.error(t('testTools.testFailed') + ': ' + error)
   } finally {
     routeLoading.value = false
+  }
+}
+
+// 场景回归（Route Suite）
+const routeSuiteForm = reactive({
+  stopOnFailure: false,
+  casesJson: '',
+})
+
+const routeSuiteLoading = ref(false)
+const routeSuiteResult = ref<any>(null)
+
+const loadRouteSuiteExample = () => {
+  const example = [
+    {
+      name: 'api-prefix-prod-host',
+      path: '/api/users',
+      method: 'GET',
+      host: 'api.example.com',
+      headers: { 'x-env': 'prod' },
+      listen_addr: null,
+      expect_matched: true,
+      expect_listen_rule_id: null,
+      expect_route_id: null,
+      expect_listen_addr: null,
+    },
+    {
+      name: 'unmatched-route',
+      path: '/not-exists',
+      method: 'GET',
+      host: 'example.com',
+      headers: {},
+      listen_addr: null,
+      expect_matched: false,
+      expect_listen_rule_id: null,
+      expect_route_id: null,
+      expect_listen_addr: null,
+    },
+  ]
+  routeSuiteForm.casesJson = JSON.stringify(example, null, 2)
+}
+
+const runRouteSuite = async () => {
+  let cases: any[] = []
+  try {
+    const parsed = JSON.parse(routeSuiteForm.casesJson || '[]')
+    if (!Array.isArray(parsed)) {
+      ElMessage.warning(t('testTools.pleaseEnterValidCasesJson'))
+      return
+    }
+    cases = parsed
+  } catch {
+    ElMessage.warning(t('testTools.pleaseEnterValidCasesJson'))
+    return
+  }
+
+  if (cases.length === 0) {
+    ElMessage.warning(t('testTools.pleaseEnterValidCasesJson'))
+    return
+  }
+
+  routeSuiteLoading.value = true
+  routeSuiteResult.value = null
+  try {
+    const result = await invoke('run_route_test_suite', {
+      req: {
+        cases,
+        stop_on_failure: routeSuiteForm.stopOnFailure,
+      }
+    })
+    routeSuiteResult.value = result
+    ElMessage.success(t('testTools.suiteCompleted'))
+  } catch (error: any) {
+    ElMessage.error(t('testTools.suiteFailed') + ': ' + error)
+  } finally {
+    routeSuiteLoading.value = false
   }
 }
 
@@ -1197,75 +1428,264 @@ const copyOutput = () => {
 const wsForm = reactive({
   url: 'ws://localhost:8800/ws',
   message: '',
+  autoReconnect: true,
+  reconnectIntervalMs: 2000,
+  maxReconnectAttempts: 10,
+  connectTimeoutMs: 8000,
+  sendIntervalMs: 1000,
 })
 
 const wsConnected = ref(false)
+const wsConnecting = ref(false)
 const wsShowHtml = ref(false)
-const wsMessages = ref<Array<{ time: string; type: string; content: string }>>([])
+const wsFilterType = ref<'all' | 'sent' | 'received' | 'system'>('all')
+const wsKeyword = ref('')
+const wsReconnectAttempts = ref(0)
+const wsPeriodicSending = ref(false)
+const wsMessages = ref<Array<{ time: string; type: 'sent' | 'received' | 'system'; content: string; bytes: number }>>([])
 const WS_MAX_MESSAGES = 1000
 let wsClient: WebSocket | null = null
+let wsCloseByUser = false
+let wsReconnectTimer: ReturnType<typeof setTimeout> | null = null
+let wsConnectTimeoutTimer: ReturnType<typeof setTimeout> | null = null
+let wsPeriodicSendTimer: ReturnType<typeof setInterval> | null = null
 
-const wsStatusType = computed(() => wsConnected.value ? 'success' : 'info')
-const wsStatusText = computed(() => wsConnected.value ? t('testTools.connected') : t('testTools.disconnected'))
+const wsStatusType = computed(() => {
+  if (wsConnected.value) return 'success'
+  if (wsConnecting.value) return 'warning'
+  return 'info'
+})
 
-const connectWebSocket = () => {
+const wsStatusText = computed(() => {
+  if (wsConnected.value) return t('testTools.connected')
+  if (wsConnecting.value) {
+    if (wsReconnectAttempts.value > 0) {
+      return t('testTools.reconnectingWithCount', { count: wsReconnectAttempts.value })
+    }
+    return t('testTools.connecting')
+  }
+  return t('testTools.disconnected')
+})
+
+const filteredWsMessages = computed(() => {
+  const keyword = wsKeyword.value.trim().toLowerCase()
+  return wsMessages.value.filter(msg => {
+    if (wsFilterType.value !== 'all' && msg.type !== wsFilterType.value) {
+      return false
+    }
+    if (!keyword) {
+      return true
+    }
+    return msg.content.toLowerCase().includes(keyword)
+  })
+})
+
+const clearWsReconnectTimer = () => {
+  if (wsReconnectTimer) {
+    clearTimeout(wsReconnectTimer)
+    wsReconnectTimer = null
+  }
+}
+
+const clearWsConnectTimeoutTimer = () => {
+  if (wsConnectTimeoutTimer) {
+    clearTimeout(wsConnectTimeoutTimer)
+    wsConnectTimeoutTimer = null
+  }
+}
+
+const stopPeriodicSend = (showToast = true) => {
+  if (wsPeriodicSendTimer) {
+    clearInterval(wsPeriodicSendTimer)
+    wsPeriodicSendTimer = null
+  }
+  if (wsPeriodicSending.value && showToast) {
+    ElMessage.info(t('testTools.periodicSendStopped'))
+  }
+  wsPeriodicSending.value = false
+}
+
+const wsTypeLabel = (type: 'sent' | 'received' | 'system') => {
+  if (type === 'sent') return t('testTools.filterSent')
+  if (type === 'received') return t('testTools.filterReceived')
+  return t('testTools.filterSystem')
+}
+
+const textByteLength = (content: string) => {
+  return new TextEncoder().encode(content).length
+}
+
+const scheduleReconnect = () => {
+  if (wsCloseByUser || !wsForm.autoReconnect) return
+  if (wsReconnectAttempts.value >= wsForm.maxReconnectAttempts) {
+    addWsMessage('system', t('testTools.reconnectExhausted'), textByteLength(t('testTools.reconnectExhausted')))
+    return
+  }
+  wsReconnectAttempts.value += 1
+  const delay = Math.max(200, wsForm.reconnectIntervalMs)
+  addWsMessage('system', t('testTools.reconnectScheduled', { count: wsReconnectAttempts.value, delay }), 0)
+  clearWsReconnectTimer()
+  wsReconnectTimer = setTimeout(() => {
+    openWebSocket(true)
+  }, delay)
+}
+
+const openWebSocket = (isReconnect = false) => {
   if (!wsForm.url) {
     ElMessage.warning(t('testTools.pleaseEnterUrl'))
     return
+  }
+  if (wsClient && (wsClient.readyState === WebSocket.OPEN || wsClient.readyState === WebSocket.CONNECTING)) {
+    return
+  }
+
+  wsConnecting.value = true
+  if (!isReconnect) {
+    wsReconnectAttempts.value = 0
   }
 
   try {
     wsClient = new WebSocket(wsForm.url)
 
+    clearWsConnectTimeoutTimer()
+    wsConnectTimeoutTimer = setTimeout(() => {
+      if (wsClient && wsClient.readyState === WebSocket.CONNECTING) {
+        addWsMessage('system', t('testTools.connectTimeout'), textByteLength(t('testTools.connectTimeout')))
+        wsClient.close(4000, 'connect timeout')
+      }
+    }, Math.max(1000, wsForm.connectTimeoutMs))
+
     wsClient.onopen = () => {
+      clearWsConnectTimeoutTimer()
       wsConnected.value = true
-      addWsMessage('system', t('testTools.connectionEstablished'))
+      wsConnecting.value = false
+      wsReconnectAttempts.value = 0
+      addWsMessage('system', t('testTools.connectionEstablished'), textByteLength(t('testTools.connectionEstablished')))
       ElMessage.success(t('testTools.connected'))
     }
 
     wsClient.onmessage = (event) => {
-      addWsMessage('received', event.data)
+      if (typeof event.data === 'string') {
+        addWsMessage('received', event.data, textByteLength(event.data))
+      } else if (event.data instanceof Blob) {
+        addWsMessage('received', `[Blob ${event.data.size} bytes]`, event.data.size)
+      } else if (event.data instanceof ArrayBuffer) {
+        addWsMessage('received', `[ArrayBuffer ${event.data.byteLength} bytes]`, event.data.byteLength)
+      } else {
+        addWsMessage('received', String(event.data), textByteLength(String(event.data)))
+      }
     }
 
-    wsClient.onerror = (error) => {
-      addWsMessage('system', t('testTools.connectionError') + ': ' + error)
-      ElMessage.error(t('testTools.connectionError'))
+    wsClient.onerror = () => {
+      addWsMessage('system', t('testTools.connectionError'), textByteLength(t('testTools.connectionError')))
     }
 
-    wsClient.onclose = () => {
+    wsClient.onclose = (event) => {
+      clearWsConnectTimeoutTimer()
       wsConnected.value = false
-      addWsMessage('system', t('testTools.connectionClosed'))
+      wsConnecting.value = false
+      stopPeriodicSend(false)
+      wsClient = null
+
+      const reasonText = event.reason ? ` (${event.reason})` : ''
+      addWsMessage('system', `${t('testTools.connectionClosed')} [${event.code}]${reasonText}`, 0)
+
+      if (!wsCloseByUser) {
+        scheduleReconnect()
+      }
+      wsCloseByUser = false
     }
   } catch (error: any) {
+    wsConnected.value = false
+    wsConnecting.value = false
+    clearWsConnectTimeoutTimer()
     ElMessage.error(t('testTools.connectionFailed') + ': ' + error)
+    if (!wsCloseByUser) {
+      scheduleReconnect()
+    }
   }
+}
+
+const connectWebSocket = () => {
+  wsCloseByUser = false
+  clearWsReconnectTimer()
+  openWebSocket(false)
 }
 
 const disconnectWebSocket = () => {
+  wsCloseByUser = true
+  wsConnecting.value = false
+  clearWsReconnectTimer()
+  clearWsConnectTimeoutTimer()
+  stopPeriodicSend(false)
   if (wsClient) {
     wsClient.close()
     wsClient = null
-    wsConnected.value = false
   }
+  wsConnected.value = false
 }
 
 const sendWsMessage = () => {
+  if (!wsClient || !wsConnected.value || wsClient.readyState !== WebSocket.OPEN) {
+    ElMessage.warning(t('testTools.notConnected'))
+    return
+  }
   if (!wsForm.message) {
     ElMessage.warning(t('testTools.pleaseEnterMessage'))
     return
   }
 
-  if (wsClient && wsConnected.value) {
+  try {
     wsClient.send(wsForm.message)
-    addWsMessage('sent', wsForm.message)
+    addWsMessage('sent', wsForm.message, textByteLength(wsForm.message))
     wsForm.message = ''
+  } catch (error: any) {
+    ElMessage.error(t('testTools.sendFailed') + ': ' + error)
   }
 }
 
-const addWsMessage = (type: string, content: string) => {
+const sendWsPing = () => {
+  if (!wsClient || !wsConnected.value || wsClient.readyState !== WebSocket.OPEN) {
+    ElMessage.warning(t('testTools.notConnected'))
+    return
+  }
+  const ping = 'ping'
+  try {
+    wsClient.send(ping)
+    addWsMessage('sent', ping, textByteLength(ping))
+  } catch (error: any) {
+    ElMessage.error(t('testTools.sendFailed') + ': ' + error)
+  }
+}
+
+const startPeriodicSend = () => {
+  if (!wsClient || !wsConnected.value || wsClient.readyState !== WebSocket.OPEN) {
+    ElMessage.warning(t('testTools.notConnected'))
+    return
+  }
+  if (!wsForm.message) {
+    ElMessage.warning(t('testTools.pleaseEnterMessage'))
+    return
+  }
+  stopPeriodicSend(false)
+  const interval = Math.max(100, wsForm.sendIntervalMs)
+  wsPeriodicSending.value = true
+  wsPeriodicSendTimer = setInterval(() => {
+    if (!wsClient || !wsConnected.value || wsClient.readyState !== WebSocket.OPEN) {
+      stopPeriodicSend(false)
+      return
+    }
+    const message = wsForm.message
+    wsClient.send(message)
+    addWsMessage('sent', message, textByteLength(message))
+  }, interval)
+  ElMessage.success(t('testTools.periodicSendStarted'))
+}
+
+const addWsMessage = (type: 'sent' | 'received' | 'system', content: string, bytes: number) => {
   const now = new Date()
-  const time = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`
-  wsMessages.value.push({ time, type, content })
+  const time = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}.${now.getMilliseconds().toString().padStart(3, '0')}`
+  wsMessages.value.push({ time, type, content, bytes })
   if (wsMessages.value.length > WS_MAX_MESSAGES) {
     wsMessages.value.splice(0, wsMessages.value.length - WS_MAX_MESSAGES)
   }
@@ -1275,7 +1695,20 @@ const clearWsMessages = () => {
   wsMessages.value = []
 }
 
+const copyWsLogs = async () => {
+  const lines = filteredWsMessages.value.map(msg => `[${msg.time}] [${wsTypeLabel(msg.type)}] [${msg.bytes}B] ${msg.content}`)
+  if (lines.length === 0) {
+    ElMessage.warning(t('testTools.noMessages'))
+    return
+  }
+  await navigator.clipboard.writeText(lines.join('\n'))
+  ElMessage.success(t('testTools.copiedToClipboard'))
+}
+
 onBeforeUnmount(() => {
+  clearWsReconnectTimer()
+  clearWsConnectTimeoutTimer()
+  stopPeriodicSend(false)
   disconnectWebSocket()
 })
 </script>
@@ -1378,6 +1811,35 @@ onBeforeUnmount(() => {
   gap: 8px;
 }
 
+.ws-options-grid {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px 12px;
+}
+
+.ws-inline-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ws-inline-item-tight {
+  margin-left: 8px;
+}
+
+.ws-inline-label {
+  white-space: nowrap;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.ws-filter-bar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
 .ws-message.sent {
   background: #e3f2fd;
   border-left: 3px solid #2196f3;
@@ -1401,6 +1863,12 @@ onBeforeUnmount(() => {
 .ws-type {
   font-weight: bold;
   min-width: 40px;
+}
+
+.ws-size {
+  color: var(--text-secondary);
+  min-width: 52px;
+  text-align: right;
 }
 
 .ws-content {
