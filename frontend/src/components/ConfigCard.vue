@@ -1,23 +1,45 @@
 <!-- frontend/src/components/ConfigCard.vue -->
 <template>
-  <el-card class="config-card config-page" shadow="hover">
+  <el-card class="config-card config-page" shadow="hover" header-class="config-main-header proxy-config-main-header">
     <template #header>
-      <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">
-        <h3>{{ $t('configCard.title') }}</h3>
-        <el-button type="primary" @click="exportConfigToml">
-          {{ $t('configCard.exportConfig') }}
-        </el-button>
+      <div class="config-header-wrap">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">
+          <h3>{{ $t('configCard.title') }}</h3>
+          <el-button type="primary" @click="exportConfigToml">
+            {{ $t('configCard.exportConfig') }}
+          </el-button>
+        </div>
+
+        <div v-if="rules.length > 1" class="rule-nav-panel rule-nav-in-header">
+          <div class="rule-nav-title">{{ $t('configCard.ruleNavigator') }}</div>
+          <div class="rule-nav-list">
+            <el-button
+              v-for="(rule, ruleIndex) in rules"
+              :key="`rule-nav-${rule.ID || ruleIndex}`"
+              size="small"
+              plain
+              :class="['rule-nav-btn', { 'is-active': activeRuleIndex === ruleIndex }]"
+              @click="scrollToRule(ruleIndex)"
+            >
+              {{ getRuleNavLabel(rule, ruleIndex) }}
+            </el-button>
+          </div>
+        </div>
       </div>
     </template>
 
     <!-- 规则配置 -->
     <TransitionGroup name="list" tag="div" class="rules-section">
-      <el-card 
-        v-for="(rule, ruleIndex) in rules" 
+      <div
+        v-for="(rule, ruleIndex) in rules"
         :key="rule.ID || ruleIndex"
-        class="rule-card"
-        shadow="hover"
+        :id="ruleAnchorId(ruleIndex)"
+        class="rule-anchor"
       >
+        <el-card
+          class="rule-card"
+          shadow="hover"
+        >
         <template #header>
           <div class="rule-header">
             <h4>{{ $t('configCard.rule') }} {{ ruleIndex + 1 }}</h4>
@@ -35,7 +57,7 @@
           </div>
         </template>
 
-        <el-form :model="rule" label-width="120px" class="form-grid">
+        <el-form :model="rule" label-width="110px" size="small" class="form-grid">
           <el-form-item :label="$t('configCard.listenAddr')">
             <el-select
               v-model="rule.ListenAddrs"
@@ -77,7 +99,7 @@
                   </div>
                 </template>
 
-                <el-form :model="rt" label-width="160px" class="route-form">
+                <el-form :model="rt" label-width="140px" size="small" class="route-form">
                   <el-row :gutter="20" class="route-match">
                     <el-col :span="10">
                       <el-form-item :label="$t('configCard.host')">
@@ -496,7 +518,8 @@
             </el-form-item>
           </template>
         </el-form>
-      </el-card>
+        </el-card>
+      </div>
     </TransitionGroup>
 
       <el-button @click="addRule" type="primary" style="margin-top: 10px;">
@@ -506,7 +529,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onBeforeUnmount, onMounted, nextTick, watch } from 'vue'
 import { GetConfig, OpenCertFileDialog, OpenKeyFileDialog, OpenDirectoryDialog, ExportCurrentConfigToml, SetListenRuleEnabled, SetRouteEnabled } from '../api'
 import { Plus, MagicStick, Folder } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
@@ -614,6 +637,77 @@ const rules = ref<ListenRule[]>([
     ],
   },
 ])
+
+const activeRuleIndex = ref(0)
+let scrollRafId = 0
+
+const ruleAnchorId = (index: number) => `proxy-rule-${index}`
+
+const getRulePrimaryListenAddr = (rule: ListenRule) => {
+  const addrs = (
+    Array.isArray(rule.ListenAddrs) && rule.ListenAddrs.length > 0
+      ? rule.ListenAddrs
+      : [rule.ListenAddr]
+  )
+    .map((addr) => (addr || '').trim())
+    .filter((addr) => addr !== '')
+
+  return addrs[0] || t('configCard.unsetListenAddr')
+}
+
+const getRuleNavLabel = (rule: ListenRule, index: number) =>
+  `${t('configCard.rule')} ${index + 1} · ${getRulePrimaryListenAddr(rule)}`
+
+const getStickyHeaderBottom = () => {
+  const stickyHeader = document.querySelector('.proxy-config-main-header') as HTMLElement | null
+  if (!stickyHeader || stickyHeader.offsetParent === null) return 0
+  return stickyHeader.getBoundingClientRect().bottom
+}
+
+const updateActiveRuleFromScroll = () => {
+  const anchors = Array.from(
+    { length: rules.value.length },
+    (_, i) => document.getElementById(ruleAnchorId(i))
+  ).filter((node): node is HTMLElement => !!node)
+  if (anchors.length === 0) {
+    activeRuleIndex.value = 0
+    return
+  }
+
+  const threshold = getStickyHeaderBottom() + 8
+
+  let currentIndex = 0
+  let minDistance = Number.POSITIVE_INFINITY
+  for (let i = 0; i < anchors.length; i++) {
+    const anchorTop = anchors[i].getBoundingClientRect().top
+    const distance = Math.abs(anchorTop - threshold)
+
+    // 取距离导航线最近的规则，避免“刚好差一点点”仍停留在上一条的问题
+    if (distance < minDistance) {
+      minDistance = distance
+      currentIndex = i
+    }
+  }
+
+  if (activeRuleIndex.value !== currentIndex) {
+    activeRuleIndex.value = currentIndex
+  }
+}
+
+const onScrollSyncActiveRule = () => {
+  if (scrollRafId) return
+  scrollRafId = window.requestAnimationFrame(() => {
+    scrollRafId = 0
+    updateActiveRuleFromScroll()
+  })
+}
+
+const scrollToRule = (index: number) => {
+  const target = document.getElementById(ruleAnchorId(index))
+  if (!target) return
+  target.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  activeRuleIndex.value = index
+}
 
 const onToggleListenRuleEnabled = async (rule: ListenRule) => {
   try {
@@ -773,6 +867,31 @@ onMounted(async () => {
         ],
       },
     ];
+  }
+
+  await nextTick()
+  window.addEventListener('scroll', onScrollSyncActiveRule, true)
+  window.addEventListener('resize', onScrollSyncActiveRule, { passive: true })
+  updateActiveRuleFromScroll()
+})
+
+watch(
+  () => rules.value.length,
+  async () => {
+    if (activeRuleIndex.value >= rules.value.length) {
+      activeRuleIndex.value = Math.max(rules.value.length - 1, 0)
+    }
+    await nextTick()
+    updateActiveRuleFromScroll()
+  }
+)
+
+onBeforeUnmount(() => {
+  window.removeEventListener('scroll', onScrollSyncActiveRule, true)
+  window.removeEventListener('resize', onScrollSyncActiveRule)
+  if (scrollRafId) {
+    window.cancelAnimationFrame(scrollRafId)
+    scrollRafId = 0
   }
 })
 
@@ -1136,16 +1255,28 @@ defineExpose({
 .config-page {
   height: 100%;
   overflow-y: auto;
-  padding: 16px;
+  padding: 10px;
 }
 
 .config-page :deep(.el-card__header) {
   border-bottom: 1px solid var(--border);
-  padding: 16px 20px;
+  padding: 12px 14px;
+}
+
+.config-page :deep(.config-main-header) {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  background: var(--card-bg);
 }
 
 .config-page :deep(.el-card__body) {
-  padding: 20px;
+  padding: 14px;
+}
+
+.config-header-wrap {
+  display: flex;
+  flex-direction: column;
 }
 
 .config-page h3 {
@@ -1161,7 +1292,7 @@ defineExpose({
 }
 
 .form-grid :deep(.el-form-item) {
-  margin-bottom: 22px;
+  margin-bottom: 14px;
 }
 
 .mini-hint {
@@ -1172,10 +1303,55 @@ defineExpose({
   color: var(--text-muted);
 }
 
+.rule-nav-panel {
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--input-bg);
+}
+
+.rule-nav-in-header {
+  margin-top: 8px;
+}
+
+.rule-nav-title {
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.rule-nav-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 96px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.rule-nav-btn {
+  max-width: 280px;
+  height: 24px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rule-nav-btn.is-active {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: var(--primary-light);
+}
+
+.rule-anchor {
+  scroll-margin-top: 120px;
+}
+
 .rules-section {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 14px;
 }
 
 .rule-card {
@@ -1183,6 +1359,14 @@ defineExpose({
   border: 1px solid var(--border);
   background: var(--card-bg);
   overflow: visible; /* For transition effects */
+}
+
+.rule-card :deep(.el-card__header) {
+  padding: 10px 12px;
+}
+
+.rule-card :deep(.el-card__body) {
+  padding: 12px;
 }
 
 .rule-header {
@@ -1193,7 +1377,7 @@ defineExpose({
 
 .rule-header h4 {
   margin: 0;
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 600;
   color: var(--text);
 }
@@ -1201,8 +1385,8 @@ defineExpose({
 .routes-section {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  padding-left: 12px;
+  gap: 10px;
+  padding-left: 8px;
 }
 
 .route-card {
@@ -1210,6 +1394,14 @@ defineExpose({
   background: var(--input-bg);
   border: 1px solid transparent;
   transition: all 0.3s;
+}
+
+.route-card :deep(.el-card__header) {
+  padding: 8px 10px;
+}
+
+.route-card :deep(.el-card__body) {
+  padding: 10px;
 }
 
 .route-card:hover {
@@ -1230,22 +1422,22 @@ defineExpose({
 }
 
 .sub-section {
-  margin-top: 20px;
+  margin-top: 12px;
   border-radius: var(--radius-md);
   border: 1px solid var(--border);
   background: var(--card-bg);
 }
 
 .sub-section-header {
-  padding: 12px 16px;
+  padding: 8px 10px;
   border-bottom: 1px solid var(--border);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--text-muted);
 }
 
 .sub-section-body {
-  padding: 16px;
+  padding: 10px;
 }
 
 .file-selector {
@@ -1258,9 +1450,9 @@ defineExpose({
 .header-item, .upstream-item {
   display: grid;
   grid-template-columns: 1fr 1fr auto;
-  gap: 12px;
+  gap: 8px;
   align-items: center;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 
 .upstream-item {
@@ -1277,11 +1469,11 @@ defineExpose({
 
 .headers-hint {
   display: block;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 
 .headers-actions {
-  margin-bottom: 16px;
+  margin-bottom: 8px;
 }
 
 /* Transition styles */
