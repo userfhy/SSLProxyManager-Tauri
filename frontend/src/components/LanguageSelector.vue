@@ -1,6 +1,6 @@
 <template>
     <div class="translation-container">
-        <el-dropdown trigger="click" @command="handleLocaleChange">
+        <el-dropdown trigger="click" popper-class="language-dropdown" @command="handleLocaleChange">
             <div class="language-icon" role="button" tabindex="0">
                 <svg viewBox="0 0 24 24" fill="currentColor">
                     <path d="m18.5 10l4.4 11h-2.155l-1.201-3h-4.09l-1.199 3h-2.154L16.5 10zM10 2v2h6v2h-1.968a18.2 18.2 0 0 1-3.62 6.301a15 15 0 0 0 2.335 1.707l-.75 1.878A17 17 0 0 1 9 13.725a16.7 16.7 0 0 1-6.201 3.548l-.536-1.929a14.7 14.7 0 0 0 5.327-3.042A18 18 0 0 1 4.767 8h2.24A16 16 0 0 0 9 10.877a16.2 16.2 0 0 0 2.91-4.876L2 6V4h6V2zm7.5 10.885L16.253 16h2.492z"></path>
@@ -79,57 +79,35 @@ const handleLocaleChange = async (val: string) => {
   height: 24px;
   color: var(--text);
 }
+</style>
 
-:deep(.el-dropdown-menu__item) {
+<style>
+.language-dropdown {
+  --el-dropdown-menuItem-hover-fill: var(--el-fill-color-light);
+  --el-dropdown-menuItem-hover-color: var(--el-text-color-primary);
+}
+
+.language-dropdown .el-dropdown-menu__item {
   color: var(--el-text-color-primary) !important;
-  font-weight: normal;
 }
 
-:deep(.el-dropdown-menu__item:hover) {
-  background-color: rgba(0, 0, 0, 0.04) !important;
+.language-dropdown .el-dropdown-menu__item:not(.is-disabled):hover,
+.language-dropdown .el-dropdown-menu__item:not(.is-disabled):focus,
+.language-dropdown .el-dropdown-menu__item:not(.is-disabled).is-focus {
+  background-color: var(--el-fill-color-light) !important;
   color: var(--el-text-color-primary) !important;
-  font-weight: 600 !important;
 }
 
-/* 暗色模式（非 light-mode） */
-:deep(html:not(.light-mode) .el-dropdown-menu__item:hover) {
-  font-weight: 600 !important;
-}
-
-:deep(.el-dropdown-menu__item.is-active) {
+.language-dropdown .el-dropdown-menu__item.is-active {
   color: var(--el-color-primary) !important;
   font-weight: 600 !important;
   background-color: transparent !important;
 }
 
-:deep(.el-dropdown-menu__item.is-active:hover) {
-  background-color: rgba(0, 0, 0, 0.04) !important;
+.language-dropdown .el-dropdown-menu__item.is-active:hover,
+.language-dropdown .el-dropdown-menu__item.is-active:focus,
+.language-dropdown .el-dropdown-menu__item.is-active.is-focus {
+  background-color: var(--el-fill-color-light) !important;
   color: var(--el-color-primary) !important;
-  font-weight: 600 !important;
-}
-
-:deep(html:not(.light-mode) .el-dropdown-menu__item.is-active:hover) {
-  color: var(--el-color-primary) !important;
-  font-weight: 600 !important;
-}
-</style>
-
-<style>
-/* 全局样式：暗色模式下的下拉菜单项（下拉菜单挂载在 body 上，需要使用全局样式） */
-html:not(.light-mode) .el-dropdown-menu__item:hover {
-  background-color: rgba(255, 255, 255, 0.08) !important;
-  color: #003cff !important;
-  font-weight: 600 !important;
-}
-
-html:not(.light-mode) .el-dropdown-menu__item.is-active {
-  color: #60a5fa !important;
-  font-weight: 600 !important;
-}
-
-html:not(.light-mode) .el-dropdown-menu__item.is-active:hover {
-  background-color: rgba(255, 255, 255, 0.08) !important;
-  color: #93c5fd !important;
-  font-weight: 600 !important;
 }
 </style>

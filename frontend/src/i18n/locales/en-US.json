@@ -105,7 +105,11 @@
       "minutes": "minutes",
       "second": "second",
       "seconds": "seconds"
-    }
+    },
+    "defaultFontSize": "Default Font Size",
+    "fontSizePx": "{size}px",
+    "fontSizeDefault": "Font: Default",
+    "fontSizeButton": "Font: {size}px"
   },
   "sidebar": {
     "expand": "Expand Sidebar",

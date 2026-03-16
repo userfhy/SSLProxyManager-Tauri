@@ -101,7 +101,11 @@
       "hour": "小时",
       "minute": "分",
       "second": "秒"
-    }
+    },
+    "defaultFontSize": "默认字体大小",
+    "fontSizePx": "{size}px",
+    "fontSizeDefault": "字体：默认",
+    "fontSizeButton": "字体：{size}px"
   },
   "sidebar": {
     "expand": "展开侧边栏",

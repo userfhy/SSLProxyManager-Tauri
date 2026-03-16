@@ -7,6 +7,27 @@
         <h1>{{ $t('app.title') }}</h1>
         <div class="top-bar-right">
           <div class="theme-control">
+            <el-dropdown trigger="click" popper-class="font-size-dropdown" @command="handleFontSizeCommand">
+              <el-button size="small" text class="font-size-btn">
+                {{ fontSizeButtonText }}
+                <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+              </el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="default" :disabled="fontSizeSetting === 'default'">
+                    {{ $t('app.defaultFontSize') }}
+                  </el-dropdown-item>
+                  <el-dropdown-item
+                    v-for="size in fontSizeOptions"
+                    :key="size"
+                    :command="String(size)"
+                    :disabled="fontSizeSetting === String(size)"
+                  >
+                    {{ $t('app.fontSizePx', { size }) }}
+                  </el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
             <LanguageSelector />
             <el-switch
               v-model="autoThemeEnabled"
@@ -19,6 +40,7 @@
             <el-button 
               @click="toggleTheme" 
               circle
+              text
               class="theme-btn"
               :title="autoThemeEnabled ? $t('app.autoTheme') : (isDark ? $t('app.manualTheme') : $t('app.manualTheme'))"
             >
@@ -123,7 +145,7 @@ import About from './components/About.vue'
 import Sidebar from './components/Sidebar.vue'
 import TermsDialog from './components/TermsDialog.vue'
 import LanguageSelector from './components/LanguageSelector.vue'
-import { Sunny, Moon, Check } from '@element-plus/icons-vue'
+import { Sunny, Moon, Check, ArrowDown } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox, ElNotification } from 'element-plus'
 import { GetConfig, SaveConfig } from './api'
 import { GetTermsAccepted } from './api'
@@ -240,6 +262,70 @@ const isDark = ref(true)
 
 // 自动切换主题开关
 const autoThemeEnabled = ref(true)
+
+const FONT_SIZE_STORAGE_KEY = 'globalFontSizeSetting'
+const fontSizeOptions = [9, 10, 11, 12, 13, 14, 16, 17,18, 19, 20, 21, 22, 23, 24] as const
+const fontSizeSetting = ref<string>('default')
+
+const fontSizeButtonText = computed(() => {
+  if (fontSizeSetting.value === 'default') {
+    return t('app.fontSizeDefault')
+  }
+  return t('app.fontSizeButton', { size: fontSizeSetting.value })
+})
+
+const applyGlobalFontSize = (value: string) => {
+  const rootStyle = document.documentElement.style
+  const keys = [
+    '--spm-font-size-base',
+    '--el-font-size-extra-large',
+    '--el-font-size-large',
+    '--el-font-size-medium',
+    '--el-font-size-base',
+    '--el-font-size-small',
+    '--el-font-size-extra-small',
+  ]
+
+  if (value === 'default') {
+    keys.forEach((k) => rootStyle.removeProperty(k))
+    return
+  }
+
+  const size = Number(value)
+  if (!Number.isFinite(size)) {
+    keys.forEach((k) => rootStyle.removeProperty(k))
+    return
+  }
+
+  rootStyle.setProperty('--spm-font-size-base', `${size}px`)
+  rootStyle.setProperty('--el-font-size-extra-large', `${size + 4}px`)
+  rootStyle.setProperty('--el-font-size-large', `${size + 2}px`)
+  rootStyle.setProperty('--el-font-size-medium', `${size + 1}px`)
+  rootStyle.setProperty('--el-font-size-base', `${size}px`)
+  rootStyle.setProperty('--el-font-size-small', `${Math.max(size - 1, 10)}px`)
+  rootStyle.setProperty('--el-font-size-extra-small', `${Math.max(size - 2, 9)}px`)
+}
+
+const loadFontSize = () => {
+  const saved = localStorage.getItem(FONT_SIZE_STORAGE_KEY)
+  const isAllowed = saved !== null && fontSizeOptions.includes(Number(saved) as (typeof fontSizeOptions)[number])
+  fontSizeSetting.value = isAllowed ? String(saved) : 'default'
+  applyGlobalFontSize(fontSizeSetting.value)
+}
+
+const handleFontSizeCommand = (command: string | number) => {
+  const value = String(command)
+  const isAllowed = value === 'default' || fontSizeOptions.includes(Number(value) as (typeof fontSizeOptions)[number])
+  if (!isAllowed) return
+
+  fontSizeSetting.value = value
+  if (value === 'default') {
+    localStorage.removeItem(FONT_SIZE_STORAGE_KEY)
+  } else {
+    localStorage.setItem(FONT_SIZE_STORAGE_KEY, value)
+  }
+  applyGlobalFontSize(value)
+}
 
 
 // 自动切换主题的定时器
@@ -583,6 +669,7 @@ const handleMenuSelect = (key: string) => {
 // 初始化
 onMounted(async () => {
   loadTheme()
+  loadFontSize()
   loadSidebarState()
   markLazyTabLoaded(activeTab.value)
   
@@ -783,6 +870,7 @@ onBeforeUnmount(() => {
 .app-container {
   display: flex;
   flex-direction: column;
+  font-size: var(--spm-font-size-base, 14px);
   height: 100vh;
   width: 100%;
   padding: 0;
@@ -838,17 +926,67 @@ onBeforeUnmount(() => {
   margin-right: 8px;
 }
 
+.font-size-btn {
+  min-width: 120px;
+  height: 32px;
+  border-radius: 4px;
+  color: var(--text);
+  --el-button-bg-color: transparent;
+  --el-button-border-color: transparent;
+  --el-button-hover-bg-color: var(--el-fill-color-light);
+  --el-button-hover-border-color: transparent;
+  --el-button-hover-text-color: var(--text);
+  --el-button-active-bg-color: var(--el-fill-color-light);
+  --el-button-active-border-color: transparent;
+  --el-button-active-text-color: var(--text);
+}
+
+.font-size-btn :deep(.el-icon) {
+  color: inherit;
+}
+
 .auto-theme-switch {
   --el-switch-on-color: var(--primary);
   --el-switch-off-color: var(--text-muted);
 }
 
 .theme-btn {
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  width: 32px;
+  height: 32px;
+  border-radius: 4px;
+  color: var(--text);
+  --el-button-bg-color: transparent;
+  --el-button-border-color: transparent;
+  --el-button-hover-bg-color: var(--el-fill-color-light);
+  --el-button-hover-border-color: transparent;
+  --el-button-hover-text-color: var(--text);
+  --el-button-active-bg-color: var(--el-fill-color-light);
+  --el-button-active-border-color: transparent;
+  --el-button-active-text-color: var(--text);
+  transition: background-color 0.2s;
+}
+
+.theme-btn :deep(.el-icon) {
+  color: inherit;
 }
 
 .theme-btn:hover {
-  transform: scale(1.08) rotate(15deg);
+  transform: none;
+}
+
+:deep(.font-size-dropdown .el-dropdown-menu__item) {
+  color: var(--text);
+}
+
+:deep(.font-size-dropdown .el-dropdown-menu__item:not(.is-disabled):hover),
+:deep(.font-size-dropdown .el-dropdown-menu__item:not(.is-disabled):focus) {
+  background-color: var(--el-fill-color-light);
+  color: var(--text);
+}
+
+:deep(.font-size-dropdown .el-dropdown-menu__item.is-disabled) {
+  color: var(--text-muted);
+  opacity: 0.75;
 }
 
 h1 {
@@ -1119,5 +1257,28 @@ h1 {
     height: 32px;
     font-size: 16px;
   }
+}
+</style>
+
+<style>
+/* 字体大小下拉菜单挂载在 body，需要全局样式覆盖 focus/hover 默认蓝底 */
+.font-size-dropdown {
+  --el-dropdown-menuItem-hover-fill: var(--el-fill-color-light);
+  --el-dropdown-menuItem-hover-color: var(--el-text-color-primary);
+}
+
+.font-size-dropdown .el-dropdown-menu__item {
+  color: var(--el-text-color-primary) !important;
+}
+
+.font-size-dropdown .el-dropdown-menu__item:not(.is-disabled):hover,
+.font-size-dropdown .el-dropdown-menu__item:not(.is-disabled):focus,
+.font-size-dropdown .el-dropdown-menu__item:not(.is-disabled).is-focus {
+  background-color: var(--el-fill-color-light) !important;
+  color: var(--el-text-color-primary) !important;
+}
+
+.font-size-dropdown .el-dropdown-menu__item.is-disabled {
+  color: var(--el-text-color-placeholder) !important;
 }
 </style>
