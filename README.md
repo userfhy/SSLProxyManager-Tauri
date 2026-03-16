@@ -57,6 +57,8 @@ It provides one UI to manage:
 
 ## Screenshots
 
+[![Preview Video](./SSLProxyManager_20260316.mp4)
+
 ![ScreenShot1](./screenshots/1.jpg)
 ![ScreenShot2](./screenshots/2.jpg)
 ![ScreenShot3](./screenshots/3.jpg)
