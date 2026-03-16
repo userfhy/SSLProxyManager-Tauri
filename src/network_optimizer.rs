@@ -14,6 +14,7 @@ pub struct TcpOptimizer {
     /// 允许地址重用
     pub reuse_address: bool,
     /// 允许端口重用（Linux）
+    #[cfg(all(unix, not(target_os = "solaris"), not(target_os = "illumos")))]
     pub reuse_port: bool,
     /// 接收缓冲区大小（字节）
     pub recv_buffer_size: Option<usize>,
@@ -28,6 +29,7 @@ impl Default for TcpOptimizer {
         Self {
             nodelay: true,
             reuse_address: true,
+            #[cfg(all(unix, not(target_os = "solaris"), not(target_os = "illumos")))]
             reuse_port: true,
             recv_buffer_size: Some(256 * 1024), // 256KB
             send_buffer_size: Some(256 * 1024), // 256KB
