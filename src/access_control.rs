@@ -92,47 +92,40 @@ pub fn is_allowed_fast(remote: &SocketAddr, headers: &HeaderMap, allow_all_lan: 
         return false;
     }
 
-    // 直接使用 remote.ip() 并转换为 IPv4-mapped 格式，确保正确处理 IPv4-mapped IPv6 地址
-    // 这是最可靠的方式，因为 remote.ip() 直接来自 socket
-    let remote_ip_raw = remote.ip();
-    let ip = to_ipv4_mapped(&remote_ip_raw);
-    
-    // info!("Access control check: remote_ip_raw={}, converted_ip={}, ip_str={}, allow_all_lan={}", 
-    //       remote_ip_raw, ip, ip_str, allow_all_lan);
-
-    // 如果允许所有 IP，直接返回 true（黑名单检查已在前面完成）
-    if allow_all_ip {
-        debug!("IP {} allowed (allow_all_ip=true)", ip);
-        return true;
-    }
-
-    // 本机回环地址（127.0.0.1 / ::1）永远允许，不需要加入白名单
-    if is_loopback_ip(&ip) {
-        debug!("IP {} is loopback, allowed", ip);
-        return true;
-    }
-
-    // 检查白名单：需要同时支持 IPv4 和 IPv4-mapped IPv6 格式
-    if whitelist
-        .iter()
-        .any(|e| {
-            if let Some(whitelist_ip) = parse_ip(&e.ip) {
-                let whitelist_ip = to_ipv4_mapped(&whitelist_ip);
-                whitelist_ip == ip
-            } else {
-                false
-            }
-        })
-    {
-        debug!("IP {} is in whitelist, allowed", ip);
-        return true;
-    }
-
+    let ip = to_ipv4_mapped(&remote.ip());
+    let allowed = is_allowed_remote_ip(remote, allow_all_lan, allow_all_ip, whitelist);
     let is_lan = is_lan_ip(&ip);
-    let allowed = allow_all_lan && is_lan;
     debug!("Access control: IP={}, ip_str={}, is_lan={}, allow_all_lan={}, allow_all_ip={}, final_allowed={}", 
            ip, ip_str, is_lan, allow_all_lan, allow_all_ip, allowed);
     
     allowed
 }
 
+/// 快速路径：仅基于 remote socket IP 做访问控制（不读取 headers，不做黑名单检查）。
+/// 适合调用方已完成黑名单判定且已经拿到 client_ip 的场景，避免重复解析与查询。
+pub fn is_allowed_remote_ip(
+    remote: &SocketAddr,
+    allow_all_lan: bool,
+    allow_all_ip: bool,
+    whitelist: &[config::WhitelistEntry],
+) -> bool {
+    let ip = to_ipv4_mapped(&remote.ip());
+
+    if allow_all_ip {
+        return true;
+    }
+
+    if is_loopback_ip(&ip) {
+        return true;
+    }
+
+    if whitelist.iter().any(|e| {
+        parse_ip(&e.ip)
+            .map(|w| to_ipv4_mapped(&w) == ip)
+            .unwrap_or(false)
+    }) {
+        return true;
+    }
+
+    allow_all_lan && is_lan_ip(&ip)
+}

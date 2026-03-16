@@ -665,6 +665,11 @@ fn precompile_regexes(config: &Config) {
             // 预编译请求体替换规则
             if let Some(replace_rules) = &route.request_body_replace {
                 for rule in replace_rules {
+                    if rule.enabled {
+                        if let Some(content_types) = rule.content_types.as_deref() {
+                            let _ = crate::proxy::cached_content_types(content_types);
+                        }
+                    }
                     if rule.use_regex && rule.enabled {
                         let _ = crate::proxy::cached_regex(&rule.find);
                     }
@@ -674,6 +679,11 @@ fn precompile_regexes(config: &Config) {
             // 预编译响应体替换规则
             if let Some(replace_rules) = &route.response_body_replace {
                 for rule in replace_rules {
+                    if rule.enabled {
+                        if let Some(content_types) = rule.content_types.as_deref() {
+                            let _ = crate::proxy::cached_content_types(content_types);
+                        }
+                    }
                     if rule.use_regex && rule.enabled {
                         let _ = crate::proxy::cached_regex(&rule.find);
                     }
@@ -684,8 +694,8 @@ fn precompile_regexes(config: &Config) {
             if let Some(headers) = &route.headers {
                 for expected in headers.values() {
                     if expected.contains('*') {
-                        // 将通配符转换为正则表达式模式
-                        let pattern = expected.replace('.', r"\.").replace('*', ".*");
+                        // 与 proxy::match_route 的运行时规则保持一致，确保命中同一缓存键
+                        let pattern = expected.replace('*', ".*");
                         let _ = crate::proxy::cached_regex(&pattern);
                     }
                 }
@@ -710,6 +720,12 @@ pub fn save_config() -> Result<()> {
 
 pub fn get_config() -> Config {
     CONFIG.read().clone()
+}
+
+/// 仅返回实时日志开关，避免在热路径 clone 整个 Config。
+#[inline]
+pub fn show_realtime_logs_enabled() -> bool {
+    CONFIG.read().show_realtime_logs
 }
 
 pub fn set_config(config: Config) {

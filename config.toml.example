@@ -82,9 +82,7 @@ weight = 1
 
 [[ws_proxy]]
 enabled = true
-listen_addrs = [
-    "0.0.0.0:8800"
-]
+listen_addr = "0.0.0.0:8800"
 ssl_enable = false
 cert_file = "/home/fhy/mygo/SSLproxy/ssl/cdc-report/server.crt"
 key_file = "/home/fhy/mygo/SSLproxy/ssl/cdc-report/server.key"

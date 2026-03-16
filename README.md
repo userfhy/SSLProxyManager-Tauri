@@ -1,312 +1,190 @@
 # SSLProxyManager
 
-**[中文文档 (Chinese Documentation)](README_zh.md)**
+**[中文文档 (Chinese)](README_zh.md)**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A desktop proxy management tool with a modern web-based UI for managing HTTP/HTTPS, WebSocket, and Stream (TCP/UDP) reverse proxies.
-
-SSLProxyManager is based on **Tauri 2 + Rust**, providing a management interface (frontend: **Vue 3 + Vite + Element Plus**) for configuring and managing:
+SSLProxyManager is a desktop proxy management app built with **Tauri 2 + Rust** (frontend: **Vue 3 + Vite + Element Plus**).
+It provides one UI to manage:
 
 - HTTP/HTTPS reverse proxy
 - WebSocket (WS/WSS) reverse proxy
-- Stream (TCP/UDP) Layer 4 proxy
-- Static resource hosting
-- Access control (LAN/whitelist/blacklist)
-- Rate limiting
-- Metrics storage and query
-- Request logs and historical data
-- Runtime status and log viewing
-- Dashboard with real-time statistics
+- Stream (TCP/UDP, Layer 4) proxy
+- Access control, rate limiting, logs, metrics, and test tools
 
-## Features Overview
+## Core Features
 
-- **HTTP/HTTPS Proxy (rules/routes)**
-  - Multiple listen nodes (`listen_addr` / `listen_addrs`)
-  - TLS (certificate/private key)
-  - Basic Auth (with optional header forwarding)
-  - Routing: path prefix matching + optional conditions (Host / HTTP methods / request headers)
-  - Request/response body replacement supports optional `content_types` filtering (by `Content-Type`)
-  - Upstream list (with weights)
-  - `proxy_pass_path` path rewriting
-  - Static directory priority (`static_dir`)
-  - Header injection (`set_headers`)
-  - Follow redirects configuration
-  - HTTP/2 support (optional)
-  - Compression (gzip/brotli)
-
-- **WebSocket Proxy (ws_proxy)**
-  - Each WS rule can be independently enabled
-  - WS global switch `ws_proxy_enabled` (when globally disabled, WS listeners will not start)
-  - TLS support (WSS)
-  - Path-based routing
-
-- **Stream Proxy (TCP/UDP, stream)**
-  - `listen_port` listen port (TCP or UDP)
-  - `proxy_pass` binds to upstream name
-  - Upstream supports consistent selection by client IP (default `hash_key = "$remote_addr"`)
-  - `proxy_connect_timeout` / `proxy_timeout` (string format, e.g., `300s`)
-
-- **Access Control**
-  - IP whitelist/blacklist
-  - LAN access control (allow all LAN)
-  - Separate controls for HTTP, WS, and Stream proxies
-
-- **Metrics & Monitoring**
-  - Real-time metrics collection
-  - Historical metrics storage (SQLite)
-  - Request logs with filtering and query
-  - Dashboard with statistics and charts
-  - Real-time log viewer
-
-- **Application Features**
-  - System tray integration
-  - Auto-start on system boot
-  - Single instance mode
-  - Auto-update check
-  - Internationalization (English/Chinese)
-  - Dark/Light theme support
+- HTTP/HTTPS proxy (`rules` / `routes`)
+  - Multiple listen addresses (`listen_addr` + `listen_addrs`)
+  - TLS certificates
+  - Basic Auth (with optional forwarding of `Authorization`)
+  - Route matching by path + optional host/method/header constraints
+  - URL rewrite, request/response body replacement
+  - Static directory serving with SPA fallback
+  - Weighted upstreams (smooth weighted round-robin)
+  - Optional follow-redirects per route
+- WebSocket proxy (`ws_proxy`)
+  - Global switch + per-rule enable
+  - WS/WSS support
+  - Longest-prefix path routing
+- Stream proxy (`stream`)
+  - TCP and UDP proxy
+  - Upstream health/failover support
+  - Hash-based upstream selection (`$remote_addr`) with optional consistent behavior
+- Access control
+  - HTTP / WS / Stream switches
+  - LAN allow mode, whitelist, blacklist
+- Observability
+  - Real-time dashboard metrics
+  - Historical metrics and request logs (SQLite)
+  - Real-time log panel
+- Utility tools in UI
+  - HTTP request test
+  - Route match test + route test suite
+  - Built-in performance test
+  - Config validator
+  - DNS lookup
+  - SSL cert inspection
+  - Self-signed cert generation
+  - Port scan
+  - Encode/decode tools
 
 ## Tech Stack
 
-- **Backend**: Rust (Tauri 2), Axum, Tokio, SQLx
-- **Frontend**: Vue 3, Vite, Element Plus, ECharts, Vue I18n
-- **Key Libraries**: 
-  - HTTP/WebSocket: Axum, Hyper, Tokio-Tungstenite
-  - TLS: Rustls
-  - Database: SQLite (via SQLx)
-  - Configuration: TOML
+- Backend: Rust, Tauri 2, Axum, Tokio, SQLx (SQLite)
+- Frontend: Vue 3, Vite, Element Plus, ECharts, Vue I18n
+- TLS: Rustls
 
 ## Screenshots
 
 ![ScreenShot1](./screenshots/1.jpg)
-
 ![ScreenShot2](./screenshots/2.jpg)
-
 ![ScreenShot3](./screenshots/3.jpg)
-
 ![ScreenShot4](./screenshots/4.jpg)
-
 ![ScreenShot5](./screenshots/5.jpg)
 
-## Directory Structure
+## Project Layout
 
-- `src/`: Rust backend code
-- `frontend/`: Frontend project (Vite)
-- `tauri.conf.json`: Tauri configuration (dev/build commands, devUrl, frontendDist, etc.)
-- `config.toml`: Runtime configuration (can be placed in project root in development mode)
-- `config.toml.example`: Configuration example
+- `src/`: Rust backend
+- `frontend/`: frontend app
+- `config.toml.example`: config reference
+- `tauri.conf.json`: Tauri build/dev settings
 
 ## Requirements
 
 - Node.js + npm
-- Rust toolchain (stable)
+- Rust stable toolchain
 
 ## Local Development
 
-### 1) Install Frontend Dependencies
+Install frontend dependencies:
 
 ```bash
 cd frontend
 npm install
 ```
 
-### 2) Start Tauri Development Mode
-
-Execute in the project root directory:
+Run in project root:
 
 ```bash
 npm run tauri:dev
 ```
 
-This command will, according to `tauri.conf.json`:
-
-- First enter `frontend` and execute `npm run dev`
-- Then start Tauri and load `http://localhost:5173`
-
-## Build & Release
-
-Execute in the project root directory:
+Build release package:
 
 ```bash
 npm run tauri:build
 ```
 
-This command will:
+## Configuration File Location
 
-- First enter `frontend` and execute `npm run build` (output: `frontend/dist`)
-- Then package with Tauri
+Runtime config is TOML.
 
-## Configuration (config.toml)
+- Debug mode: if `./config.toml` exists in project root, it is preferred.
+- Linux: `$XDG_CONFIG_HOME/SSLProxyManager/config.toml` or `~/.config/SSLProxyManager/config.toml`
+- Windows:
+  - Prefer `config.toml` next to executable
+  - Fallback `%APPDATA%\SSLProxyManager\config.toml`
+- macOS: `~/Library/Application Support/SSLProxyManager/config.toml`
 
-The project uses TOML for configuration.
+## Configuration Guide
 
-- **Development mode** (debug): If `config.toml` exists in the project root, it will be read with priority.
-- **Linux production mode**: Default location `~/.config/SSLProxyManager/config.toml`
+Use `config.toml.example` as the main template.
 
-> It is recommended to refer directly to `config.toml.example`.
+### HTTP/HTTPS (`[[rules]]`)
 
-### 1) HTTP/HTTPS Proxy (rules)
+- `listen_addr`: legacy single address (for compatibility)
+- `listen_addrs`: preferred multiple addresses; if empty, fallback to `listen_addr`
+- `ssl_enable`, `cert_file`, `key_file`
+- `basic_auth_enable`, `basic_auth_username`, `basic_auth_password`, `basic_auth_forward_header`
+- `rate_limit_*` fields (optional)
 
-- `[[rules]]`: Listen node
-  - `listen_addr`: Legacy single listen address (kept for backward compatibility)
-  - `listen_addrs`: Preferred multiple listen addresses, e.g. `[":8888", ":8889"]` (if empty, falls back to `listen_addr`)
-  - `ssl_enable`: Whether to enable TLS
-  - `cert_file` / `key_file`: Certificate and private key paths
-  - `basic_auth_enable` / `basic_auth_username` / `basic_auth_password`
-  - `basic_auth_forward_header`: Whether to forward the `Authorization` header to upstream
-  - `routes`: Routes list
-  - `ssl_enable`: Whether to enable TLS
-  - `cert_file` / `key_file`: Certificate and private key paths
-  - `basic_auth_enable` / `basic_auth_username` / `basic_auth_password`
-- `[[rules.routes]]`: Route
-  - `path`: Path prefix matching
-  - `host`: Optional host constraint (supports exact match and wildcard like `*.example.com`)
-  - `methods`: Optional HTTP method constraint (e.g. `["GET","POST"]`)
-  - `headers`: Optional request header constraint (exact match; supports wildcard `*` in expected value)
-  - `static_dir`: Static directory (optional)
-  - `proxy_pass_path`: Forward path rewriting (optional)
-  - `exclude_basic_auth`: Whether this route skips Basic Auth (optional)
-  - `follow_redirects`: Whether the proxy follows upstream 30x redirects (optional)
-  - `[rules.routes.set_headers]`: Header injection (optional)
-  - `request_body_replace` / `response_body_replace`: Body replacement rules (optional)
-    - `content_types`: Optional Content-Type filter for this replace rule (comma-separated, e.g. `text/html,application/json`)
-  - `[[rules.routes.upstreams]]`: Upstream list (optional)
+`[[rules.routes]]` supports:
 
-### 2) WS Proxy (ws_proxy)
+- `path`, `host`, `methods`, `headers`
+- `proxy_pass_path`, `follow_redirects`
+- `url_rewrite_rules`
+- `request_body_replace`, `response_body_replace` (optional `content_types` filter)
+- `set_headers`, `remove_headers`
+- `static_dir` (served before upstream)
+- `[[rules.routes.upstreams]]` with `url` + `weight`
 
-- **`ws_proxy_enabled`**: WS global switch (default `true`)
-  - `false`: WS listeners will not start (even if a ws rule has enabled=true)
-  - `true`: Then each ws rule's `enabled` takes effect
+### WebSocket (`[[ws_proxy]]`)
 
-- `[[ws_proxy]]`: WS listen rule list
-  - `enabled`: Whether to enable this rule
-  - `listen_addr`: Listen address, e.g., `0.0.0.0:8800`
-  - `ssl_enable`: Whether to enable TLS (wss)
-  - `cert_file` / `key_file`: Certificate and private key paths
-  - `[[ws_proxy.routes]]`
-    - `path`: Path prefix
-    - `upstream_url`: Upstream WS address, e.g., `ws://127.0.0.1:9000`
+- Global switch: `ws_proxy_enabled`
+- Rule fields: `enabled`, `listen_addr`, `ssl_enable`, `cert_file`, `key_file`
+- Routes: `[[ws_proxy.routes]]` with `path` and `upstream_url`
 
-### 3) Stream (TCP/UDP) Proxy (stream)
+Note: WS rule uses `listen_addr` (not `listen_addrs`).
 
-Stream is used for Layer 4 proxy: listen on a TCP/UDP port and forward to upstream.
+### Stream (`[stream]`)
 
-- `[stream]`
-  - `enabled`: Global switch
-  - `[[stream.upstreams]]`
-    - `name`: Upstream name (referenced by `proxy_pass`)
-    - `hash_key`: Default `$remote_addr` (consistently select upstream by client IP)
-    - `consistent`: Currently reserved as a configuration item
-    - `[[stream.upstreams.servers]]`
-      - `addr`: `host:port`
-      - `weight` / `max_fails` / `fail_timeout`: Fields reserved (can be enhanced in future strategies)
-  - `[[stream.servers]]`
-    - `enabled`: Whether to enable
-    - `listen_port`: Listen port
-    - `udp`: `false`=TCP, `true`=UDP
-    - `proxy_pass`: Reference upstream's `name`
-    - `proxy_connect_timeout`: e.g., `300s`
-    - `proxy_timeout`: e.g., `600s`
+- `stream.enabled`
+- `[[stream.upstreams]]`: `name`, `hash_key`, `consistent`
+- `[[stream.upstreams.servers]]`: `addr`, `weight`, `max_fails`, `fail_timeout`
+- `[[stream.servers]]`: `enabled`, `listen_port`, `listen_addr` (optional), `udp`, `proxy_pass`, `proxy_connect_timeout`, `proxy_timeout`
 
-#### Nginx Example Comparison
+### Global Flags (Generated Default Config)
 
-You can use the following Nginx stream configuration to understand the correspondence:
+Defaults below are from current backend code (`src/config.rs`) when creating a new config file:
 
-```nginx
-stream {
-    upstream sendimage {
-        hash $remote_addr consistent;
-        server 59.xx.xx.xx:8089 max_fails=1 fail_timeout=30s;
-    }
+- `ws_proxy_enabled = true`
+- `http_access_control_enabled = true`
+- `ws_access_control_enabled = true`
+- `stream_access_control_enabled = true`
+- `allow_all_lan = true`
+- `allow_all_ip = false`
+- `auto_start = false`
+- `show_realtime_logs = true`
+- `realtime_logs_only_errors = false`
+- `stream_proxy = true` (legacy field)
+- `max_body_size = 10485760`
+- `max_response_body_size = 10485760`
+- `upstream_connect_timeout_ms = 3000`
+- `upstream_read_timeout_ms = 30000`
+- `upstream_pool_max_idle = 200`
+- `upstream_pool_idle_timeout_sec = 90`
+- `enable_http2 = true`
+- `compression_enabled = false`
+- `compression_gzip = true`
+- `compression_brotli = true`
+- `compression_min_length = 1024`
+- `compression_gzip_level = 6`
+- `compression_brotli_level = 6`
 
-    server {
-        listen 50002;
-        proxy_pass sendimage;
-        proxy_connect_timeout 300s;
-        proxy_timeout 600s;
-    }
-}
-```
+Notes:
 
-The equivalent configuration in this project can be found in the `[stream]` section of `config.toml.example`.
-
-### 4) Global Configuration
-
-- `ws_proxy_enabled`: Enable/disable WebSocket proxy globally (default `true`)
-- `http_access_control_enabled`: Enable HTTP access control (default `true`)
-- `ws_access_control_enabled`: Enable WebSocket access control (default `false`)
-- `stream_access_control_enabled`: Enable Stream proxy access control (default `true`)
-- `allow_all_lan`: Allow all LAN IPs (default `true`)
-- `auto_start`: Auto-start proxy service on application launch (default `true`)
-- `show_realtime_logs`: Show real-time logs in UI (default `false`)
-- `realtime_logs_only_errors`: Show only error logs in real-time view (default `false`)
-- `stream_proxy`: Legacy field (use `[stream].enabled` instead)
-- `max_body_size`: Maximum request body size in bytes (default `10485760` = 10MB)
-- `max_response_body_size`: Maximum response body size in bytes (default `10485760` = 10MB)
-- `upstream_connect_timeout_ms`: Upstream connection timeout in milliseconds (default `5000`)
-- `upstream_read_timeout_ms`: Upstream read timeout in milliseconds (default `30000`)
-- `upstream_pool_max_idle`: Maximum idle connections in connection pool (default `100`)
-- `upstream_pool_idle_timeout_sec`: Idle connection timeout in seconds (default `60`)
-- `enable_http2`: Enable HTTP/2 support (default `false`)
-
-### 5) Access Control (Whitelist)
-
-- `[[whitelist]]`: IP whitelist entries
-  - `ip`: IP address or CIDR notation (e.g., `127.0.0.1` or `192.168.1.0/24`)
-
-### 6) Metrics Storage
-
-- `[metrics_storage]`: Metrics storage configuration
-  - `enabled`: Enable metrics storage (default `true`)
-  - `db_path`: SQLite database file path (e.g., `/path/to/metrics.db`)
-
-### 7) Update Configuration
-
-- `[update]`: Auto-update configuration
-  - `enabled`: Enable update checking (default `true`)
-  - `server_url`: Update server URL (empty for default)
-  - `auto_check`: Automatically check for updates (default `true`)
-  - `timeout_ms`: Update check timeout in milliseconds (default `10000`)
-  - `ignore_prerelease`: Ignore pre-release versions (default `true`)
-
-## UI Features
-
-The application provides a comprehensive web-based management interface:
-
-- **Dashboard**: Real-time statistics, metrics charts, and service status
-- **Base Configuration**: Global settings and proxy service controls
-- **HTTP/HTTPS Proxy Config**: Configure reverse proxy rules and routes
-- **WebSocket Proxy Config**: Configure WS/WSS proxy rules
-- **Stream Proxy Config**: Configure TCP/UDP Layer 4 proxy
-- **Access Control**: Manage IP whitelist/blacklist
-- **Metrics Storage**: View and manage metrics database
-- **Request Logs**: Query and filter historical request logs
-- **Log Viewer**: Real-time log viewing with filtering
-- **About**: Version information and update checking
+- `stream_proxy` is legacy and kept for compatibility. Prefer `[stream].enabled`.
+- `config.toml.example` may use sample values different from generated defaults.
 
 ## FAQ
 
-- **Q: What port does the frontend development server use?**  
-  A: The default port is `5173` (see `devUrl` in `tauri.conf.json`).
-
-- **Q: How do I change the frontend dev/build commands?**  
-  A: Modify `build.beforeDevCommand` / `build.beforeBuildCommand` in the root directory's `tauri.conf.json`.
-
-- **Q: Where is the configuration file located?**  
-  A: In development mode, if `config.toml` exists in the project root, it takes priority. In production (Linux), the default location is `~/.config/SSLProxyManager/config.toml`.
-
-- **Q: How do I enable auto-start on system boot?**  
-  A: Set `auto_start = true` in `config.toml`, and the application will automatically start the proxy service on launch.
-
-- **Q: Can I hide the application to system tray?**  
-  A: Yes, clicking the close button will hide the window to the system tray instead of exiting. You can quit from the tray menu.
-
-- **Q: How do I view historical metrics?**  
-  A: Enable metrics storage in the configuration, then use the "Metrics Storage" tab in the UI to query historical data.
-
-- **Q: How do I configure access control?**  
-  A: Use the "Access Control" tab to manage IP whitelist/blacklist, or edit `[[whitelist]]` entries in `config.toml`.
+- Which port is used in dev mode?
+  - `5173` (`tauri.conf.json -> build.devUrl`).
+- How to customize frontend dev/build commands?
+  - Edit `tauri.conf.json` `build.beforeDevCommand` and `build.beforeBuildCommand`.
+- Can the app run in tray mode?
+  - Yes. Closing the window hides to tray instead of exiting.
 
 ## Disclaimer
 
@@ -320,12 +198,8 @@ If you do not agree to the above terms, please do not use, distribute, or develo
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MIT. See [LICENSE](LICENSE).
 
 ## Repository
 
-- GitHub: [https://github.com/userfhy/SSLProxyManager-Tauri](https://github.com/userfhy/SSLProxyManager-Tauri)
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
+- GitHub: <https://github.com/userfhy/SSLProxyManager-Tauri>

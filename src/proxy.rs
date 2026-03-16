@@ -122,6 +122,11 @@ static UPSTREAM_LB: once_cell::sync::Lazy<DashMap<String, Arc<parking_lot::Mutex
 static REGEX_CACHE: once_cell::sync::Lazy<DashMap<String, Arc<Regex>>> =
     once_cell::sync::Lazy::new(DashMap::new);
 
+/// Content-Type 列表缓存：将 "text/html,application/json" 预解析为小写数组，
+/// 避免热路径每次 split/to_lowercase 分配。
+static CONTENT_TYPE_LIST_CACHE: once_cell::sync::Lazy<DashMap<String, Arc<[String]>>> =
+    once_cell::sync::Lazy::new(DashMap::new);
+
 /// 从缓存中获取或编译正则表达式。
 /// 优先使用全局缓存管理器，回退到本地 DashMap 缓存。
 #[inline]
@@ -146,6 +151,56 @@ pub fn cached_regex(pattern: &str) -> Option<Arc<Regex>> {
         }
         Err(_) => None,
     }
+}
+
+/// 从缓存中获取或解析 Content-Type 白名单（逗号分隔）。
+#[inline]
+pub fn cached_content_types(raw: &str) -> Arc<[String]> {
+    let key = raw.trim();
+    if key.is_empty() {
+        return Arc::from(Vec::<String>::new());
+    }
+
+    if let Some(entry) = CONTENT_TYPE_LIST_CACHE.get(key) {
+        return entry.clone();
+    }
+
+    let parsed: Vec<String> = key
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_ascii_lowercase())
+        .collect();
+
+    let arc: Arc<[String]> = Arc::from(parsed);
+    CONTENT_TYPE_LIST_CACHE.insert(key.to_string(), arc.clone());
+    arc
+}
+
+#[inline]
+fn pure_content_type_from_headers<'a>(headers: &'a HeaderMap) -> Option<&'a str> {
+    headers
+        .get(axum::http::header::CONTENT_TYPE)
+        .and_then(|v: &HeaderValue| v.to_str().ok())
+        .and_then(|s| s.split(';').next())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+}
+
+#[inline]
+fn content_type_allowed(headers: &HeaderMap, configured: &str) -> bool {
+    let allowed = cached_content_types(configured);
+    if allowed.is_empty() {
+        return true;
+    }
+
+    let Some(actual) = pure_content_type_from_headers(headers) else {
+        return false;
+    };
+
+    allowed
+        .iter()
+        .any(|ct| ct.eq_ignore_ascii_case(actual))
 }
 
 /// DNS 解析辅助函数（带缓存）
@@ -1107,13 +1162,19 @@ fn push_log_lazy<F>(_app: &tauri::AppHandle, f: F)
 where
     F: FnOnce() -> String,
 {
+    let line = f();
+
+    // 关闭实时日志时，避免进入 emit 通道，减少事件派发带来的尾延迟。
+    if !config::show_realtime_logs_enabled() {
+        append_log(&mut LOGS.write(), line);
+        return;
+    }
+
     if let Some(tx) = LOG_TX.read().as_ref() {
-        let line = f();
         if tx.try_send(line).is_err() {
             LOG_DROPPED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }
     } else {
-        let line = f();
         append_log(&mut LOGS.write(), line);
     }
 }
@@ -1199,9 +1260,8 @@ async fn proxy_handler(
             return (status, "IP Forbidden").into_response();
         }
 
-        let allowed = access_control::is_allowed_fast(
+        let allowed = access_control::is_allowed_remote_ip(
             &remote,
-            req.headers(),
             state.allow_all_lan,
             state.allow_all_ip,
             &state.whitelist,
@@ -1489,6 +1549,12 @@ async fn proxy_handler(
 
     // 3. 处理反代逻辑
     if let Some(mut upstream_url) = pick_upstream_smooth(route) {
+        let has_enabled_response_body_replace = route
+            .response_body_replace
+            .as_ref()
+            .map(|rules| rules.iter().any(|r| r.enabled))
+            .unwrap_or(false);
+
         // 3.1 URL 重写（在构建目标URL之前）
         let mut final_uri = ctx.uri.clone();
         if let Some(rules) = route.url_rewrite_rules.as_ref() {
@@ -1552,8 +1618,8 @@ async fn proxy_handler(
         };
 
         let (req_parts, req_body_axum) = req.into_parts();
-        let inbound_headers = req_parts.headers.clone();
-        let method_up = req_parts.method.clone();
+        let inbound_headers = req_parts.headers;
+        let method_up = req_parts.method;
 
         // 读取请求体
         let (reqwest_body, req_body_size) = if state.stream_proxy {
@@ -1584,30 +1650,8 @@ async fn proxy_handler(
 
                             // 检查 Content-Type 过滤
                             if let Some(ref content_types) = rule.content_types {
-                                if !content_types.trim().is_empty() {
-                                    // 获取请求的 Content-Type
-                                    let request_content_type = inbound_headers
-                                        .get(axum::http::header::CONTENT_TYPE)
-                                        .and_then(|v: &HeaderValue| v.to_str().ok())
-                                        .unwrap_or("")
-                                        .to_lowercase();
-
-                                    // 解析 Content-Type，去除 charset 等参数
-                                    let pure_content_type = request_content_type
-                                        .split(';')
-                                        .next()
-                                        .unwrap_or("")
-                                        .trim();
-
-                                    // 检查是否匹配任一 Content-Type
-                                    let content_type_list: Vec<String> = content_types
-                                        .split(',')
-                                        .map(|s| s.trim().to_lowercase())
-                                        .collect();
-
-                                    if !content_type_list.iter().any(|ct| ct.as_str() == pure_content_type) {
-                                        continue; // 不匹配，跳过此规则
-                                    }
+                                if !content_type_allowed(&inbound_headers, content_types) {
+                                    continue; // 不匹配，跳过此规则
                                 }
                             }
 
@@ -1633,7 +1677,7 @@ async fn proxy_handler(
         };
 
         // 构造最终 headers（使用预计算的 SKIP_HEADERS）
-        let mut final_headers = HeaderMap::new();
+        let mut final_headers = HeaderMap::with_capacity(inbound_headers.len() + 8);
 
         for (k, v) in inbound_headers.iter() {
             if SKIP_HEADERS.contains(k) || is_hop_header_fast(k.as_str()) {
@@ -1675,7 +1719,16 @@ async fn proxy_handler(
             HeaderValue::from_static(if state.rule.ssl_enable { "https" } else { "http" }),
         );
 
-        final_headers.insert(axum::http::header::ACCEPT_ENCODING, HeaderValue::from_static(""));
+        // 只有在需要做响应体替换时才强制 identity，避免拿到压缩体后无法替换；
+        // 其他情况尽量透传客户端 Accept-Encoding，减少传输耗时。
+        if has_enabled_response_body_replace {
+            final_headers.insert(
+                axum::http::header::ACCEPT_ENCODING,
+                HeaderValue::from_static("identity"),
+            );
+        } else if let Some(v) = inbound_headers.get(axum::http::header::ACCEPT_ENCODING) {
+            final_headers.insert(axum::http::header::ACCEPT_ENCODING, v.clone());
+        }
 
         if !final_headers.contains_key(axum::http::header::CONTENT_TYPE) {
             if let Some(ct) = inbound_headers.get(axum::http::header::CONTENT_TYPE) {
@@ -1853,33 +1906,8 @@ async fn proxy_handler(
 
                             // 检查 Content-Type 过滤
                             if let Some(ref content_types) = rule.content_types {
-                                if !content_types.trim().is_empty() {
-                                    // 获取响应的 Content-Type（使用提前 clone 的 headers）
-                                    let response_content_type = response_headers
-                                        .get(axum::http::header::CONTENT_TYPE)
-                                        .and_then(|v: &HeaderValue| v.to_str().ok())
-                                        .unwrap_or("")
-                                        .to_lowercase();
-
-                                    // 解析 Content-Type，去除 charset 等参数
-                                    let pure_content_type = response_content_type
-                                        .split(';')
-                                        .next()
-                                        .unwrap_or("")
-                                        .trim();
-
-                                    // 检查是否匹配任一 Content-Type
-                                    let content_type_list: Vec<String> = content_types
-                                        .split(',')
-                                        .map(|s| s.trim().to_lowercase())
-                                        .collect();
-
-                                    if !content_type_list
-                                        .iter()
-                                        .any(|ct| ct.as_str() == pure_content_type)
-                                    {
-                                        continue; // 不匹配，跳过此规则
-                                    }
+                                if !content_type_allowed(&response_headers, content_types) {
+                                    continue; // 不匹配，跳过此规则
                                 }
                             }
 
