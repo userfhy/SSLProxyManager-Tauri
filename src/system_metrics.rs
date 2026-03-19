@@ -1,4 +1,6 @@
-use anyhow::{anyhow, Context, Result};
+#[cfg(not(target_os = "windows"))]
+use anyhow::Context;
+use anyhow::{anyhow, Result};
 use once_cell::sync::Lazy;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
@@ -27,8 +29,10 @@ use windows_sys::Win32::System::Performance::{
 use windows_sys::Win32::System::ProcessStatus::{GetPerformanceInfo, PERFORMANCE_INFORMATION};
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::System::SystemInformation::{
-    GetSystemTimes, GetTickCount64, GlobalMemoryStatusEx, MEMORYSTATUSEX,
+    GetTickCount64, GlobalMemoryStatusEx, MEMORYSTATUSEX,
 };
+#[cfg(target_os = "windows")]
+use windows_sys::Win32::System::Threading::GetSystemTimes;
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
@@ -83,9 +87,9 @@ struct WindowsLoadAvgState {
 #[cfg(target_os = "windows")]
 #[derive(Debug)]
 struct WindowsPdhState {
-    query: isize,
-    read_counter: isize,
-    write_counter: isize,
+    query: *mut c_void,
+    read_counter: *mut c_void,
+    write_counter: *mut c_void,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -419,6 +423,7 @@ fn latest_point() -> Option<SystemMetricsPoint> {
     REALTIME_POINTS.read().back().cloned()
 }
 
+#[cfg(any(target_os = "linux", target_os = "windows"))]
 fn init_system_metrics_writer() {
     if SYSTEM_METRICS_TX.read().is_some() {
         return;
@@ -463,12 +468,14 @@ fn init_system_metrics_writer() {
     });
 }
 
+#[cfg(any(target_os = "linux", target_os = "windows"))]
 fn try_enqueue_system_metrics(point: SystemMetricsPoint) {
     if let Some(tx) = SYSTEM_METRICS_TX.read().as_ref() {
         let _ = tx.try_send(point);
     }
 }
 
+#[cfg(any(target_os = "linux", target_os = "windows"))]
 async fn flush_system_metrics(buf: &mut Vec<SystemMetricsPoint>) {
     let Some(pool) = crate::metrics::db_pool() else {
         buf.clear();
@@ -800,7 +807,7 @@ fn to_wide_z(s: &str) -> Vec<u16> {
 }
 
 #[cfg(target_os = "windows")]
-fn pdh_counter_value_double(counter: isize) -> Option<f64> {
+fn pdh_counter_value_double(counter: *mut c_void) -> Option<f64> {
     let mut ctype: u32 = 0;
     let mut value: PDH_FMT_COUNTERVALUE = unsafe { zeroed() };
     let status = unsafe {
@@ -816,14 +823,14 @@ fn pdh_counter_value_double(counter: isize) -> Option<f64> {
 fn get_windows_disk_bps() -> (f64, f64) {
     let mut guard = WINDOWS_PDH.write();
     if guard.is_none() {
-        let mut query: isize = 0;
+        let mut query: *mut c_void = null_mut();
         let open_status = unsafe { PdhOpenQueryW(null_mut(), 0, &mut query) };
         if open_status != 0 {
             return (0.0, 0.0);
         }
 
-        let mut read_counter: isize = 0;
-        let mut write_counter: isize = 0;
+        let mut read_counter: *mut c_void = null_mut();
+        let mut write_counter: *mut c_void = null_mut();
         let read_path = to_wide_z("\\PhysicalDisk(_Total)\\Disk Read Bytes/sec");
         let write_path = to_wide_z("\\PhysicalDisk(_Total)\\Disk Write Bytes/sec");
 
@@ -872,7 +879,7 @@ fn collect_windows_network_stats() -> Result<(u64, u64, Vec<NetworkInterfaceStat
         let table = &*table_ptr;
         let rows = std::slice::from_raw_parts(table.Table.as_ptr(), table.NumEntries as usize);
         for row in rows {
-            if row.Type == IF_TYPE_SOFTWARE_LOOPBACK || row.Type == IF_TYPE_TUNNEL {
+            if row.Type == IF_TYPE_SOFTWARE_LOOPBACK as u32 || row.Type == IF_TYPE_TUNNEL as u32 {
                 continue;
             }
 
@@ -922,9 +929,9 @@ fn collect_windows_tcp_counts() -> (i64, i64, i64) {
         let mut close_wait = 0i64;
         for row in rows {
             match row.dwState {
-                MIB_TCP_STATE_ESTAB => established += 1,
-                MIB_TCP_STATE_TIME_WAIT => time_wait += 1,
-                MIB_TCP_STATE_CLOSE_WAIT => close_wait += 1,
+                x if x == MIB_TCP_STATE_ESTAB as u32 => established += 1,
+                x if x == MIB_TCP_STATE_TIME_WAIT as u32 => time_wait += 1,
+                x if x == MIB_TCP_STATE_CLOSE_WAIT as u32 => close_wait += 1,
                 _ => {}
             }
         }
@@ -949,9 +956,9 @@ fn collect_windows_tcp_counts() -> (i64, i64, i64) {
         let mut close_wait = 0i64;
         for row in rows {
             match row.State {
-                MIB_TCP_STATE_ESTAB => established += 1,
-                MIB_TCP_STATE_TIME_WAIT => time_wait += 1,
-                MIB_TCP_STATE_CLOSE_WAIT => close_wait += 1,
+                x if x == MIB_TCP_STATE_ESTAB as u32 => established += 1,
+                x if x == MIB_TCP_STATE_TIME_WAIT as u32 => time_wait += 1,
+                x if x == MIB_TCP_STATE_CLOSE_WAIT as u32 => close_wait += 1,
                 _ => {}
             }
         }
@@ -1224,13 +1231,6 @@ fn collect_one_point() -> Result<(SystemMetricsPoint, Vec<NetworkInterfaceStats>
     };
 
     Ok((point, raw.interfaces))
-}
-
-#[cfg(not(any(target_os = "linux", target_os = "windows")))]
-fn collect_one_point() -> Result<(SystemMetricsPoint, Vec<NetworkInterfaceStats>)> {
-    Err(anyhow!(
-        "system metrics sampler is only supported on Linux and Windows"
-    ))
 }
 
 #[cfg(any(target_os = "linux", target_os = "windows"))]

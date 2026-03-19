@@ -91,7 +91,9 @@ opt-level = 3
 windows-sys = { version = "0.61.2", features = [
   "Win32_Foundation",
   "Win32_NetworkManagement_IpHelper",
+  "Win32_NetworkManagement_Ndis",
   "Win32_System_Performance",
   "Win32_System_ProcessStatus",
   "Win32_System_SystemInformation",
+  "Win32_System_Threading",
 ] }
