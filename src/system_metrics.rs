@@ -1,4 +1,9 @@
-#[cfg(not(target_os = "windows"))]
+#![cfg_attr(
+    not(any(target_os = "linux", target_os = "windows")),
+    allow(dead_code, unused_imports)
+)]
+
+#[cfg(target_os = "linux")]
 use anyhow::Context;
 use anyhow::{anyhow, Result};
 use once_cell::sync::Lazy;
@@ -6,6 +11,7 @@ use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 #[cfg(target_os = "windows")]
 use std::ffi::c_void;
+#[cfg(any(target_os = "linux", target_os = "windows"))]
 use sqlx::QueryBuilder;
 use std::collections::VecDeque;
 #[cfg(target_os = "windows")]
@@ -34,8 +40,12 @@ use windows_sys::Win32::System::SystemInformation::{
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::System::Threading::GetSystemTimes;
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
-use std::time::{Duration, Instant};
-use tauri::{AppHandle, Emitter, Manager};
+#[cfg(any(target_os = "linux", target_os = "windows"))]
+use std::time::Instant;
+use std::time::Duration;
+#[cfg(any(target_os = "linux", target_os = "windows"))]
+use tauri::{Emitter, Manager};
+use tauri::AppHandle;
 
 const DEFAULT_SAMPLE_INTERVAL_SECS: i64 = 10;
 const MIN_SAMPLE_INTERVAL_SECS: i64 = 1;
@@ -87,9 +97,9 @@ struct WindowsLoadAvgState {
 #[cfg(target_os = "windows")]
 #[derive(Debug)]
 struct WindowsPdhState {
-    query: *mut c_void,
-    read_counter: *mut c_void,
-    write_counter: *mut c_void,
+    query: usize,
+    read_counter: usize,
+    write_counter: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -807,11 +817,11 @@ fn to_wide_z(s: &str) -> Vec<u16> {
 }
 
 #[cfg(target_os = "windows")]
-fn pdh_counter_value_double(counter: *mut c_void) -> Option<f64> {
+fn pdh_counter_value_double(counter: usize) -> Option<f64> {
     let mut ctype: u32 = 0;
     let mut value: PDH_FMT_COUNTERVALUE = unsafe { zeroed() };
     let status = unsafe {
-        PdhGetFormattedCounterValue(counter, PDH_FMT_DOUBLE, &mut ctype, &mut value)
+        PdhGetFormattedCounterValue(counter as *mut c_void, PDH_FMT_DOUBLE, &mut ctype, &mut value)
     };
     if status != 0 || value.CStatus != 0 {
         return None;
@@ -843,9 +853,9 @@ fn get_windows_disk_bps() -> (f64, f64) {
 
         let _ = unsafe { PdhCollectQueryData(query) };
         *guard = Some(WindowsPdhState {
-            query,
-            read_counter,
-            write_counter,
+            query: query as usize,
+            read_counter: read_counter as usize,
+            write_counter: write_counter as usize,
         });
     }
 
@@ -853,7 +863,7 @@ fn get_windows_disk_bps() -> (f64, f64) {
         return (0.0, 0.0);
     };
 
-    let status = unsafe { PdhCollectQueryData(state.query) };
+    let status = unsafe { PdhCollectQueryData(state.query as *mut c_void) };
     if status != 0 {
         return (0.0, 0.0);
     }
@@ -883,7 +893,7 @@ fn collect_windows_network_stats() -> Result<(u64, u64, Vec<NetworkInterfaceStat
                 continue;
             }
 
-            let mut name = utf16z_to_string(&row.InterfaceAlias);
+            let mut name = utf16z_to_string(&row.Alias);
             if name.is_empty() {
                 name = utf16z_to_string(&row.Description);
             }
@@ -928,10 +938,10 @@ fn collect_windows_tcp_counts() -> (i64, i64, i64) {
         let mut time_wait = 0i64;
         let mut close_wait = 0i64;
         for row in rows {
-            match row.dwState {
-                x if x == MIB_TCP_STATE_ESTAB as u32 => established += 1,
-                x if x == MIB_TCP_STATE_TIME_WAIT as u32 => time_wait += 1,
-                x if x == MIB_TCP_STATE_CLOSE_WAIT as u32 => close_wait += 1,
+            match row.dwState as i32 {
+                x if x == MIB_TCP_STATE_ESTAB => established += 1,
+                x if x == MIB_TCP_STATE_TIME_WAIT => time_wait += 1,
+                x if x == MIB_TCP_STATE_CLOSE_WAIT => close_wait += 1,
                 _ => {}
             }
         }
@@ -955,10 +965,10 @@ fn collect_windows_tcp_counts() -> (i64, i64, i64) {
         let mut time_wait = 0i64;
         let mut close_wait = 0i64;
         for row in rows {
-            match row.State {
-                x if x == MIB_TCP_STATE_ESTAB as u32 => established += 1,
-                x if x == MIB_TCP_STATE_TIME_WAIT as u32 => time_wait += 1,
-                x if x == MIB_TCP_STATE_CLOSE_WAIT as u32 => close_wait += 1,
+            match row.State as i32 {
+                x if x == MIB_TCP_STATE_ESTAB => established += 1,
+                x if x == MIB_TCP_STATE_TIME_WAIT => time_wait += 1,
+                x if x == MIB_TCP_STATE_CLOSE_WAIT => close_wait += 1,
                 _ => {}
             }
         }
@@ -1311,7 +1321,7 @@ pub fn stop_system_sampler() {
     #[cfg(target_os = "windows")]
     {
         if let Some(state) = WINDOWS_PDH.write().take() {
-            unsafe { PdhCloseQuery(state.query) };
+            unsafe { PdhCloseQuery(state.query as *mut c_void) };
         }
         *WINDOWS_DISK_ACCUM.write() = (0, 0, 0);
         *WINDOWS_LOAD_AVG.write() = WindowsLoadAvgState::default();
