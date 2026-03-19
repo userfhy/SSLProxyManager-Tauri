@@ -7,6 +7,8 @@ use serde_json::Value;
 use sqlx::QueryBuilder;
 use std::collections::VecDeque;
 #[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+#[cfg(target_os = "windows")]
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::time::{Duration, Instant};
@@ -264,7 +266,13 @@ fn choose_granularity(span: i64, requested: Option<i64>) -> i64 {
 #[cfg(target_os = "windows")]
 #[inline]
 fn json_u64(v: &Value, key: &str) -> u64 {
-    v.get(key).and_then(Value::as_u64).unwrap_or(0)
+    if let Some(u) = v.get(key).and_then(Value::as_u64) {
+        return u;
+    }
+    if let Some(i) = v.get(key).and_then(Value::as_i64) {
+        return i.max(0) as u64;
+    }
+    0
 }
 
 #[cfg(target_os = "windows")]
@@ -724,10 +732,12 @@ fn parse_file_nr() -> (u64, u64) {
 #[cfg(target_os = "windows")]
 fn run_powershell_json(script: &str) -> Result<Value> {
     let mut last_err = String::new();
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
 
     for exe in ["powershell", "pwsh"] {
         match Command::new(exe)
-            .args(["-NoProfile", "-Command", script])
+            .creation_flags(CREATE_NO_WINDOW)
+            .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script])
             .output()
         {
             Ok(output) => {
@@ -766,10 +776,20 @@ $os = Get-CimInstance Win32_OperatingSystem
 $cpuAvg = (Get-CimInstance Win32_Processor | Measure-Object -Property LoadPercentage -Average).Average
 if ($null -eq $cpuAvg) { $cpuAvg = 0 }
 
-$ifStats = @()
-if (Get-Command Get-NetAdapterStatistics -ErrorAction SilentlyContinue) {
-  $ifStats = Get-NetAdapterStatistics | Select-Object Name, ReceivedBytes, SentBytes
-}
+$ifStats = [System.Net.NetworkInformation.NetworkInterface]::GetAllNetworkInterfaces() | ForEach-Object {
+  try {
+    if ($_.NetworkInterfaceType -eq [System.Net.NetworkInformation.NetworkInterfaceType]::Loopback) { return }
+    if ($_.NetworkInterfaceType -eq [System.Net.NetworkInformation.NetworkInterfaceType]::Tunnel) { return }
+    $s = $_.GetIPStatistics()
+    [PSCustomObject]@{
+      Name = $_.Name
+      ReceivedBytes = [uint64]$s.BytesReceived
+      SentBytes = [uint64]$s.BytesSent
+    }
+  } catch {
+    $null
+  }
+} | Where-Object { $_ -ne $null }
 $netRx = ($ifStats | Measure-Object -Property ReceivedBytes -Sum).Sum
 $netTx = ($ifStats | Measure-Object -Property SentBytes -Sum).Sum
 if ($null -eq $netRx) { $netRx = 0 }
