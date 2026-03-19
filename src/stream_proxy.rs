@@ -34,7 +34,12 @@ struct FailState {
 static FAIL_MAP: once_cell::sync::Lazy<DashMap<String, FailState>> =
     once_cell::sync::Lazy::new(DashMap::new);
 
-pub async fn start_stream_servers(config: &StreamProxyConfig) -> Result<()> {
+#[inline]
+fn stream_log(app: &tauri::AppHandle, message: impl Into<String>) {
+    crate::proxy::send_log_with_app(app, format!("[STREAM] {}", message.into()));
+}
+
+pub async fn start_stream_servers(app: tauri::AppHandle, config: &StreamProxyConfig) -> Result<()> {
     stop_stream_servers().await;
 
     if !config.enabled {
@@ -62,9 +67,9 @@ pub async fn start_stream_servers(config: &StreamProxyConfig) -> Result<()> {
             parse_duration(&server.proxy_timeout).unwrap_or_else(|_| Duration::from_secs(600));
 
         if server.udp {
-            start_udp_server(server, upstream, connect_timeout, proxy_timeout, &mut handles).await?;
+            start_udp_server(&app, server, upstream, connect_timeout, proxy_timeout, &mut handles).await?;
         } else {
-            start_tcp_server(server, upstream, connect_timeout, proxy_timeout, &mut handles).await?;
+            start_tcp_server(&app, server, upstream, connect_timeout, proxy_timeout, &mut handles).await?;
         }
     }
 
@@ -158,6 +163,7 @@ pub fn validate_stream_config(cfg: &StreamProxyConfig) -> Result<()> {
 }
 
 async fn start_tcp_server(
+    app: &tauri::AppHandle,
     server: &StreamServer,
     upstream: &StreamUpstream,
     connect_timeout: Duration,
@@ -174,7 +180,19 @@ async fn start_tcp_server(
         .await
         .with_context(|| format!("Failed to bind stream tcp listener: {}", listen_addr))?;
 
-    tracing::info!("Stream TCP server listening on {} -> {}", listen_addr, upstream.name);
+    let bound_addr = listener
+        .local_addr()
+        .map(|a| a.to_string())
+        .unwrap_or_else(|_| listen_addr.clone());
+
+    tracing::info!("Stream TCP server listening on {} -> {}", bound_addr, upstream.name);
+    stream_log(
+        app,
+        format!(
+            "TCP listening address: {} -> {} (upstream={})",
+            listen_addr, bound_addr, upstream.name
+        ),
+    );
 
     let cfg = config::get_config();
     let access_control_enabled = cfg.stream_access_control_enabled;
@@ -332,6 +350,7 @@ fn now_ms() -> u64 {
 }
 
 async fn start_udp_server(
+    app: &tauri::AppHandle,
     server: &StreamServer,
     upstream: &StreamUpstream,
     _connect_timeout: Duration,
@@ -354,7 +373,18 @@ async fn start_udp_server(
         .await
         .with_context(|| format!("Failed to bind to {}", listen_addr))?;
 
-    tracing::info!("Stream UDP server listening on {}", listen_addr);
+    let bound_addr = listen_sock
+        .local_addr()
+        .map(|a| a.to_string())
+        .unwrap_or_else(|_| listen_addr.clone());
+    tracing::info!("Stream UDP server listening on {}", bound_addr);
+    stream_log(
+        app,
+        format!(
+            "UDP listening address: {} -> {} (upstream={})",
+            listen_addr, bound_addr, upstream.name
+        ),
+    );
 
     // 使用 DashMap 替代 Mutex<HashMap> 以提升并发性能
     let sessions: Arc<DashMap<SocketAddr, UdpSessionEntry>> = Arc::new(DashMap::new());

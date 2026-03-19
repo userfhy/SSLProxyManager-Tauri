@@ -9,7 +9,7 @@
         <div class="controls">
           <el-form-item :label="$t('dashboard.listenAddr')" style="margin-bottom: 0;">
             <el-select v-model="selectedListen" style="width: 200px;">
-              <el-option v-for="a in listenAddrs" :key="a" :label="a" :value="a" />
+              <el-option v-for="a in listenAddrs" :key="a" :label="getListenAddrLabel(a)" :value="a" />
             </el-select>
           </el-form-item>
 
@@ -27,7 +27,7 @@
           </el-form-item>
 
           <el-form-item :label="$t('dashboard.historicalData')" style="margin-bottom: 0;">
-            <el-config-provider :locale="zhCn">
+            <el-config-provider :locale="datePickerLocale">
               <el-date-picker
                 v-model="dateRange"
                 type="datetimerange"
@@ -105,66 +105,66 @@
 
       <el-card class="panel panel--upstream" shadow="hover">
         <template #header>
-          <div class="panel-title">Upstream 请求分布（Top 20）</div>
+          <div class="panel-title">{{ $t('dashboard.upstreamRequestDistributionTop20') }}</div>
         </template>
         <v-chart v-if="isActive" :option="upDistOption" class="chart" autoresize />
       </el-card>
 
       <el-card class="panel panel--errors" shadow="hover">
         <template #header>
-          <div class="panel-title">Tops（Route / Upstream）</div>
+          <div class="panel-title">{{ $t('dashboard.topsRouteUpstream') }}</div>
         </template>
         <div class="tables">
 
           <el-card class="table" shadow="never">
             <template #header>
-              <div class="table-title">Top Client IPs</div>
+              <div class="table-title">{{ $t('dashboard.topClientIps') }}</div>
             </template>
             <div class="rows">
               <div v-for="(it, idx) in topClientIps" :key="idx" class="row">
                 <div class="k">{{ it.item }}</div>
                 <div class="v">{{ it.count }}</div>
               </div>
-              <el-empty v-if="topClientIps.length===0" description="暂无" :image-size="60" />
+              <el-empty v-if="topClientIps.length===0" :description="$t('dashboard.noData')" :image-size="60" />
             </div>
           </el-card>
 
           <el-card class="table" shadow="never">
             <template #header>
-              <div class="table-title">Top Paths</div>
+              <div class="table-title">{{ $t('dashboard.topPaths') }}</div>
             </template>
             <div class="rows">
               <div v-for="(it, idx) in topPaths" :key="idx" class="row">
                 <div class="k">{{ it.item }}</div>
                 <div class="v">{{ it.count }}</div>
               </div>
-              <el-empty v-if="topPaths.length===0" description="暂无" :image-size="60" />
+              <el-empty v-if="topPaths.length===0" :description="$t('dashboard.noData')" :image-size="60" />
             </div>
           </el-card>
 
           <el-card class="table" shadow="never">
             <template #header>
-              <div class="table-title">Top Route(错误)</div>
+              <div class="table-title">{{ $t('dashboard.topRouteErrors') }}</div>
             </template>
             <div class="rows">
               <div v-for="(it, idx) in topRouteErr" :key="idx" class="row">
                 <div class="k">{{ it.key }}</div>
                 <div class="v">{{ it.value }}</div>
               </div>
-              <el-empty v-if="topRouteErr.length===0" description="暂无" :image-size="60" />
+              <el-empty v-if="topRouteErr.length===0" :description="$t('dashboard.noData')" :image-size="60" />
             </div>
           </el-card>
 
           <el-card class="table" shadow="never">
             <template #header>
-              <div class="table-title">Top Upstream(错误)</div>
+              <div class="table-title">{{ $t('dashboard.topUpstreamErrors') }}</div>
             </template>
             <div class="rows">
               <div v-for="(it, idx) in topUpstreamErrors" :key="idx" class="row">
                 <div class="k">{{ it.item }}</div>
                 <div class="v">{{ it.count }}</div>
               </div>
-              <el-empty v-if="topUpstreamErrors.length===0" description="暂无" :image-size="60" />
+              <el-empty v-if="topUpstreamErrors.length===0" :description="$t('dashboard.noData')" :image-size="60" />
             </div>
           </el-card>
         </div>
@@ -172,36 +172,36 @@
 
       <el-card class="panel panel--rate" shadow="hover">
         <template #header>
-          <div class="panel-title">错误率 / 成功率趋势</div>
+          <div class="panel-title">{{ $t('dashboard.errorSuccessRateTrend') }}</div>
         </template>
         <v-chart v-if="isActive" :option="rateOption" class="chart" autoresize />
       </el-card>
 
       <el-card class="panel panel--pie" shadow="hover">
         <template #header>
-          <div class="panel-title">状态码分布（饼图）</div>
+          <div class="panel-title">{{ $t('dashboard.statusDistributionPie') }}</div>
         </template>
         <v-chart v-if="isActive" :option="statusPieOption" class="chart" autoresize />
       </el-card>
 
       <el-card class="panel panel--throughput" shadow="hover">
         <template #header>
-          <div class="panel-title">吞吐量趋势（累计请求数）</div>
+          <div class="panel-title">{{ $t('dashboard.throughputTrendCumulative') }}</div>
         </template>
         <v-chart v-if="isActive" :option="throughputOption" class="chart" autoresize />
       </el-card>
 
       <el-card class="panel panel--latency-dist" shadow="hover">
         <template #header>
-          <div class="panel-title">延迟分布对比</div>
+          <div class="panel-title">{{ $t('dashboard.latencyDistributionComparison') }}</div>
         </template>
         <v-chart v-if="isActive" :option="latencyDistOption" class="chart" autoresize />
       </el-card>
 
       <el-card class="panel panel--top-routes" shadow="hover">
         <template #header>
-          <div class="panel-title">Top 路由请求分布</div>
-          <el-tooltip content="基于 matched_route_id 统计的请求数 Top10" placement="top">
+          <div class="panel-title">{{ $t('dashboard.topRouteRequestDistribution') }}</div>
+          <el-tooltip :content="$t('dashboard.topRouteHint')" placement="top">
             <el-icon class="header-icon"><InfoFilled /></el-icon>
           </el-tooltip>
         </template>
@@ -212,7 +212,11 @@
           <div v-if="topRoutes.length > 0" class="top-routes-chart">
             <v-chart :option="topRoutesOption" class="chart" autoresize />
           </div>
-          <el-empty v-else :description="historicalData ? '暂无路由数据' : '实时模式不查数据库，请载入历史数据查看'" :image-size="60" />
+          <el-empty
+            v-else
+            :description="historicalData ? $t('dashboard.noRouteData') : $t('dashboard.realtimeNoDbHint')"
+            :image-size="60"
+          />
         </template>
       </el-card>
     </div>
@@ -224,6 +228,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessage, ElConfigProvider } from 'element-plus'
 import { InfoFilled } from '@element-plus/icons-vue'
 import zhCn from 'element-plus/dist/locale/zh-cn.mjs'
+import enUs from 'element-plus/dist/locale/en.mjs'
 import { EventsOn, EventsOff } from '../api'
 import { GetListenAddrs, GetMetrics, QueryHistoricalMetrics, GetDashboardStats, GetConfig } from '../api'
 import VChart from 'vue-echarts'
@@ -235,8 +240,9 @@ import type { EChartsOption } from 'echarts'
 import { useI18n } from 'vue-i18n'
 import { useDateShortcuts } from '../composables/useDateShortcuts'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const { dateShortcuts } = useDateShortcuts()
+const datePickerLocale = computed(() => (locale.value === 'en-US' ? enUs : zhCn))
 
 use([
   CanvasRenderer,
@@ -297,8 +303,12 @@ type MetricsPayload = {
   topUpstreamErrors?: Array<{ item: string; count: number }>
 }
 
-const listenAddrs = ref<string[]>(['全局'])
-const selectedListen = ref<string>('全局')
+const GLOBAL_LISTEN_ADDR = '全局'
+const isGlobalListen = (listenAddr: string) => listenAddr === GLOBAL_LISTEN_ADDR
+const getListenAddrLabel = (listenAddr: string) => (isGlobalListen(listenAddr) ? t('dashboard.globalListen') : listenAddr)
+
+const listenAddrs = ref<string[]>([GLOBAL_LISTEN_ADDR])
+const selectedListen = ref<string>(GLOBAL_LISTEN_ADDR)
 const selectedWindow = ref<number>(900)
 
 const latest = ref<MetricsPayload | null>(null)
@@ -549,7 +559,7 @@ const fetchTopRoutes = async () => {
     return
   }
 
-  const listenAddr = selectedListen.value === '全局' ? '' : selectedListen.value
+  const listenAddr = isGlobalListen(selectedListen.value) ? '' : selectedListen.value
 
   const [startMs, endMs] = dateRange.value
   const start = Math.floor(startMs / 1000)
@@ -605,7 +615,7 @@ const loadHistoricalData = async () => {
 
   loadingHistorical.value = true
   try {
-    const listenAddr = selectedListen.value === '全局' ? '' : selectedListen.value
+    const listenAddr = isGlobalListen(selectedListen.value) ? '' : selectedListen.value
     
     // @ts-ignore
     const response = await QueryHistoricalMetrics({
@@ -885,7 +895,7 @@ const upDistOption = computed<EChartsOption>(() => {
     grid: { left: 20, right: 40, top: 20, bottom: 20, containLabel: true },
     xAxis: { type: 'value', ...commonAxis.value },
     yAxis: { type: 'category', data: data.map(d => d.name), axisLabel: { color: chartColors.value.textMuted, fontSize: 10 } },
-    series: [{ name: 'requests', type: 'bar', data: data.map(d => d.value), itemStyle: { color: chartColors.value.primary, borderRadius: [0, 4, 4, 0] } }],
+    series: [{ name: t('dashboard.requestCount'), type: 'bar', data: data.map(d => d.value), itemStyle: { color: chartColors.value.primary, borderRadius: [0, 4, 4, 0] } }],
   }
 })
 
@@ -913,8 +923,8 @@ const rateOption = computed<EChartsOption>(() => {
     xAxis: { type: 'category', data: v.x, boundaryGap: false, ...commonAxis.value },
     yAxis: { type: 'value', min: 0, max: 100, axisLabel: { color: chartColors.value.textMuted, formatter: (v: number) => `${v}%` }, ...commonAxis.value },
     series: [
-      { name: '成功率', type: 'line', smooth: false, showSymbol: false, large: true, largeThreshold: 200, data: okRate, lineStyle: { width: 2, color: chartColors.value.success }, sampling: 'lttb' },
-      { name: '错误率(5xx+err)', type: 'line', smooth: false, showSymbol: false, large: true, largeThreshold: 200, data: errRate, lineStyle: { width: 2, color: chartColors.value.danger }, sampling: 'lttb' },
+      { name: t('dashboard.successRate'), type: 'line', smooth: false, showSymbol: false, large: true, largeThreshold: 200, data: okRate, lineStyle: { width: 2, color: chartColors.value.success }, sampling: 'lttb' },
+      { name: t('dashboard.errorRate'), type: 'line', smooth: false, showSymbol: false, large: true, largeThreshold: 200, data: errRate, lineStyle: { width: 2, color: chartColors.value.danger }, sampling: 'lttb' },
     ],
   }
 })
@@ -935,7 +945,7 @@ const statusPieOption = computed<EChartsOption>(() => {
         left: 'center',
         top: 'middle',
         style: {
-          text: '暂无数据',
+          text: t('dashboard.noDataText'),
           fontSize: 14,
           fill: chartColors.value.textMuted,
         },
@@ -958,7 +968,7 @@ const statusPieOption = computed<EChartsOption>(() => {
         left: 'center',
         top: 'middle',
         style: {
-          text: '暂无数据',
+          text: t('dashboard.noDataText'),
           fontSize: 14,
           fill: chartColors.value.textMuted,
         },
@@ -972,7 +982,7 @@ const statusPieOption = computed<EChartsOption>(() => {
   if (total3xx > 0) data.push({ name: '3xx', value: total3xx, itemStyle: { color: chartColors.value.info } })
   if (total4xx > 0) data.push({ name: '4xx', value: total4xx, itemStyle: { color: chartColors.value.warning } })
   if (total5xx > 0) data.push({ name: '5xx', value: total5xx, itemStyle: { color: chartColors.value.danger } })
-  if (total0 > 0) data.push({ name: '错误', value: total0, itemStyle: { color: chartColors.value.gray } })
+  if (total0 > 0) data.push({ name: t('dashboard.errorLabel'), value: total0, itemStyle: { color: chartColors.value.gray } })
   
   return {
     ...baseOption.value,
@@ -981,7 +991,7 @@ const statusPieOption = computed<EChartsOption>(() => {
       formatter: (params: any) => {
         if (!params || !params.value) return ''
         const percent = total > 0 ? ((params.value / total) * 100).toFixed(2) : '0.00'
-        return `${params.name}<br/>${params.value} 次 (${percent}%)`
+        return `${params.name}<br/>${params.value} ${t('dashboard.timesUnit')} (${percent}%)`
       },
     },
     legend: {
@@ -992,7 +1002,7 @@ const statusPieOption = computed<EChartsOption>(() => {
     },
     series: [
       {
-        name: '状态码',
+        name: t('dashboard.statusCode'),
         type: 'pie',
         radius: ['40%', '70%'],
         center: ['60%', '50%'],
@@ -1048,7 +1058,7 @@ const throughputOption = computed<EChartsOption>(() => {
     yAxis: { type: 'value', ...commonAxis.value },
     series: [
       {
-        name: '累计请求数',
+        name: t('dashboard.cumulativeRequests'),
         type: 'line',
         smooth: false,
         showSymbol: false,
@@ -1084,7 +1094,7 @@ const latencyDistOption = computed<EChartsOption>(() => {
     xAxis: { type: 'category', data: names, ...commonAxis.value, axisLabel: { ...commonAxis.value.axisLabel, rotate: 30 } },
     yAxis: { type: 'value', ...commonAxis.value },
     series: [
-      { name: '请求数', type: 'bar', data: vals, itemStyle: { color: chartColors.value.purple }, barWidth: '60%' },
+      { name: t('dashboard.requestCount'), type: 'bar', data: vals, itemStyle: { color: chartColors.value.purple }, barWidth: '60%' },
     ],
   }
 })
@@ -1165,7 +1175,7 @@ const topRoutesOption = computed<EChartsOption>(() => {
     },
     series: [
       {
-        name: '请求数',
+        name: t('dashboard.requestCount'),
         type: 'bar',
         data: data.map((d) => d.value),
         itemStyle: { color: chartColors.value.primary, borderRadius: [0, 4, 4, 0] },
@@ -1208,8 +1218,8 @@ const processMetricsPayload = (payload: MetricsPayload) => {
       : []
   }
 
-  if (selectedListen.value !== '全局' && !listenAddrs.value.includes(selectedListen.value)) {
-    selectedListen.value = '全局'
+  if (!isGlobalListen(selectedListen.value) && !listenAddrs.value.includes(selectedListen.value)) {
+    selectedListen.value = GLOBAL_LISTEN_ADDR
   }
 
   const maxWin = selectedWindow.value >= 3600
@@ -1319,17 +1329,17 @@ const startHeartbeat = () => {
 const refreshListenAddrs = async () => {
   try {
     const addrs = await GetListenAddrs()
-    const list = ['全局', ...(Array.isArray(addrs) ? addrs : [])]
+    const list = [GLOBAL_LISTEN_ADDR, ...(Array.isArray(addrs) ? addrs : [])]
     const uniq = Array.from(new Set(list))
     listenAddrs.value = uniq
 
     if (!listenAddrs.value.includes(selectedListen.value)) {
-      selectedListen.value = '全局'
+      selectedListen.value = GLOBAL_LISTEN_ADDR
     }
   } catch (err) {
     console.error('获取监听地址列表失败:', err)
-    listenAddrs.value = ['全局']
-    selectedListen.value = '全局'
+    listenAddrs.value = [GLOBAL_LISTEN_ADDR]
+    selectedListen.value = GLOBAL_LISTEN_ADDR
   }
 }
 

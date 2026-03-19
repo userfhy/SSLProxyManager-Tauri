@@ -222,7 +222,7 @@ async fn resolve_hostname_with_cache(hostname: &str) -> Result<Vec<std::net::IpA
     tracing::debug!("DNS cache miss, resolving: {}", hostname);
     let ips: Vec<IpAddr> = tokio::net::lookup_host(format!("{}:0", hostname))
         .await
-        .map_err(|e| anyhow!("DNS 解析失败: {}", e))?
+        .map_err(|e| anyhow!("DNS lookup failed: {}", e))?
         .map(|addr| addr.ip())
         .collect();
 
@@ -330,21 +330,33 @@ impl RequestContext {
 pub fn start_server(app: tauri::AppHandle) -> Result<()> {
     init_log_task(app.clone());
 
-    if let Err(e) = ws_proxy::start_ws_servers(app.clone()) {
-        send_log(format!("启动 WS 监听器失败: {e}"));
+    let cfg = config::get_config();
+
+    send_log("[WS] Listener startup");
+    if !cfg.ws_proxy_enabled {
+        send_log("[WS] Disabled");
+    } else if let Err(e) = ws_proxy::start_ws_servers(app.clone()) {
+        send_log(format!("[WS] Failed to start listener: {e}"));
     }
 
     {
-        let stream_cfg = config::get_config().stream.clone();
+        send_log("[STREAM] Listener startup");
+
+        let stream_cfg = cfg.stream.clone();
         let app2 = app.clone();
-        tauri::async_runtime::spawn(async move {
-            if let Err(e) = stream_proxy::start_stream_servers(&stream_cfg).await {
-                send_log_with_app(&app2, format!("启动 Stream 监听器失败: {e}"));
-            }
-        });
+        if !stream_cfg.enabled {
+            send_log("[STREAM] Disabled");
+        } else {
+            tauri::async_runtime::spawn(async move {
+                if let Err(e) = stream_proxy::start_stream_servers(app2.clone(), &stream_cfg).await {
+                    send_log_with_app(&app2, format!("[STREAM] Failed to start listener: {e}"));
+                }
+            });
+        }
     }
 
-    let cfg = config::get_config();
+    send_log("[HTTP] Listener startup");
+
     let rules: Vec<_> = cfg.rules.into_iter().filter(|r| r.enabled).collect();
 
     // 计算总监听节点数：每个规则的 listen_addrs 数量（为空则按 1 计算）
@@ -373,7 +385,7 @@ pub fn start_server(app: tauri::AppHandle) -> Result<()> {
             state.phase = Phase::Stopped;
             drop(state);
             let _ = app.emit("status", "stopped");
-            send_log("未配置监听规则，服务保持停止状态");
+            send_log("No listen rules configured; service remains stopped");
             return Ok(());
         }
         state.phase = Phase::Starting;
@@ -411,8 +423,8 @@ pub fn start_server(app: tauri::AppHandle) -> Result<()> {
 
             let handle = tauri::async_runtime::spawn(async move {
                 if let Err(e) = precheck_rule(&rule_clone, &listen_addr_clone).await {
-                    error!("启动监听器失败({listen_addr_clone}): {e}");
-                    send_log(format!("启动监听器失败({listen_addr_clone}): {e}"));
+                    error!("Failed to start listener({listen_addr_clone}): {e}");
+                    send_log(format!("Failed to start listener({listen_addr_clone}): {e}"));
 
                     let payload = RuleStartErrorPayload {
                         listen_addr: listen_addr_clone.clone(),
@@ -451,26 +463,6 @@ pub fn start_server(app: tauri::AppHandle) -> Result<()> {
 
                 if transition_to_running {
                     let _ = app_handle.emit("status", "running");
-                    let final_cfg = config::get_config();
-                    for r in &final_cfg.rules {
-                        let routes_summary = r
-                            .routes
-                            .iter()
-                            .map(|rt| {
-                                format!(
-                                    "{} -> {} upstreams",
-                                    rt.path.as_deref().unwrap_or("/"),
-                                    rt.upstreams.len()
-                                )
-                            })
-                            .collect::<Vec<_>>()
-                            .join(", ");
-                        let log_line = format!(
-                            "[NODE {}] Server started | SSL: {} | Routes: [{}] | Allow all LAN: {}",
-                            r.listen_addr, r.ssl_enable, routes_summary, final_cfg.allow_all_lan
-                        );
-                        send_log_with_app(&app_handle, log_line);
-                    }
                 }
 
                 match start_rule_server(
@@ -483,8 +475,8 @@ pub fn start_server(app: tauri::AppHandle) -> Result<()> {
                 {
                     Ok(()) => {}
                     Err(e) => {
-                        error!("启动监听器失败({listen_addr_clone}): {e}");
-                        send_log(format!("启动监听器失败({listen_addr_clone}): {e}"));
+                        error!("Failed to start listener({listen_addr_clone}): {e}");
+                        send_log(format!("Failed to start listener({listen_addr_clone}): {e}"));
 
                         let payload = RuleStartErrorPayload {
                             listen_addr: listen_addr_clone.clone(),
@@ -518,7 +510,7 @@ pub fn start_server(app: tauri::AppHandle) -> Result<()> {
         }
     }
 
-    send_log("代理服务器启动中...");
+    send_log("Proxy server starting...");
     Ok(())
 }
 
@@ -564,11 +556,11 @@ pub fn stop_server(app: tauri::AppHandle) -> Result<()> {
             v
         };
         for addr in addrs {
-            send_log_with_app(&app, format!("[NODE {}] Server stopped", addr));
+            send_log_with_app(&app, format!("[HTTP NODE {}] Server stopped", addr));
         }
     }
 
-    info!("代理服务器已停止");
+    info!("Proxy server stopped");
     Ok(())
 }
 
@@ -637,7 +629,7 @@ async fn precheck_rule(rule: &config::ListenRule, listen_addr: &str) -> Result<(
             rule.key_file.clone(),
         )
         .await
-        .with_context(|| "加载 TLS 证书/私钥失败")?;
+        .with_context(|| "Failed to load TLS certificate/private key")?;
 
         let listener = tokio::net::TcpListener::bind(addr).await?;
         drop(listener);
@@ -690,9 +682,13 @@ async fn start_rule_server(
     let follow_builder = client_builder();
     let nofollow_builder = client_builder().redirect(Policy::none());
 
-    let client_follow = follow_builder.build().context("创建上游 HTTP client 失败")?;
+    let client_follow = follow_builder
+        .build()
+        .context("Failed to create upstream HTTP client")?;
 
-    let client_nofollow = nofollow_builder.build().context("创建上游 HTTP client 失败")?;
+    let client_nofollow = nofollow_builder
+        .build()
+        .context("Failed to create upstream HTTP client")?;
 
     // 缓存常用配置到 AppState
     let state = AppState {
@@ -750,8 +746,21 @@ async fn start_rule_server(
     
     let app = app.into_make_service_with_connect_info::<SocketAddr>();
 
-    send_log(format!("监听地址: {} -> {}", listen_addr, addr));
-    info!("监听地址: {} -> {}", listen_addr, addr);
+    let routes_summary = rule
+        .routes
+        .iter()
+        .map(|rt| {
+            format!(
+                "{} -> {} upstreams",
+                rt.path.as_deref().unwrap_or("/"),
+                rt.upstreams.len()
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    send_log(format!("[HTTP] Listening address: {} -> {}", listen_addr, addr));
+    info!("[HTTP] Listening address: {} -> {}", listen_addr, addr);
 
     if rule.ssl_enable {
         let tls_cfg = axum_server::tls_rustls::RustlsConfig::from_pem_file(
@@ -759,14 +768,25 @@ async fn start_rule_server(
             rule.key_file.clone(),
         )
         .await
-        .with_context(|| "加载 TLS 证书/私钥失败")?;
+        .with_context(|| "Failed to load TLS certificate/private key")?;
 
-        send_log(format!("HTTPS 已启用: {}", addr));
+        send_log(format!("[HTTP] HTTPS enabled: {}", addr));
 
         if need_dual_stack && addr.is_ipv6() {
-            send_log(format!("监听 IPv6 (dual-stack): {} (同时支持 IPv4 和 IPv6)", addr));
-            info!("监听 IPv6 (dual-stack): {} (同时支持 IPv4 和 IPv6)", addr);
+            send_log(format!(
+                "[HTTP] Listening on IPv6 (dual-stack): {} (supports both IPv4 and IPv6)",
+                addr
+            ));
+            info!(
+                "[HTTP] Listening on IPv6 (dual-stack): {} (supports both IPv4 and IPv6)",
+                addr
+            );
         }
+
+        send_log(format!(
+            "[HTTP NODE {}] Server started | SSL: {} | Routes: [{}] | Allow all LAN: {}",
+            listen_addr, rule.ssl_enable, routes_summary, cfg.allow_all_lan
+        ));
 
         // 使用 axum_server::Handle 实现优雅关闭：收到信号后立即停止接受新连接，
         // 并对所有已有的 keep-alive 连接发送 Connection: close，等待它们自然结束，
@@ -775,7 +795,7 @@ async fn start_rule_server(
         let ax_shutdown_handle = ax_handle.clone();
         tauri::async_runtime::spawn(async move {
             let _ = shutdown_rx.await;
-            info!("收到关闭信号，HTTPS 服务 {} 即将停止", addr);
+            info!("Shutdown signal received, HTTPS service {} is stopping", addr);
             ax_shutdown_handle.graceful_shutdown(Some(Duration::from_secs(5)));
         });
 
@@ -783,14 +803,25 @@ async fn start_rule_server(
             .handle(ax_handle)
             .serve(app)
             .await
-            .map_err(|e| anyhow!("HTTPS 服务失败: {e}"))?;
+            .map_err(|e| anyhow!("HTTPS service failed: {e}"))?;
     } else {
-        send_log(format!("HTTP 已启用: {}", addr));
+        send_log(format!("[HTTP] HTTP enabled: {}", addr));
 
         if need_dual_stack && addr.is_ipv6() {
-            send_log(format!("监听 IPv6 (dual-stack): {} (同时支持 IPv4 和 IPv6)", addr));
-            info!("监听 IPv6 (dual-stack): {} (同时支持 IPv4 和 IPv6)", addr);
+            send_log(format!(
+                "[HTTP] Listening on IPv6 (dual-stack): {} (supports both IPv4 and IPv6)",
+                addr
+            ));
+            info!(
+                "[HTTP] Listening on IPv6 (dual-stack): {} (supports both IPv4 and IPv6)",
+                addr
+            );
         }
+
+        send_log(format!(
+            "[HTTP NODE {}] Server started | SSL: {} | Routes: [{}] | Allow all LAN: {}",
+            listen_addr, rule.ssl_enable, routes_summary, cfg.allow_all_lan
+        ));
 
         // with_graceful_shutdown：收到信号后立即停止接受新连接，
         // 并对所有已有的 keep-alive 连接发送 Connection: close，等待它们自然结束，
@@ -804,10 +835,10 @@ async fn start_rule_server(
         axum::serve(listener, app)
             .with_graceful_shutdown(async move {
                 let _ = shutdown_rx.await;
-                info!("收到关闭信号，HTTP 服务 {} 即将停止", addr);
+                info!("Shutdown signal received, HTTP service {} is stopping", addr);
             })
             .await
-            .map_err(|e| anyhow!("HTTP 服务失败: {e}"))?;
+            .map_err(|e| anyhow!("HTTP service failed: {e}"))?;
     }
 
     Ok(())
@@ -828,13 +859,13 @@ fn parse_listen_addr(s: &str) -> Result<(SocketAddr, bool)> {
         } else if let Ok(addr) = ipv4_format.parse::<SocketAddr>() {
             (addr, true) // 即使 IPv6 失败，也标记需要同时绑定
         } else {
-            return Err(anyhow::anyhow!("解析 listen_addr 失败: {s}"));
+            return Err(anyhow::anyhow!("Failed to parse listen_addr: {s}"));
         }
     } else {
         // 完整地址格式：直接解析
         let addr = trimmed
             .parse::<SocketAddr>()
-            .with_context(|| format!("解析 listen_addr 失败: {s}"))?;
+            .with_context(|| format!("Failed to parse listen_addr: {s}"))?;
         (addr, false)
     };
 
@@ -1234,7 +1265,7 @@ async fn proxy_handler(
             let inbound_headers_line = std::str::from_utf8(&buf).unwrap_or("");
 
             send_log_with_app(&state.app, format!(
-                "反代错误(IN): {} {} -> [IP黑名单] status={} | inbound_headers=[{}]",
+                "Reverse proxy error (IN): {} {} -> [IP Blacklist] status={} | inbound_headers=[{}]",
                 ctx.method.as_str(),
                 ctx.uri,
                 status.as_u16(),
@@ -1291,7 +1322,7 @@ async fn proxy_handler(
             let inbound_headers_line = std::str::from_utf8(&buf).unwrap_or("");
 
             send_log_with_app(&state.app, format!(
-                "反代错误(IN): {} {} -> [访问控制拒绝] status={} | inbound_headers=[{}] | client_ip={}, remote_ip={}, allow_all_lan={}, allow_all_ip={}, whitelist_len={}",
+                "Reverse proxy error (IN): {} {} -> [Access Control Denied] status={} | inbound_headers=[{}] | client_ip={}, remote_ip={}, allow_all_lan={}, allow_all_ip={}, whitelist_len={}",
                 ctx.method.as_str(),
                 ctx.uri,
                 status.as_u16(),
@@ -1339,13 +1370,13 @@ async fn proxy_handler(
                         tokio::spawn(async move {
                             if let Err(e) = metrics::add_blacklist_entry(
                                 ip_clone.clone(),
-                                format!("速率限制超过，自动封禁 {} 秒", ban_seconds),
+                                format!("Rate limit exceeded, auto-ban for {} seconds", ban_seconds),
                                 ban_seconds,
                             ).await {
-                                tracing::warn!("添加IP到黑名单失败: {} - {}", ip_clone, e);
+                                tracing::warn!("Failed to add IP to blacklist: {} - {}", ip_clone, e);
                             } else {
                                 send_log_with_app(&app_clone, format!(
-                                    "[速率限制] IP {} 因超过速率限制被封禁 {} 秒",
+                                    "[Rate Limit] IP {} was banned for {} seconds due to rate limit exceeded",
                                     ip_clone, ban_seconds
                                 ));
                             }
@@ -1394,7 +1425,7 @@ async fn proxy_handler(
         let inbound_headers_line = std::str::from_utf8(&buf).unwrap_or("");
 
         send_log_with_app(&state.app, format!(
-            "反代错误(IN): {} {} -> [Basic Auth失败] status={} | inbound_headers=[{}]",
+            "Reverse proxy error (IN): {} {} -> [Basic Auth Failed] status={} | inbound_headers=[{}]",
             ctx.method.as_str(),
             ctx.uri,
             status.as_u16(),
@@ -1955,7 +1986,7 @@ async fn proxy_handler(
             let outbound_headers_line = std::str::from_utf8(&outbound_buf).unwrap_or("");
 
             send_log_with_app(&state.app, format!(
-                "反代错误(IN): {} {} -> {} status={} | inbound_headers=[{}]",
+                "Reverse proxy error (IN): {} {} -> {} status={} | inbound_headers=[{}]",
                 ctx.method.as_str(),
                 ctx.uri,
                 target,
@@ -1964,7 +1995,7 @@ async fn proxy_handler(
             ));
 
             send_log_with_app(&state.app, format!(
-                "反代错误(OUT): {} {} -> {} status={} | outbound_headers=[{}] | req_body_size={}",
+                "Reverse proxy error (OUT): {} {} -> {} status={} | outbound_headers=[{}] | req_body_size={}",
                 ctx.method.as_str(),
                 ctx.uri,
                 target,

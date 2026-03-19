@@ -22,7 +22,7 @@ async fn validate_config(cfg: &config::Config) -> Result<(), String> {
         }
         if rule.cert_file.trim().is_empty() || rule.key_file.trim().is_empty() {
             return Err(format!(
-                "监听规则 ({}) SSL 已启用，但证书或私钥文件路径为空",
+                "Listen rule ({}) has SSL enabled, but certificate or private key path is empty",
                 rule.listen_addr
             ));
         }
@@ -33,7 +33,7 @@ async fn validate_config(cfg: &config::Config) -> Result<(), String> {
         .await
         .map_err(|e| {
             format!(
-                "监听规则 ({}) TLS 证书加载失败: {e}",
+                "Failed to load TLS certificate for listen rule ({}): {e}",
                 rule.listen_addr
             )
         })?;
@@ -47,7 +47,7 @@ async fn validate_config(cfg: &config::Config) -> Result<(), String> {
             }
             if rule.cert_file.trim().is_empty() || rule.key_file.trim().is_empty() {
                 return Err(format!(
-                    "WS 规则 ({}) SSL 已启用，但证书或私钥文件路径为空",
+                    "WS rule ({}) has SSL enabled, but certificate or private key path is empty",
                     rule.listen_addr
                 ));
             }
@@ -58,7 +58,7 @@ async fn validate_config(cfg: &config::Config) -> Result<(), String> {
             .await
             .map_err(|e| {
                 format!(
-                    "WS 规则 ({}) TLS 证书加载失败: {e}",
+                    "Failed to load TLS certificate for WS rule ({}): {e}",
                     rule.listen_addr
                 )
             })?;
@@ -123,7 +123,7 @@ pub async fn check_update() -> Result<update::CheckResult, String> {
             is_prerelease: false,
             current_version: env!("CARGO_PKG_VERSION").to_string(),
             update_info: None,
-            error: Some("更新检查未启用".to_string()),
+            error: Some("Update check is disabled".to_string()),
         })
     }
 }
@@ -260,9 +260,9 @@ pub async fn open_cert_file_dialog(app: tauri::AppHandle) -> Result<Option<Strin
     let file = app
         .dialog()
         .file()
-        .set_title("选择证书文件")
-        .add_filter("证书文件", &["crt", "cer", "pem"])
-        .add_filter("所有文件", &["*"])
+        .set_title("Select Certificate File")
+        .add_filter("Certificate Files", &["crt", "cer", "pem"])
+        .add_filter("All Files", &["*"])
         .blocking_pick_file();
 
     Ok(file
@@ -275,9 +275,9 @@ pub async fn open_key_file_dialog(app: tauri::AppHandle) -> Result<Option<String
     let file = app
         .dialog()
         .file()
-        .set_title("选择私钥文件")
-        .add_filter("私钥文件", &["key", "pem"])
-        .add_filter("所有文件", &["*"])
+        .set_title("Select Private Key File")
+        .add_filter("Private Key Files", &["key", "pem"])
+        .add_filter("All Files", &["*"])
         .blocking_pick_file();
 
     Ok(file
@@ -290,7 +290,7 @@ pub async fn open_directory_dialog(app: tauri::AppHandle) -> Result<Option<Strin
     let dir = app
         .dialog()
         .file()
-        .set_title("选择静态文件目录")
+        .set_title("Select Static Directory")
         .blocking_pick_folder();
 
     Ok(dir
@@ -321,10 +321,10 @@ pub async fn save_config_toml_as(app: tauri::AppHandle, content: String) -> Resu
     let file = app
         .dialog()
         .file()
-        .set_title("导出所有配置")
+        .set_title("Export Full Configuration")
         .set_file_name(&default_name)
         .add_filter("TOML", &["toml"])
-        .add_filter("所有文件", &["*"])
+        .add_filter("All Files", &["*"])
         .blocking_save_file();
 
     let Some(file) = file else {
@@ -333,9 +333,9 @@ pub async fn save_config_toml_as(app: tauri::AppHandle, content: String) -> Resu
 
     let path: PathBuf = file
         .into_path()
-        .map_err(|e| format!("无法获取保存路径: {e}"))?;
+        .map_err(|e| format!("Failed to get save path: {e}"))?;
 
-    std::fs::write(&path, content).map_err(|e| format!("写入文件失败: {e}"))?;
+    std::fs::write(&path, content).map_err(|e| format!("Failed to write file: {e}"))?;
 
     Ok(Some(path.to_string_lossy().to_string()))
 }
@@ -387,7 +387,7 @@ pub async fn set_route_enabled(
     }
 
     if !found {
-        return Err("未找到对应的监听规则或路由".to_string());
+        return Err("Target listen rule or route not found".to_string());
     }
 
     config::ensure_config_ids_for_save(&mut cfg);
@@ -421,7 +421,7 @@ pub async fn set_listen_rule_enabled(
     }
 
     if !found {
-        return Err("未找到对应的监听规则".to_string());
+        return Err("Target listen rule not found".to_string());
     }
 
     config::ensure_config_ids_for_save(&mut cfg);
@@ -435,7 +435,7 @@ pub async fn export_current_config_toml(app: tauri::AppHandle) -> Result<Option<
     let cfg_path = crate::config::get_config_path().map_err(|e| e.to_string())?;
 
     let content = std::fs::read_to_string(&cfg_path)
-        .map_err(|e| format!("读取当前配置文件失败({}): {e}", cfg_path.display()))?;
+        .map_err(|e| format!("Failed to read current config file ({}): {e}", cfg_path.display()))?;
 
     let ts = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
     let default_name = format!("config-{}.toml", ts);
@@ -443,10 +443,10 @@ pub async fn export_current_config_toml(app: tauri::AppHandle) -> Result<Option<
     let file = app
         .dialog()
         .file()
-        .set_title("导出当前配置")
+        .set_title("Export Current Configuration")
         .set_file_name(&default_name)
         .add_filter("TOML", &["toml"])
-        .add_filter("所有文件", &["*"])
+        .add_filter("All Files", &["*"])
         .blocking_save_file();
 
     let Some(file) = file else {
@@ -455,9 +455,9 @@ pub async fn export_current_config_toml(app: tauri::AppHandle) -> Result<Option<
 
     let path: PathBuf = file
         .into_path()
-        .map_err(|e| format!("无法获取保存路径: {e}"))?;
+        .map_err(|e| format!("Failed to get save path: {e}"))?;
 
-    std::fs::write(&path, content).map_err(|e| format!("写入文件失败: {e}"))?;
+    std::fs::write(&path, content).map_err(|e| format!("Failed to write file: {e}"))?;
 
     Ok(Some(path.to_string_lossy().to_string()))
 }

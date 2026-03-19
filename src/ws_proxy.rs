@@ -79,6 +79,11 @@ impl FromRef<WsAppState> for AppHandleState {
     }
 }
 
+#[inline]
+fn ws_log(app: &tauri::AppHandle, message: impl Into<String>) {
+    crate::proxy::send_log_with_app(app, format!("[WS] {}", message.into()));
+}
+
 pub fn start_ws_servers(app: tauri::AppHandle) -> Result<()> {
     let cfg = config::get_config();
 
@@ -142,14 +147,17 @@ async fn start_ws_rule_server(
     let app_router = app_router.into_make_service_with_connect_info::<SocketAddr>();
 
     info!("WS listen {} -> {}", rule.listen_addr, addr);
+    ws_log(&app, format!("Listening address: {} -> {}", rule.listen_addr, addr));
 
     if rule.ssl_enable {
+        ws_log(&app, format!("HTTPS enabled: {}", addr));
+
         let tls_cfg = axum_server::tls_rustls::RustlsConfig::from_pem_file(
             rule.cert_file.clone(),
             rule.key_file.clone(),
         )
         .await
-        .with_context(|| "加载 WS TLS 证书/私钥失败")?;
+        .with_context(|| "Failed to load WS TLS certificate/private key")?;
 
         let mut shutdown_rx = shutdown_rx;
         
@@ -157,15 +165,25 @@ async fn start_ws_rule_server(
             // 在 Linux 上，绑定 [::]:port 通常已经启用了 IPv6 dual-stack，
             // 可以同时处理 IPv4 和 IPv6 连接，不需要再绑定 0.0.0.0:port
             // 如果系统不支持 dual-stack，绑定会失败，此时可以回退到只绑定 IPv4
-            info!("监听 IPv6 (dual-stack): {} (同时支持 IPv4 和 IPv6)", addr);
+            info!(
+                "WS listening on IPv6 (dual-stack): {} (supports both IPv4 and IPv6)",
+                addr
+            );
+            ws_log(
+                &app,
+                format!(
+                    "Listening on IPv6 (dual-stack): {} (supports both IPv4 and IPv6)",
+                    addr
+                ),
+            );
             
             let server_future = axum_server::bind_rustls(addr, tls_cfg).serve(app_router);
             tokio::select! {
                 res = server_future => {
-                    res.map_err(|e| anyhow!("WS HTTPS 服务失败: {e}"))?;
+                    res.map_err(|e| anyhow!("WS HTTPS service failed: {e}"))?;
                 }
                 _ = &mut shutdown_rx => {
-                    info!("收到关闭信号，WS HTTPS 服务 {} 即将停止", addr);
+                    info!("Shutdown signal received, WS HTTPS service {} is stopping", addr);
                 }
             }
         } else {
@@ -175,27 +193,39 @@ async fn start_ws_rule_server(
                     res.map_err(|e| anyhow!(e))?;
                 }
                 _ = &mut shutdown_rx => {
-                    info!("收到关闭信号，WS HTTPS 服务 {} 即将停止", addr);
+                    info!("Shutdown signal received, WS HTTPS service {} is stopping", addr);
                 }
             }
         }
     } else {
+        ws_log(&app, format!("HTTP enabled: {}", addr));
+
         let mut shutdown_rx = shutdown_rx;
         
         if need_dual_stack && addr.is_ipv6() {
             // 在 Linux 上，绑定 [::]:port 通常已经启用了 IPv6 dual-stack，
             // 可以同时处理 IPv4 和 IPv6 连接，不需要再绑定 0.0.0.0:port
             // 如果系统不支持 dual-stack，绑定会失败，此时可以回退到只绑定 IPv4
-            info!("监听 IPv6 (dual-stack): {} (同时支持 IPv4 和 IPv6)", addr);
+            info!(
+                "WS listening on IPv6 (dual-stack): {} (supports both IPv4 and IPv6)",
+                addr
+            );
+            ws_log(
+                &app,
+                format!(
+                    "Listening on IPv6 (dual-stack): {} (supports both IPv4 and IPv6)",
+                    addr
+                ),
+            );
             
             let listener = tokio::net::TcpListener::bind(addr).await?;
             let server_future = axum::serve(listener, app_router);
             tokio::select! {
                 res = server_future => {
-                    res.map_err(|e| anyhow!("WS HTTP 服务失败: {e}"))?;
+                    res.map_err(|e| anyhow!("WS HTTP service failed: {e}"))?;
                 }
                 _ = &mut shutdown_rx => {
-                    info!("收到关闭信号，WS HTTP 服务 {} 即将停止", addr);
+                    info!("Shutdown signal received, WS HTTP service {} is stopping", addr);
                 }
             }
         } else {
@@ -206,7 +236,7 @@ async fn start_ws_rule_server(
                     res.map_err(|e| anyhow!(e))?;
                 }
                 _ = &mut shutdown_rx => {
-                    info!("收到关闭信号，WS HTTP 服务 {} 即将停止", addr);
+                    info!("Shutdown signal received, WS HTTP service {} is stopping", addr);
                 }
             }
         }
@@ -334,13 +364,13 @@ fn parse_listen_addr(s: &str) -> Result<(SocketAddr, bool)> {
         } else if let Ok(addr) = ipv4_format.parse::<SocketAddr>() {
             (addr, true) // 即使 IPv6 失败，也标记需要同时绑定
         } else {
-            return Err(anyhow::anyhow!("解析 ws listen_addr 失败: {s}"));
+            return Err(anyhow::anyhow!("Failed to parse ws listen_addr: {s}"));
         }
     } else {
         // 完整地址格式：直接解析
         let addr = trimmed
             .parse::<SocketAddr>()
-            .with_context(|| format!("解析 ws listen_addr 失败: {s}"))?;
+            .with_context(|| format!("Failed to parse ws listen_addr: {s}"))?;
         (addr, false)
     };
 
