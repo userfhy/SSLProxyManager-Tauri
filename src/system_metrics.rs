@@ -15,6 +15,8 @@ use std::ffi::c_void;
 use sqlx::QueryBuilder;
 use std::collections::VecDeque;
 #[cfg(target_os = "windows")]
+use std::collections::HashMap;
+#[cfg(target_os = "windows")]
 use std::mem::{size_of, zeroed};
 #[cfg(target_os = "windows")]
 use std::ptr::null_mut;
@@ -820,6 +822,34 @@ fn to_wide_z(s: &str) -> Vec<u16> {
 }
 
 #[cfg(target_os = "windows")]
+fn normalize_windows_interface_name(raw: &str) -> Option<String> {
+    let mut name = raw.trim().to_string();
+    if name.is_empty() {
+        return None;
+    }
+
+    // Windows 会为同一个网卡暴露 QoS/WFP 过滤器实例，名称后缀不同但计数重复。
+    const FILTER_SUFFIX_MARKERS: [&str; 3] = [
+        "-QoS Packet Scheduler-",
+        "-WFP 802.3 MAC Layer LightWeight Filter-",
+        "-WFP Native MAC Layer LightWeight Filter-",
+    ];
+
+    for marker in FILTER_SUFFIX_MARKERS {
+        if let Some((base, _)) = name.split_once(marker) {
+            name = base.trim().to_string();
+            break;
+        }
+    }
+
+    if name.is_empty() {
+        None
+    } else {
+        Some(name)
+    }
+}
+
+#[cfg(target_os = "windows")]
 fn pdh_counter_value_double(counter: usize) -> Option<f64> {
     let mut ctype: u32 = 0;
     let mut value: PDH_FMT_COUNTERVALUE = unsafe { zeroed() };
@@ -884,9 +914,7 @@ fn collect_windows_network_stats() -> Result<(u64, u64, Vec<NetworkInterfaceStat
         return Err(anyhow!("GetIfTable2 failed: status={status}"));
     }
 
-    let mut total_rx: u64 = 0;
-    let mut total_tx: u64 = 0;
-    let mut interfaces: Vec<NetworkInterfaceStats> = Vec::new();
+    let mut merged: HashMap<String, (u64, u64)> = HashMap::new();
 
     unsafe {
         let table = &*table_ptr;
@@ -900,22 +928,35 @@ fn collect_windows_network_stats() -> Result<(u64, u64, Vec<NetworkInterfaceStat
             if name.is_empty() {
                 name = utf16z_to_string(&row.Description);
             }
-            if name.is_empty() {
+            let Some(name) = normalize_windows_interface_name(&name) else {
                 continue;
-            }
+            };
 
             let rx = row.InOctets;
             let tx = row.OutOctets;
-            total_rx = total_rx.saturating_add(rx);
-            total_tx = total_tx.saturating_add(tx);
+            if rx == 0 && tx == 0 {
+                continue;
+            }
 
-            interfaces.push(NetworkInterfaceStats {
-                name,
-                rx_bytes: to_i64_saturated(rx),
-                tx_bytes: to_i64_saturated(tx),
-            });
+            let entry = merged.entry(name).or_insert((0, 0));
+            // 同一物理网卡的过滤器实例通常重复计数，取最大值避免重复累加。
+            entry.0 = entry.0.max(rx);
+            entry.1 = entry.1.max(tx);
         }
         FreeMibTable(table_ptr as *mut c_void);
+    }
+
+    let mut total_rx: u64 = 0;
+    let mut total_tx: u64 = 0;
+    let mut interfaces: Vec<NetworkInterfaceStats> = Vec::with_capacity(merged.len());
+    for (name, (rx, tx)) in merged {
+        total_rx = total_rx.saturating_add(rx);
+        total_tx = total_tx.saturating_add(tx);
+        interfaces.push(NetworkInterfaceStats {
+            name,
+            rx_bytes: to_i64_saturated(rx),
+            tx_bytes: to_i64_saturated(tx),
+        });
     }
 
     interfaces.sort_unstable_by(|a, b| a.name.cmp(&b.name));
