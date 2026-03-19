@@ -86,3 +86,12 @@ incremental = false     # 禁用增量编译以获得更好的优化
 
 [profile.release.package."*"]
 opt-level = 3
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = [
+  "Win32_Foundation",
+  "Win32_NetworkManagement_IpHelper",
+  "Win32_System_Performance",
+  "Win32_System_ProcessStatus",
+  "Win32_System_SystemInformation",
+] }

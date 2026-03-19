@@ -3,13 +3,32 @@ use once_cell::sync::Lazy;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 #[cfg(target_os = "windows")]
-use serde_json::Value;
+use std::ffi::c_void;
 use sqlx::QueryBuilder;
 use std::collections::VecDeque;
 #[cfg(target_os = "windows")]
-use std::os::windows::process::CommandExt;
+use std::mem::{size_of, zeroed};
 #[cfg(target_os = "windows")]
-use std::process::Command;
+use std::ptr::null_mut;
+#[cfg(target_os = "windows")]
+use windows_sys::Win32::Foundation::{ERROR_INSUFFICIENT_BUFFER, FILETIME};
+#[cfg(target_os = "windows")]
+use windows_sys::Win32::NetworkManagement::IpHelper::{
+    FreeMibTable, GetIfTable2, GetTcp6Table2, GetTcpTable2, IF_TYPE_SOFTWARE_LOOPBACK,
+    IF_TYPE_TUNNEL, MIB_IF_TABLE2, MIB_TCP6TABLE2, MIB_TCPTABLE2, MIB_TCP_STATE_CLOSE_WAIT,
+    MIB_TCP_STATE_ESTAB, MIB_TCP_STATE_TIME_WAIT,
+};
+#[cfg(target_os = "windows")]
+use windows_sys::Win32::System::Performance::{
+    PdhAddEnglishCounterW, PdhCloseQuery, PdhCollectQueryData, PdhGetFormattedCounterValue,
+    PdhOpenQueryW, PDH_FMT_COUNTERVALUE, PDH_FMT_DOUBLE,
+};
+#[cfg(target_os = "windows")]
+use windows_sys::Win32::System::ProcessStatus::{GetPerformanceInfo, PERFORMANCE_INFORMATION};
+#[cfg(target_os = "windows")]
+use windows_sys::Win32::System::SystemInformation::{
+    GetSystemTimes, GetTickCount64, GlobalMemoryStatusEx, MEMORYSTATUSEX,
+};
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
@@ -18,6 +37,8 @@ const DEFAULT_SAMPLE_INTERVAL_SECS: i64 = 10;
 const MIN_SAMPLE_INTERVAL_SECS: i64 = 1;
 const MAX_SAMPLE_INTERVAL_SECS: i64 = 300;
 const IDLE_PAUSE_INTERVAL_SECS: i64 = 60;
+#[cfg(target_os = "windows")]
+const WINDOWS_MIN_EFFECTIVE_SAMPLE_INTERVAL_SECS: i64 = 3;
 const MAX_REALTIME_WINDOW_SECS: i64 = 7 * 24 * 3600; // 7 天
 const MAX_REALTIME_POINTS: usize = (MAX_REALTIME_WINDOW_SECS / MIN_SAMPLE_INTERVAL_SECS + 8) as usize;
 const MAX_CHART_POINTS: usize = 1200;
@@ -43,6 +64,29 @@ static REALTIME_POINTS: Lazy<RwLock<VecDeque<SystemMetricsPoint>>> =
     Lazy::new(|| RwLock::new(VecDeque::with_capacity(MAX_REALTIME_POINTS)));
 #[cfg(target_os = "windows")]
 static WINDOWS_DISK_ACCUM: Lazy<RwLock<(u64, u64, i64)>> = Lazy::new(|| RwLock::new((0, 0, 0)));
+#[cfg(target_os = "windows")]
+static WINDOWS_LOAD_AVG: Lazy<RwLock<WindowsLoadAvgState>> =
+    Lazy::new(|| RwLock::new(WindowsLoadAvgState::default()));
+#[cfg(target_os = "windows")]
+static WINDOWS_PDH: Lazy<RwLock<Option<WindowsPdhState>>> = Lazy::new(|| RwLock::new(None));
+
+#[cfg(target_os = "windows")]
+#[derive(Debug, Default)]
+struct WindowsLoadAvgState {
+    initialized: bool,
+    last_ts: i64,
+    load1: f64,
+    load5: f64,
+    load15: f64,
+}
+
+#[cfg(target_os = "windows")]
+#[derive(Debug)]
+struct WindowsPdhState {
+    query: isize,
+    read_counter: isize,
+    write_counter: isize,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NetworkInterfaceStats {
@@ -231,6 +275,19 @@ fn current_sample_interval_secs() -> i64 {
 }
 
 #[inline]
+fn effective_sample_interval_secs() -> i64 {
+    let configured = current_sample_interval_secs();
+    #[cfg(target_os = "windows")]
+    {
+        return configured.max(WINDOWS_MIN_EFFECTIVE_SAMPLE_INTERVAL_SECS);
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        configured
+    }
+}
+
+#[inline]
 fn is_system_metrics_persistence_enabled(cfg: &crate::config::Config) -> bool {
     let global_enabled = cfg
         .metrics_storage
@@ -263,7 +320,7 @@ fn choose_granularity(span: i64, requested: Option<i64>) -> i64 {
         return v.max(1);
     }
     if span <= 6 * 3600 {
-        current_sample_interval_secs()
+        effective_sample_interval_secs()
     } else if span <= 3 * 24 * 3600 {
         60
     } else if span <= 14 * 24 * 3600 {
@@ -275,41 +332,39 @@ fn choose_granularity(span: i64, requested: Option<i64>) -> i64 {
 
 #[cfg(target_os = "windows")]
 #[inline]
-fn json_u64(v: &Value, key: &str) -> u64 {
-    if let Some(u) = v.get(key).and_then(Value::as_u64) {
-        return u;
-    }
-    if let Some(i) = v.get(key).and_then(Value::as_i64) {
-        return i.max(0) as u64;
-    }
-    0
+fn filetime_to_u64(ft: FILETIME) -> u64 {
+    ((ft.dwHighDateTime as u64) << 32) | (ft.dwLowDateTime as u64)
 }
 
 #[cfg(target_os = "windows")]
-#[inline]
-fn json_f64(v: &Value, key: &str) -> f64 {
-    if let Some(f) = v.get(key).and_then(Value::as_f64) {
-        return f;
-    }
-    if let Some(i) = v.get(key).and_then(Value::as_i64) {
-        return i as f64;
-    }
-    if let Some(u) = v.get(key).and_then(Value::as_u64) {
-        return u as f64;
-    }
-    0.0
+fn utf16z_to_string(buf: &[u16]) -> String {
+    let len = buf.iter().position(|&x| x == 0).unwrap_or(buf.len());
+    String::from_utf16_lossy(&buf[..len]).trim().to_string()
 }
 
 #[cfg(target_os = "windows")]
-#[inline]
-fn json_i64(v: &Value, key: &str) -> i64 {
-    if let Some(i) = v.get(key).and_then(Value::as_i64) {
-        return i;
+fn update_windows_load_avg(cpu_usage_percent: f64, timestamp: i64) -> (f64, f64, f64) {
+    let mut s = WINDOWS_LOAD_AVG.write();
+    if !s.initialized {
+        s.initialized = true;
+        s.last_ts = timestamp;
+        s.load1 = cpu_usage_percent;
+        s.load5 = cpu_usage_percent;
+        s.load15 = cpu_usage_percent;
+        return (s.load1, s.load5, s.load15);
     }
-    if let Some(u) = v.get(key).and_then(Value::as_u64) {
-        return to_i64_saturated(u);
-    }
-    0
+
+    let dt = (timestamp - s.last_ts).max(1) as f64;
+    s.last_ts = timestamp;
+
+    let alpha1 = 1.0 - (-dt / 60.0).exp();
+    let alpha5 = 1.0 - (-dt / 300.0).exp();
+    let alpha15 = 1.0 - (-dt / 900.0).exp();
+
+    s.load1 += alpha1 * (cpu_usage_percent - s.load1);
+    s.load5 += alpha5 * (cpu_usage_percent - s.load5);
+    s.load15 += alpha15 * (cpu_usage_percent - s.load15);
+    (s.load1, s.load5, s.load15)
 }
 
 fn downsample_points(points: Vec<SystemMetricsPoint>, max_points: usize) -> Vec<SystemMetricsPoint> {
@@ -740,163 +795,209 @@ fn parse_file_nr() -> (u64, u64) {
 }
 
 #[cfg(target_os = "windows")]
-fn run_powershell_json(script: &str) -> Result<Value> {
-    let mut last_err = String::new();
-    const CREATE_NO_WINDOW: u32 = 0x08000000;
+fn to_wide_z(s: &str) -> Vec<u16> {
+    s.encode_utf16().chain(std::iter::once(0)).collect()
+}
 
-    for exe in ["powershell", "pwsh"] {
-        match Command::new(exe)
-            .creation_flags(CREATE_NO_WINDOW)
-            .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script])
-            .output()
-        {
-            Ok(output) => {
-                if !output.status.success() {
-                    last_err = format!(
-                        "{exe} exited with status {:?}: {}",
-                        output.status.code(),
-                        String::from_utf8_lossy(&output.stderr)
-                    );
-                    continue;
-                }
-                let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                if stdout.is_empty() {
-                    last_err = format!("{exe} returned empty output");
-                    continue;
-                }
-                let parsed: Value = serde_json::from_str(&stdout)
-                    .with_context(|| format!("failed to parse powershell json: {stdout}"))?;
-                return Ok(parsed);
-            }
-            Err(e) => {
-                last_err = format!("failed to execute {exe}: {e}");
-            }
+#[cfg(target_os = "windows")]
+fn pdh_counter_value_double(counter: isize) -> Option<f64> {
+    let mut ctype: u32 = 0;
+    let mut value: PDH_FMT_COUNTERVALUE = unsafe { zeroed() };
+    let status = unsafe {
+        PdhGetFormattedCounterValue(counter, PDH_FMT_DOUBLE, &mut ctype, &mut value)
+    };
+    if status != 0 || value.CStatus != 0 {
+        return None;
+    }
+    Some(unsafe { value.Anonymous.doubleValue }.max(0.0))
+}
+
+#[cfg(target_os = "windows")]
+fn get_windows_disk_bps() -> (f64, f64) {
+    let mut guard = WINDOWS_PDH.write();
+    if guard.is_none() {
+        let mut query: isize = 0;
+        let open_status = unsafe { PdhOpenQueryW(null_mut(), 0, &mut query) };
+        if open_status != 0 {
+            return (0.0, 0.0);
         }
+
+        let mut read_counter: isize = 0;
+        let mut write_counter: isize = 0;
+        let read_path = to_wide_z("\\PhysicalDisk(_Total)\\Disk Read Bytes/sec");
+        let write_path = to_wide_z("\\PhysicalDisk(_Total)\\Disk Write Bytes/sec");
+
+        let add_read = unsafe { PdhAddEnglishCounterW(query, read_path.as_ptr(), 0, &mut read_counter) };
+        let add_write = unsafe { PdhAddEnglishCounterW(query, write_path.as_ptr(), 0, &mut write_counter) };
+        if add_read != 0 || add_write != 0 {
+            unsafe { PdhCloseQuery(query) };
+            return (0.0, 0.0);
+        }
+
+        let _ = unsafe { PdhCollectQueryData(query) };
+        *guard = Some(WindowsPdhState {
+            query,
+            read_counter,
+            write_counter,
+        });
     }
 
-    Err(anyhow!(last_err))
+    let Some(state) = guard.as_ref() else {
+        return (0.0, 0.0);
+    };
+
+    let status = unsafe { PdhCollectQueryData(state.query) };
+    if status != 0 {
+        return (0.0, 0.0);
+    }
+
+    let read = pdh_counter_value_double(state.read_counter).unwrap_or(0.0);
+    let write = pdh_counter_value_double(state.write_counter).unwrap_or(0.0);
+    (read, write)
+}
+
+#[cfg(target_os = "windows")]
+fn collect_windows_network_stats() -> Result<(u64, u64, Vec<NetworkInterfaceStats>)> {
+    let mut table_ptr: *mut MIB_IF_TABLE2 = null_mut();
+    let status = unsafe { GetIfTable2(&mut table_ptr) };
+    if status != 0 || table_ptr.is_null() {
+        return Err(anyhow!("GetIfTable2 failed: status={status}"));
+    }
+
+    let mut total_rx: u64 = 0;
+    let mut total_tx: u64 = 0;
+    let mut interfaces: Vec<NetworkInterfaceStats> = Vec::new();
+
+    unsafe {
+        let table = &*table_ptr;
+        let rows = std::slice::from_raw_parts(table.Table.as_ptr(), table.NumEntries as usize);
+        for row in rows {
+            if row.Type == IF_TYPE_SOFTWARE_LOOPBACK || row.Type == IF_TYPE_TUNNEL {
+                continue;
+            }
+
+            let mut name = utf16z_to_string(&row.InterfaceAlias);
+            if name.is_empty() {
+                name = utf16z_to_string(&row.Description);
+            }
+            if name.is_empty() {
+                continue;
+            }
+
+            let rx = row.InOctets;
+            let tx = row.OutOctets;
+            total_rx = total_rx.saturating_add(rx);
+            total_tx = total_tx.saturating_add(tx);
+
+            interfaces.push(NetworkInterfaceStats {
+                name,
+                rx_bytes: to_i64_saturated(rx),
+                tx_bytes: to_i64_saturated(tx),
+            });
+        }
+        FreeMibTable(table_ptr as *mut c_void);
+    }
+
+    interfaces.sort_unstable_by(|a, b| a.name.cmp(&b.name));
+    Ok((total_rx, total_tx, interfaces))
+}
+
+#[cfg(target_os = "windows")]
+fn collect_windows_tcp_counts() -> (i64, i64, i64) {
+    fn collect_v4() -> (i64, i64, i64) {
+        let mut size: u32 = 0;
+        let mut status = unsafe { GetTcpTable2(null_mut(), &mut size, 0) };
+        if status != ERROR_INSUFFICIENT_BUFFER && status != 0 {
+            return (0, 0, 0);
+        }
+        let mut buf = vec![0u8; size as usize];
+        status = unsafe { GetTcpTable2(buf.as_mut_ptr() as *mut MIB_TCPTABLE2, &mut size, 0) };
+        if status != 0 {
+            return (0, 0, 0);
+        }
+        let table = unsafe { &*(buf.as_ptr() as *const MIB_TCPTABLE2) };
+        let rows = unsafe { std::slice::from_raw_parts(table.table.as_ptr(), table.dwNumEntries as usize) };
+        let mut established = 0i64;
+        let mut time_wait = 0i64;
+        let mut close_wait = 0i64;
+        for row in rows {
+            match row.dwState {
+                MIB_TCP_STATE_ESTAB => established += 1,
+                MIB_TCP_STATE_TIME_WAIT => time_wait += 1,
+                MIB_TCP_STATE_CLOSE_WAIT => close_wait += 1,
+                _ => {}
+            }
+        }
+        (established, time_wait, close_wait)
+    }
+
+    fn collect_v6() -> (i64, i64, i64) {
+        let mut size: u32 = 0;
+        let mut status = unsafe { GetTcp6Table2(null_mut(), &mut size, 0) };
+        if status != ERROR_INSUFFICIENT_BUFFER && status != 0 {
+            return (0, 0, 0);
+        }
+        let mut buf = vec![0u8; size as usize];
+        status = unsafe { GetTcp6Table2(buf.as_mut_ptr() as *mut MIB_TCP6TABLE2, &mut size, 0) };
+        if status != 0 {
+            return (0, 0, 0);
+        }
+        let table = unsafe { &*(buf.as_ptr() as *const MIB_TCP6TABLE2) };
+        let rows = unsafe { std::slice::from_raw_parts(table.table.as_ptr(), table.dwNumEntries as usize) };
+        let mut established = 0i64;
+        let mut time_wait = 0i64;
+        let mut close_wait = 0i64;
+        for row in rows {
+            match row.State {
+                MIB_TCP_STATE_ESTAB => established += 1,
+                MIB_TCP_STATE_TIME_WAIT => time_wait += 1,
+                MIB_TCP_STATE_CLOSE_WAIT => close_wait += 1,
+                _ => {}
+            }
+        }
+        (established, time_wait, close_wait)
+    }
+
+    let (a1, b1, c1) = collect_v4();
+    let (a2, b2, c2) = collect_v6();
+    (a1 + a2, b1 + b2, c1 + c2)
 }
 
 #[cfg(target_os = "windows")]
 fn collect_raw_snapshot_windows() -> Result<RawSnapshot> {
     let timestamp = chrono::Utc::now().timestamp();
-    let ps = r#"
-$ErrorActionPreference = 'SilentlyContinue'
-$os = Get-CimInstance Win32_OperatingSystem
-$cpuAvg = (Get-CimInstance Win32_Processor | Measure-Object -Property LoadPercentage -Average).Average
-if ($null -eq $cpuAvg) { $cpuAvg = 0 }
 
-$ifStats = [System.Net.NetworkInformation.NetworkInterface]::GetAllNetworkInterfaces() | ForEach-Object {
-  try {
-    if ($_.NetworkInterfaceType -eq [System.Net.NetworkInformation.NetworkInterfaceType]::Loopback) { return }
-    if ($_.NetworkInterfaceType -eq [System.Net.NetworkInformation.NetworkInterfaceType]::Tunnel) { return }
-    $s = $_.GetIPStatistics()
-    [PSCustomObject]@{
-      Name = $_.Name
-      ReceivedBytes = [uint64]$s.BytesReceived
-      SentBytes = [uint64]$s.BytesSent
+    let mut idle: FILETIME = unsafe { zeroed() };
+    let mut kernel: FILETIME = unsafe { zeroed() };
+    let mut user: FILETIME = unsafe { zeroed() };
+    let ok = unsafe { GetSystemTimes(&mut idle, &mut kernel, &mut user) };
+    if ok == 0 {
+        return Err(anyhow!("GetSystemTimes failed"));
     }
-  } catch {
-    $null
-  }
-} | Where-Object { $_ -ne $null }
-$netRx = ($ifStats | Measure-Object -Property ReceivedBytes -Sum).Sum
-$netTx = ($ifStats | Measure-Object -Property SentBytes -Sum).Sum
-if ($null -eq $netRx) { $netRx = 0 }
-if ($null -eq $netTx) { $netTx = 0 }
+    let cpu_idle = filetime_to_u64(idle);
+    let cpu_total = filetime_to_u64(kernel).saturating_add(filetime_to_u64(user));
 
-$diskReadBps = 0
-$diskWriteBps = 0
-$c = Get-Counter '\PhysicalDisk(_Total)\Disk Read Bytes/sec','\PhysicalDisk(_Total)\Disk Write Bytes/sec'
-if ($c -and $c.CounterSamples.Count -ge 2) {
-  $diskReadBps = [double]$c.CounterSamples[0].CookedValue
-  $diskWriteBps = [double]$c.CounterSamples[1].CookedValue
-}
-
-$tcpEstablished = 0
-$tcpTimeWait = 0
-$tcpCloseWait = 0
-if (Get-Command Get-NetTCPConnection -ErrorAction SilentlyContinue) {
-  $tcpEstablished = (Get-NetTCPConnection -State Established -ErrorAction SilentlyContinue | Measure-Object).Count
-  $tcpTimeWait = (Get-NetTCPConnection -State TimeWait -ErrorAction SilentlyContinue | Measure-Object).Count
-  $tcpCloseWait = (Get-NetTCPConnection -State CloseWait -ErrorAction SilentlyContinue | Measure-Object).Count
-}
-
-$procs = Get-Process -ErrorAction SilentlyContinue
-$processCount = ($procs | Measure-Object).Count
-$fdUsed = ($procs | Measure-Object -Property Handles -Sum).Sum
-if ($null -eq $fdUsed) { $fdUsed = 0 }
-
-$boot = [Management.ManagementDateTimeConverter]::ToDateTime($os.LastBootUpTime)
-$uptime = (New-TimeSpan -Start $boot -End (Get-Date)).TotalSeconds
-
-$obj = [ordered]@{
-  cpu_usage_percent = [double]$cpuAvg
-  load1 = [double]$cpuAvg
-  load5 = [double]$cpuAvg
-  load15 = [double]$cpuAvg
-  mem_total_bytes = [uint64]$os.TotalVisibleMemorySize * 1024
-  mem_available_bytes = [uint64]$os.FreePhysicalMemory * 1024
-  swap_total_bytes = [uint64]$os.TotalVirtualMemorySize * 1024
-  swap_free_bytes = [uint64]$os.FreeVirtualMemory * 1024
-  net_rx_bytes = [uint64]$netRx
-  net_tx_bytes = [uint64]$netTx
-  disk_read_bps = [double]$diskReadBps
-  disk_write_bps = [double]$diskWriteBps
-  tcp_established = [int64]$tcpEstablished
-  tcp_time_wait = [int64]$tcpTimeWait
-  tcp_close_wait = [int64]$tcpCloseWait
-  process_count = [int64]$processCount
-  fd_used = [int64]$fdUsed
-  fd_max = [int64]0
-  procs_running = [int64]0
-  procs_blocked = [int64]0
-  context_switches = [int64]0
-  processes_forked_total = [int64]0
-  uptime_seconds = [double]$uptime
-  interfaces = $ifStats
-}
-$obj | ConvertTo-Json -Compress -Depth 5
-"#;
-
-    let v = run_powershell_json(ps)?;
-
-    let mut interfaces = Vec::new();
-    if let Some(arr) = v.get("interfaces").and_then(Value::as_array) {
-        for it in arr {
-            let name = it
-                .get("Name")
-                .and_then(Value::as_str)
-                .unwrap_or("")
-                .trim()
-                .to_string();
-            if name.is_empty() {
-                continue;
-            }
-
-            let lower = name.to_ascii_lowercase();
-            if lower.contains("loopback") {
-                continue;
-            }
-
-            interfaces.push(NetworkInterfaceStats {
-                name,
-                rx_bytes: to_i64_saturated(json_u64(it, "ReceivedBytes")),
-                tx_bytes: to_i64_saturated(json_u64(it, "SentBytes")),
-            });
-        }
+    let mut mem: MEMORYSTATUSEX = unsafe { zeroed() };
+    mem.dwLength = size_of::<MEMORYSTATUSEX>() as u32;
+    let mem_ok = unsafe { GlobalMemoryStatusEx(&mut mem) };
+    if mem_ok == 0 {
+        return Err(anyhow!("GlobalMemoryStatusEx failed"));
     }
+    let mem_total_bytes = mem.ullTotalPhys;
+    let mem_available_bytes = mem.ullAvailPhys;
+    let swap_total_bytes = mem.ullTotalPageFile.saturating_sub(mem.ullTotalPhys);
+    let swap_free_bytes = mem.ullAvailPageFile.saturating_sub(mem.ullAvailPhys);
 
-    interfaces.sort_unstable_by(|a, b| a.name.cmp(&b.name));
+    let (net_rx_bytes, net_tx_bytes, interfaces) =
+        collect_windows_network_stats().unwrap_or((0, 0, Vec::new()));
 
-    let disk_read_bps = json_f64(&v, "disk_read_bps").max(0.0);
-    let disk_write_bps = json_f64(&v, "disk_write_bps").max(0.0);
+    let (disk_read_bps, disk_write_bps) = get_windows_disk_bps();
     let (disk_read_bytes, disk_write_bytes) = {
         let mut acc = WINDOWS_DISK_ACCUM.write();
         let dt = if acc.2 > 0 {
             (timestamp - acc.2).max(1) as f64
         } else {
-            current_sample_interval_secs() as f64
+            effective_sample_interval_secs() as f64
         };
         acc.0 = acc.0.saturating_add((disk_read_bps * dt) as u64);
         acc.1 = acc.1.saturating_add((disk_write_bps * dt) as u64);
@@ -904,34 +1005,66 @@ $obj | ConvertTo-Json -Compress -Depth 5
         (acc.0, acc.1)
     };
 
+    let (tcp_established, tcp_time_wait, tcp_close_wait) = collect_windows_tcp_counts();
+
+    let mut perf: PERFORMANCE_INFORMATION = unsafe { zeroed() };
+    let perf_ok = unsafe {
+        GetPerformanceInfo(
+            &mut perf,
+            size_of::<PERFORMANCE_INFORMATION>() as u32,
+        )
+    };
+    let (process_count, fd_used) = if perf_ok != 0 {
+        (perf.ProcessCount as i64, perf.HandleCount as u64)
+    } else {
+        (0, 0)
+    };
+
+    let uptime_seconds = unsafe { GetTickCount64() as f64 / 1000.0 };
+    let cpu_hint = {
+        let prev = LAST_RAW.read();
+        if let Some(p) = prev.as_ref() {
+            let total_delta = cpu_total.saturating_sub(p.cpu_total);
+            let idle_delta = cpu_idle.saturating_sub(p.cpu_idle);
+            if total_delta > 0 {
+                ((total_delta.saturating_sub(idle_delta)) as f64 / total_delta as f64) * 100.0
+            } else {
+                0.0
+            }
+        } else {
+            0.0
+        }
+    };
+    let (load1, load5, load15) = update_windows_load_avg(cpu_hint, timestamp);
+
     Ok(RawSnapshot {
         timestamp,
-        cpu_total: 0,
-        cpu_idle: 0,
-        cpu_usage_percent_hint: Some(json_f64(&v, "cpu_usage_percent")),
-        load1: json_f64(&v, "load1"),
-        load5: json_f64(&v, "load5"),
-        load15: json_f64(&v, "load15"),
-        mem_total_bytes: json_u64(&v, "mem_total_bytes"),
-        mem_available_bytes: json_u64(&v, "mem_available_bytes"),
-        swap_total_bytes: json_u64(&v, "swap_total_bytes"),
-        swap_free_bytes: json_u64(&v, "swap_free_bytes"),
-        net_rx_bytes: json_u64(&v, "net_rx_bytes"),
-        net_tx_bytes: json_u64(&v, "net_tx_bytes"),
+        cpu_total,
+        cpu_idle,
+        cpu_usage_percent_hint: None,
+        load1,
+        load5,
+        load15,
+        mem_total_bytes,
+        mem_available_bytes,
+        swap_total_bytes,
+        swap_free_bytes,
+        net_rx_bytes,
+        net_tx_bytes,
         interfaces,
         disk_read_bytes,
         disk_write_bytes,
-        tcp_established: json_i64(&v, "tcp_established"),
-        tcp_time_wait: json_i64(&v, "tcp_time_wait"),
-        tcp_close_wait: json_i64(&v, "tcp_close_wait"),
-        process_count: json_i64(&v, "process_count"),
-        fd_used: json_u64(&v, "fd_used"),
-        fd_max: json_u64(&v, "fd_max"),
-        procs_running: json_i64(&v, "procs_running"),
-        procs_blocked: json_i64(&v, "procs_blocked"),
-        context_switches: json_u64(&v, "context_switches"),
-        processes_forked_total: json_u64(&v, "processes_forked_total"),
-        uptime_seconds: json_f64(&v, "uptime_seconds"),
+        tcp_established,
+        tcp_time_wait,
+        tcp_close_wait,
+        process_count,
+        fd_used,
+        fd_max: 0,
+        procs_running: 0,
+        procs_blocked: 0,
+        context_switches: 0,
+        processes_forked_total: 0,
+        uptime_seconds,
     })
 }
 
@@ -1152,7 +1285,7 @@ pub fn start_system_sampler(app: AppHandle) {
                 }
 
                 let wait_secs = if has_subscriber || wants_persistence {
-                    current_sample_interval_secs()
+                    effective_sample_interval_secs()
                 } else {
                     IDLE_PAUSE_INTERVAL_SECS
                 } as u64;
@@ -1174,6 +1307,14 @@ pub fn stop_system_sampler() {
     SAMPLER_RUNNING.store(false, Ordering::SeqCst);
     if let Some(h) = SAMPLER_HANDLE.write().take() {
         h.abort();
+    }
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(state) = WINDOWS_PDH.write().take() {
+            unsafe { PdhCloseQuery(state.query) };
+        }
+        *WINDOWS_DISK_ACCUM.write() = (0, 0, 0);
+        *WINDOWS_LOAD_AVG.write() = WindowsLoadAvgState::default();
     }
 }
 
@@ -1199,7 +1340,7 @@ pub fn get_system_metrics(window_seconds: Option<i64>) -> Result<SystemMetricsRe
             .clamp(MIN_SAMPLE_INTERVAL_SECS, MAX_REALTIME_WINDOW_SECS);
 
         Ok(SystemMetricsRealtimePayload {
-            sample_interval_seconds: current_sample_interval_secs(),
+            sample_interval_seconds: effective_sample_interval_secs(),
             max_window_seconds: MAX_REALTIME_WINDOW_SECS,
             supported: true,
             message: None,
