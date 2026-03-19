@@ -59,7 +59,7 @@ const MAX_CHART_POINTS: usize = 1200;
 
 const DB_FLUSH_BATCH_SIZE: usize = 800;
 const DB_FLUSH_INTERVAL: Duration = Duration::from_secs(5);
-const SYSTEM_METRICS_RETENTION_DAYS: i64 = 30;
+const SYSTEM_METRICS_RETENTION_DAYS: i64 = 360;
 const SYSTEM_METRICS_RETENTION_CHECK_INTERVAL: Duration = Duration::from_secs(12 * 60 * 60);
 
 static SAMPLER_RUNNING: AtomicBool = AtomicBool::new(false);
@@ -467,10 +467,13 @@ fn init_system_metrics_writer() {
             if last_retention_check.elapsed() >= SYSTEM_METRICS_RETENTION_CHECK_INTERVAL {
                 if let Some(pool) = crate::metrics::db_pool() {
                     let cutoff = chrono::Utc::now().timestamp() - SYSTEM_METRICS_RETENTION_DAYS * 24 * 60 * 60;
-                    let _ = sqlx::query("DELETE FROM system_metrics WHERE timestamp < ?")
+                    let deleted_rows = sqlx::query("DELETE FROM system_metrics WHERE timestamp < ?")
                         .bind(cutoff)
                         .execute(&*pool)
-                        .await;
+                        .await
+                        .map(|r| r.rows_affected())
+                        .unwrap_or(0);
+                    crate::metrics::reclaim_db_space_after_delete(&pool, deleted_rows).await;
                 }
                 last_retention_check = Instant::now();
             }

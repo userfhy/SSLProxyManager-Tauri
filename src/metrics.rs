@@ -6,6 +6,7 @@ use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePool, SqlitePo
 use sqlx::{ConnectOptions, QueryBuilder}; // 移除了未使用的 Row
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -15,10 +16,16 @@ const DB_FLUSH_INTERVAL: Duration = Duration::from_secs(5);
 
 const REQUEST_LOG_RETENTION_DAYS: i64 = 730;
 const REQUEST_LOG_RETENTION_CHECK_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
+const DB_SPACE_RECLAIM_VACUUM_COOLDOWN: Duration = Duration::from_secs(24 * 60 * 60);
+const DB_SPACE_RECLAIM_MIN_DELETED_ROWS: u64 = 20_000;
+const DB_SPACE_RECLAIM_MIN_FREELIST_PAGES: i64 = 16_384; // 约 64MB（按 4KB 页估算）
+const DB_SPACE_RECLAIM_MIN_FREELIST_RATIO: f64 = 0.20;
 
 static DB_POOL: Lazy<RwLock<Option<Arc<SqlitePool>>>> = Lazy::new(|| RwLock::new(None));
 static DB_PATH: Lazy<RwLock<String>> = Lazy::new(|| RwLock::new(String::new()));
 static DB_ERROR: Lazy<RwLock<Option<String>>> = Lazy::new(|| RwLock::new(None));
+static DB_LAST_VACUUM_AT: Lazy<RwLock<Option<Instant>>> = Lazy::new(|| RwLock::new(None));
+static DB_VACUUM_RUNNING: AtomicBool = AtomicBool::new(false);
 
 static BLACKLIST_CACHE: Lazy<RwLock<HashMap<String, i64>>> =
     Lazy::new(|| RwLock::new(HashMap::new()));
@@ -682,6 +689,64 @@ pub(crate) fn db_pool() -> Option<Arc<SqlitePool>> {
     DB_POOL.read().clone()
 }
 
+async fn maybe_vacuum_metrics_db(pool: &SqlitePool, deleted_rows: u64) {
+    if deleted_rows < DB_SPACE_RECLAIM_MIN_DELETED_ROWS {
+        return;
+    }
+
+    if DB_VACUUM_RUNNING.swap(true, Ordering::SeqCst) {
+        return;
+    }
+
+    let should_try = {
+        let guard = DB_LAST_VACUUM_AT.read();
+        guard
+            .as_ref()
+            .map(|t| t.elapsed() >= DB_SPACE_RECLAIM_VACUUM_COOLDOWN)
+            .unwrap_or(true)
+    };
+    if !should_try {
+        DB_VACUUM_RUNNING.store(false, Ordering::SeqCst);
+        return;
+    }
+
+    let page_count: i64 = sqlx::query_scalar("PRAGMA page_count")
+        .fetch_one(pool)
+        .await
+        .unwrap_or(0);
+    let freelist_count: i64 = sqlx::query_scalar("PRAGMA freelist_count")
+        .fetch_one(pool)
+        .await
+        .unwrap_or(0);
+
+    let free_ratio = if page_count > 0 {
+        freelist_count as f64 / page_count as f64
+    } else {
+        0.0
+    };
+
+    if freelist_count >= DB_SPACE_RECLAIM_MIN_FREELIST_PAGES && free_ratio >= DB_SPACE_RECLAIM_MIN_FREELIST_RATIO {
+        if sqlx::query("VACUUM").execute(pool).await.is_ok() {
+            *DB_LAST_VACUUM_AT.write() = Some(Instant::now());
+        }
+    }
+
+    DB_VACUUM_RUNNING.store(false, Ordering::SeqCst);
+}
+
+pub(crate) async fn reclaim_db_space_after_delete(pool: &SqlitePool, deleted_rows: u64) {
+    if deleted_rows == 0 {
+        return;
+    }
+
+    // 先回收 WAL 文件空间，再按阈值决定是否 VACUUM 主库文件。
+    let _ = sqlx::query("PRAGMA wal_checkpoint(TRUNCATE)")
+        .execute(pool)
+        .await;
+
+    maybe_vacuum_metrics_db(pool, deleted_rows).await;
+}
+
 pub fn deinit_db() {
     *DB_POOL.write() = None;
 }
@@ -1257,15 +1322,14 @@ pub async fn init_request_log_writer() {
                 let pool_opt = DB_POOL.read().clone();
                 if let Some(pool) = pool_opt {
                     let cutoff = chrono::Utc::now().timestamp() - REQUEST_LOG_RETENTION_DAYS * 24 * 60 * 60;
-                    let _ = sqlx::query("DELETE FROM request_logs WHERE timestamp < ?")
+                    let deleted_rows = sqlx::query("DELETE FROM request_logs WHERE timestamp < ?")
                         .bind(cutoff)
                         .execute(&*pool)
-                        .await;
+                        .await
+                        .map(|r| r.rows_affected())
+                        .unwrap_or(0);
 
-                    // WAL 模式下，做一次 checkpoint 尽量回收 WAL（不强制）
-                    let _ = sqlx::query("PRAGMA wal_checkpoint(TRUNCATE)")
-                        .execute(&*pool)
-                        .await;
+                    reclaim_db_space_after_delete(&pool, deleted_rows).await;
                 }
                 last_retention_check = Instant::now();
             }
