@@ -22,6 +22,7 @@ mod network_optimizer;
 mod cache_optimizer;
 mod hot_reload;
 mod test_tools;
+mod system_metrics;
 
 use tauri::Manager;
 
@@ -79,6 +80,9 @@ fn main() {
             commands::get_logs,
             commands::clear_logs,
             commands::get_metrics,
+            commands::get_system_metrics,
+            commands::set_system_metrics_subscription,
+            commands::query_historical_system_metrics,
             commands::get_listen_addrs,
             commands::query_historical_metrics,
             commands::query_request_logs,

@@ -7,6 +7,7 @@ use crate::tray;
 use crate::update;
 use crate::cache_optimizer;
 use crate::test_tools;
+use crate::system_metrics;
 use anyhow::Result;
 use tauri::Manager;
 use tauri_plugin_dialog::DialogExt;
@@ -96,13 +97,19 @@ pub async fn save_config(
                 .await
                 .map_err(|e| e.to_string())?;
             metrics::init_request_log_writer().await;
+        } else {
+            metrics::deinit_db();
         }
+    } else {
+        metrics::deinit_db();
     }
 
     // 使用优雅重载机制
-    crate::hot_reload::graceful_reload(app, cfg)
+    let saved_cfg = crate::hot_reload::graceful_reload(app, cfg)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    system_metrics::refresh_sample_interval_from_config();
+    Ok(saved_cfg)
 }
 
 #[tauri::command]
@@ -168,6 +175,28 @@ pub fn set_tray_proxy_state(_app: tauri::AppHandle, running: bool) -> Result<(),
 #[tauri::command]
 pub fn get_metrics() -> Result<metrics::MetricsPayload, String> {
     Ok(metrics::get_metrics())
+}
+
+#[tauri::command]
+pub fn get_system_metrics(
+    window_seconds: Option<i64>,
+) -> Result<system_metrics::SystemMetricsRealtimePayload, String> {
+    system_metrics::get_system_metrics(window_seconds).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn set_system_metrics_subscription(active: bool) -> Result<(), String> {
+    system_metrics::set_system_metrics_subscription(active);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn query_historical_system_metrics(
+    req: system_metrics::QuerySystemMetricsRequest,
+) -> Result<system_metrics::QuerySystemMetricsResponse, String> {
+    system_metrics::query_historical_system_metrics(req)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

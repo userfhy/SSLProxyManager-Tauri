@@ -677,6 +677,14 @@ fn pool() -> Option<Arc<SqlitePool>> {
     DB_POOL.read().clone()
 }
 
+pub(crate) fn db_pool() -> Option<Arc<SqlitePool>> {
+    DB_POOL.read().clone()
+}
+
+pub fn deinit_db() {
+    *DB_POOL.write() = None;
+}
+
 pub async fn init_db(db_path: String) -> Result<()> {
     let result: Result<()> = async move {
         let path = resolve_db_path(db_path)?;
@@ -809,6 +817,58 @@ pub async fn init_db(db_path: String) -> Result<()> {
             .execute(&pool)
             .await
             .context("创建 request_logs.upstream+timestamp 索引失败")?;
+
+        // 系统指标历史表
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS system_metrics (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              timestamp INTEGER NOT NULL,
+              cpu_usage_percent REAL NOT NULL,
+              load1 REAL NOT NULL,
+              load5 REAL NOT NULL,
+              load15 REAL NOT NULL,
+              mem_total_bytes INTEGER NOT NULL,
+              mem_available_bytes INTEGER NOT NULL,
+              mem_used_bytes INTEGER NOT NULL,
+              mem_used_percent REAL NOT NULL,
+              swap_total_bytes INTEGER NOT NULL,
+              swap_free_bytes INTEGER NOT NULL,
+              swap_used_bytes INTEGER NOT NULL,
+              swap_used_percent REAL NOT NULL,
+              net_rx_bytes INTEGER NOT NULL,
+              net_tx_bytes INTEGER NOT NULL,
+              net_rx_bps REAL NOT NULL,
+              net_tx_bps REAL NOT NULL,
+              disk_read_bytes INTEGER NOT NULL,
+              disk_write_bytes INTEGER NOT NULL,
+              disk_read_bps REAL NOT NULL,
+              disk_write_bps REAL NOT NULL,
+              tcp_established INTEGER NOT NULL,
+              tcp_time_wait INTEGER NOT NULL,
+              tcp_close_wait INTEGER NOT NULL,
+              process_count INTEGER NOT NULL,
+              fd_used INTEGER NOT NULL,
+              fd_max INTEGER NOT NULL,
+              fd_usage_percent REAL NOT NULL,
+              procs_running INTEGER NOT NULL,
+              procs_blocked INTEGER NOT NULL,
+              context_switches INTEGER NOT NULL,
+              processes_forked_total INTEGER NOT NULL,
+              uptime_seconds REAL NOT NULL
+            );
+            "#,
+        )
+        .execute(&pool)
+        .await
+        .context("创建 system_metrics 表失败")?;
+
+        sqlx::query(
+            r#"CREATE INDEX IF NOT EXISTS idx_system_metrics_ts ON system_metrics(timestamp);"#,
+        )
+        .execute(&pool)
+        .await
+        .context("创建 system_metrics.timestamp 索引失败")?;
 
         sqlx::query(
             r#"

@@ -59,6 +59,18 @@ export async function GetMetrics() {
   return await invoke('get_metrics');
 }
 
+export async function GetSystemMetrics(windowSeconds?: number) {
+  return await invoke('get_system_metrics', { windowSeconds });
+}
+
+export async function SetSystemMetricsSubscription(active: boolean) {
+  return await invoke('set_system_metrics_subscription', { active });
+}
+
+export async function QueryHistoricalSystemMetrics(req: any) {
+  return await invoke('query_historical_system_metrics', { req });
+}
+
 export async function GetListenAddrs() {
   return await invoke('get_listen_addrs');
 }

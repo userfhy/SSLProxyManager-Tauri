@@ -107,6 +107,13 @@
           :is-active="activeTab === 'dashboard'"
           v-show="activeTab === 'dashboard'"
         />
+        <SystemMetrics
+          v-if="isLazyTabLoaded('systemMetrics')"
+          ref="systemMetricsRef"
+          :is-active="activeTab === 'systemMetrics'"
+          :config="globalConfig"
+          v-show="activeTab === 'systemMetrics'"
+        />
         <AccessControl 
           v-show="activeTab === 'access'"
           ref="accessControlRef"
@@ -152,13 +159,14 @@ import { GetTermsAccepted } from './api'
 import { useI18n } from 'vue-i18n'
 
 const Dashboard = defineAsyncComponent(() => import('./components/Dashboard.vue'))
+const SystemMetrics = defineAsyncComponent(() => import('./components/SystemMetrics.vue'))
 const RequestLogs = defineAsyncComponent(() => import('./components/RequestLogs.vue'))
 const TestTools = defineAsyncComponent(() => import('./components/TestTools.vue'))
 const LogViewer = defineAsyncComponent(() => import('./components/LogViewer.vue'))
 
 const { t, locale } = useI18n()
 
-const activeTab = ref<'base' | 'config' | 'ws' | 'stream' | 'logs' | 'dashboard' | 'access' | 'storage' | 'requestLogs' | 'about' | 'testTools'>('config')
+const activeTab = ref<'base' | 'config' | 'ws' | 'stream' | 'logs' | 'dashboard' | 'systemMetrics' | 'access' | 'storage' | 'requestLogs' | 'about' | 'testTools'>('config')
 const status = ref('stopped')
 const starting = ref(false)
 const saving = ref(false)
@@ -166,6 +174,7 @@ const baseConfigRef = ref<InstanceType<typeof BaseConfig> | null>(null)
 const configCardRef = ref<InstanceType<typeof ConfigCard> | null>(null)
 const wsProxyConfigRef = ref<InstanceType<typeof WsProxyConfig> | null>(null)
 const streamProxyConfigRef = ref<InstanceType<typeof StreamProxyConfig> | null>(null)
+const systemMetricsRef = ref<any>(null)
 const accessControlRef = ref<InstanceType<typeof AccessControl> | null>(null)
 const metricsStorageRef = ref<InstanceType<typeof MetricsStorage> | null>(null)
 const aboutRef = ref<InstanceType<typeof About> | null>(null)
@@ -175,6 +184,7 @@ const showTermsDialog = ref(false)
 // 仅对重量级页面做懒加载，减少首屏黑屏等待
 const lazyLoadedTabs = reactive<Record<string, boolean>>({
   dashboard: false,
+  systemMetrics: false,
   requestLogs: false,
   testTools: false,
   logs: false,
@@ -584,6 +594,18 @@ const handleSaveConfig = async () => {
       storageConfig = {}
     }
 
+    // 从 SystemMetrics 获取配置（采样间隔、持久化开关）
+    let systemMetricsConfig = {}
+    try {
+      if (systemMetricsRef.value && typeof systemMetricsRef.value.getConfig === 'function') {
+        systemMetricsConfig = systemMetricsRef.value.getConfig() || {}
+      } else {
+        systemMetricsConfig = {}
+      }
+    } catch (e: any) {
+      systemMetricsConfig = {}
+    }
+
     // 从 About 获取配置
     let aboutConfig = {}
     try {
@@ -602,8 +624,21 @@ const handleSaveConfig = async () => {
       ...configCardConfig,
       ...accessConfig,
       ...storageConfig,
-      ...aboutConfig
+      ...aboutConfig,
+      ...systemMetricsConfig,
     }
+
+    // SystemMetrics 页面只覆盖持久化 enabled，保留现有 db_path
+    const persistenceEnabled = (systemMetricsConfig as any)?.system_metrics_persistence_enabled
+    if (typeof persistenceEnabled === 'boolean') {
+      const existingStorage = finalConfig.metrics_storage || {}
+      const globalStorage = globalConfig.value?.metrics_storage || {}
+      finalConfig.metrics_storage = {
+        enabled: persistenceEnabled,
+        db_path: existingStorage.db_path ?? globalStorage.db_path ?? '',
+      }
+    }
+    delete finalConfig.system_metrics_persistence_enabled
     
     // 只保留 globalConfig 中可能需要的其他字段（如果有的话）
     // 但确保 Rules、AllowAllLAN、Whitelist、MetricsStorage、Update 使用最新的

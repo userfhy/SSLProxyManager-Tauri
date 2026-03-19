@@ -64,6 +64,7 @@ declare module 'vue' {
     RequestLogs: typeof import('./src/components/RequestLogs.vue')['default']
     Sidebar: typeof import('./src/components/Sidebar.vue')['default']
     StreamProxyConfig: typeof import('./src/components/StreamProxyConfig.vue')['default']
+    SystemMetrics: typeof import('./src/components/SystemMetrics.vue')['default']
     TermsDialog: typeof import('./src/components/TermsDialog.vue')['default']
     TestTools: typeof import('./src/components/TestTools.vue')['default']
     TitleBar: typeof import('./src/components/TitleBar.vue')['default']

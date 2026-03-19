@@ -38,6 +38,10 @@
           <el-icon><DataAnalysis /></el-icon>
           <template #title>{{ $t('sidebar.dashboard') }}</template>
         </el-menu-item>
+        <el-menu-item index="systemMetrics">
+          <el-icon><DataLine /></el-icon>
+          <template #title>{{ $t('sidebar.systemMetrics') }}</template>
+        </el-menu-item>
       </el-menu-item-group>
 
       <el-menu-item-group :title="isCollapsed ? '' : $t('sidebar.logs')">
@@ -69,7 +73,7 @@
 </template>
 
 <script setup lang="ts">
-import { Setting, DataAnalysis, Document, Lock, Search, Fold, Expand, InfoFilled, Tools, Connection, Promotion, Share } from '@element-plus/icons-vue'
+import { Setting, DataAnalysis, DataLine, Document, Lock, Search, Fold, Expand, InfoFilled, Tools, Connection, Promotion, Share } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
