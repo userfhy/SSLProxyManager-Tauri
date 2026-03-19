@@ -23,8 +23,15 @@
               </el-form-item>
 
               <el-form-item :label="$t('systemMetrics.persistence')" style="margin-bottom: 0;">
-                <el-switch v-model="configPersistenceEnabled" size="small" />
+                <el-switch
+                  v-model="configPersistenceEnabled"
+                  size="small"
+                  :disabled="!globalPersistenceEnabled"
+                />
               </el-form-item>
+              <el-text v-if="!globalPersistenceEnabled" type="warning" size="small">
+                {{ $t('systemMetrics.persistenceRequiresGlobal') }}
+              </el-text>
             </div>
           </div>
 
@@ -339,6 +346,7 @@ const maxWindowSeconds = ref<number>(7 * 24 * 3600)
 const configSampleIntervalSecs = ref<number>(10)
 const configPersistenceEnabled = ref<boolean>(false)
 const rateUnit = ref<RateUnit>('KB')
+const globalPersistenceEnabled = computed(() => !!props.config?.metrics_storage?.enabled)
 
 const loadingRealtime = ref(false)
 const loadingHistorical = ref(false)
@@ -934,7 +942,11 @@ watch(
     }
     // 同步刷新 updateHint 中的采样秒数，避免必须重启才更新
     sampleIntervalSeconds.value = normalizedInterval
-    configPersistenceEnabled.value = !!cfg?.metrics_storage?.enabled
+    if (typeof cfg?.system_metrics_persistence_enabled === 'boolean') {
+      configPersistenceEnabled.value = cfg.system_metrics_persistence_enabled
+    } else {
+      configPersistenceEnabled.value = true
+    }
   },
   { immediate: true, deep: true },
 )

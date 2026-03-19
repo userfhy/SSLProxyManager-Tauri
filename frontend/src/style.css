@@ -130,11 +130,11 @@ button,
   
   /* Element Plus 主题变量 - 深色模式 */
   --el-color-primary: #4f9cf9;
-  --el-color-primary-light-3: rgba(79, 156, 249, 0.3);
-  --el-color-primary-light-5: rgba(79, 156, 249, 0.5);
-  --el-color-primary-light-7: rgba(79, 156, 249, 0.7);
-  --el-color-primary-light-8: rgba(79, 156, 249, 0.8);
-  --el-color-primary-light-9: rgba(79, 156, 249, 0.9);
+  --el-color-primary-light-3: #84bafb;
+  --el-color-primary-light-5: #a7cefc;
+  --el-color-primary-light-7: #cae1fd;
+  --el-color-primary-light-8: #dcebfe;
+  --el-color-primary-light-9: #edf5fe;
   --el-color-primary-dark-2: #3b82f6;
   --el-bg-color: var(--card-bg);
   --el-bg-color-page: var(--bg);
@@ -194,11 +194,11 @@ button,
   
   /* Element Plus 主题变量 - 浅色模式 */
   --el-color-primary: #2563eb;
-  --el-color-primary-light-3: rgba(37, 99, 235, 0.3);
-  --el-color-primary-light-5: rgba(37, 99, 235, 0.5);
-  --el-color-primary-light-7: rgba(37, 99, 235, 0.7);
-  --el-color-primary-light-8: rgba(37, 99, 235, 0.8);
-  --el-color-primary-light-9: rgba(37, 99, 235, 0.9);
+  --el-color-primary-light-3: #6692f1;
+  --el-color-primary-light-5: #92b1f5;
+  --el-color-primary-light-7: #bdd0f9;
+  --el-color-primary-light-8: #d3dffb;
+  --el-color-primary-light-9: #e9effd;
   --el-color-primary-dark-2: #1d4ed8;
   --el-bg-color: var(--card-bg);
   --el-bg-color-page: var(--bg);
@@ -248,6 +248,16 @@ button,
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
   overflow: hidden;
+}
+
+/* 默认白色按钮使用中性 hover/active，避免被主色覆盖 */
+.el-button:not(.el-button--primary):not(.el-button--success):not(.el-button--warning):not(.el-button--danger):not(.el-button--info):not(.is-text):not(.is-link) {
+  --el-button-hover-bg-color: var(--btn-hover);
+  --el-button-hover-border-color: var(--border-hover);
+  --el-button-hover-text-color: var(--text);
+  --el-button-active-bg-color: var(--btn-hover);
+  --el-button-active-border-color: var(--border-hover);
+  --el-button-active-text-color: var(--text);
 }
 
 .el-button::before {

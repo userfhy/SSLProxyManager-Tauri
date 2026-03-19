@@ -628,18 +628,6 @@ const handleSaveConfig = async () => {
       ...systemMetricsConfig,
     }
 
-    // SystemMetrics 页面只覆盖持久化 enabled，保留现有 db_path
-    const persistenceEnabled = (systemMetricsConfig as any)?.system_metrics_persistence_enabled
-    if (typeof persistenceEnabled === 'boolean') {
-      const existingStorage = finalConfig.metrics_storage || {}
-      const globalStorage = globalConfig.value?.metrics_storage || {}
-      finalConfig.metrics_storage = {
-        enabled: persistenceEnabled,
-        db_path: existingStorage.db_path ?? globalStorage.db_path ?? '',
-      }
-    }
-    delete finalConfig.system_metrics_persistence_enabled
-    
     // 只保留 globalConfig 中可能需要的其他字段（如果有的话）
     // 但确保 Rules、AllowAllLAN、Whitelist、MetricsStorage、Update 使用最新的
     for (const key in globalConfig.value) {

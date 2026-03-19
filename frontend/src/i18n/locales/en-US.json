@@ -364,6 +364,7 @@
     "chartUnit": "Chart Unit",
     "sampleIntervalSec": "Sample Interval (s)",
     "persistence": "Data Persistence",
+    "persistenceRequiresGlobal": "Enable global data persistence first, then this switch can be modified",
     "oneMinute": "1 minute",
     "fiveMinutes": "5 minutes",
     "fifteenMinutes": "15 minutes",

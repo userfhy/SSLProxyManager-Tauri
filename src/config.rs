@@ -25,6 +25,7 @@ impl PartialEq for Config {
             && self.compression_enabled == other.compression_enabled
             && self.max_body_size == other.max_body_size
             && self.system_metrics_sample_interval_secs == other.system_metrics_sample_interval_secs
+            && self.system_metrics_persistence_enabled == other.system_metrics_persistence_enabled
     }
 }
 
@@ -170,6 +171,10 @@ fn default_compression_brotli_level() -> u32 {
 
 fn default_system_metrics_sample_interval_secs() -> i64 {
     10
+}
+
+fn default_system_metrics_persistence_enabled() -> bool {
+    true
 }
 
 use std::fs;
@@ -480,6 +485,8 @@ pub struct Config {
     pub compression_brotli_level: u32,
     #[serde(default = "default_system_metrics_sample_interval_secs")]
     pub system_metrics_sample_interval_secs: i64,
+    #[serde(default = "default_system_metrics_persistence_enabled")]
+    pub system_metrics_persistence_enabled: bool,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metrics_storage: Option<MetricsStorage>,
@@ -517,6 +524,7 @@ static CONFIG: Lazy<RwLock<Config>> = Lazy::new(|| {
         compression_gzip_level: default_compression_gzip_level(),
         compression_brotli_level: default_compression_brotli_level(),
         system_metrics_sample_interval_secs: default_system_metrics_sample_interval_secs(),
+        system_metrics_persistence_enabled: default_system_metrics_persistence_enabled(),
         metrics_storage: None,
         update: None,
     })
@@ -552,6 +560,7 @@ fn default_config() -> Config {
         compression_gzip_level: default_compression_gzip_level(),
         compression_brotli_level: default_compression_brotli_level(),
         system_metrics_sample_interval_secs: default_system_metrics_sample_interval_secs(),
+        system_metrics_persistence_enabled: default_system_metrics_persistence_enabled(),
         metrics_storage: None,
         update: None,
     }

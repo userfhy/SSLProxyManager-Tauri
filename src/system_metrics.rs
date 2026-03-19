@@ -231,6 +231,16 @@ fn current_sample_interval_secs() -> i64 {
 }
 
 #[inline]
+fn is_system_metrics_persistence_enabled(cfg: &crate::config::Config) -> bool {
+    let global_enabled = cfg
+        .metrics_storage
+        .as_ref()
+        .map(|m| m.enabled)
+        .unwrap_or(false);
+    global_enabled && cfg.system_metrics_persistence_enabled
+}
+
+#[inline]
 fn refresh_sample_interval_from_config_inner() {
     let cfg = crate::config::get_config();
     let interval = normalize_sample_interval_secs(cfg.system_metrics_sample_interval_secs);
@@ -1091,12 +1101,14 @@ fn collect_one_point() -> Result<(SystemMetricsPoint, Vec<NetworkInterfaceStats>
 }
 
 #[cfg(any(target_os = "linux", target_os = "windows"))]
-async fn collect_and_publish_one(app: &AppHandle) {
+async fn collect_and_publish_one(app: &AppHandle, persist_enabled: bool) {
     let collected = tauri::async_runtime::spawn_blocking(collect_one_point).await;
     if let Ok(Ok((point, interfaces))) = collected {
         *LAST_INTERFACES.write() = interfaces.clone();
         push_realtime_point(point.clone());
-        try_enqueue_system_metrics(point.clone());
+        if persist_enabled {
+            try_enqueue_system_metrics(point.clone());
+        }
 
         if let Some(window) = app.get_webview_window("main") {
             let _ = window.emit(
@@ -1133,17 +1145,13 @@ pub fn start_system_sampler(app: AppHandle) {
                 }
 
                 let has_subscriber = HAS_ACTIVE_SUBSCRIBER.load(Ordering::Relaxed);
-                let wants_persistence = crate::config::get_config()
-                    .metrics_storage
-                    .as_ref()
-                    .map(|m| m.enabled)
-                    .unwrap_or(false);
-                let has_history_storage = crate::metrics::db_pool().is_some();
-                if has_subscriber || wants_persistence || has_history_storage {
-                    collect_and_publish_one(&app).await;
+                let cfg = crate::config::get_config();
+                let wants_persistence = is_system_metrics_persistence_enabled(&cfg);
+                if has_subscriber || wants_persistence {
+                    collect_and_publish_one(&app, wants_persistence).await;
                 }
 
-                let wait_secs = if has_subscriber || wants_persistence || has_history_storage {
+                let wait_secs = if has_subscriber || wants_persistence {
                     current_sample_interval_secs()
                 } else {
                     IDLE_PAUSE_INTERVAL_SECS

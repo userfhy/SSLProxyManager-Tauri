@@ -360,6 +360,7 @@
     "chartUnit": "图表单位",
     "sampleIntervalSec": "采样间隔(秒)",
     "persistence": "数据持久化",
+    "persistenceRequiresGlobal": "请先开启全局数据持久化，再修改此开关",
     "oneMinute": "1分钟",
     "fiveMinutes": "5分钟",
     "fifteenMinutes": "15分钟",
