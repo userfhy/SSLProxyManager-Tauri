@@ -37,6 +37,7 @@ It provides one UI to manage:
 - Observability
   - Real-time dashboard metrics
   - Historical metrics and request logs (SQLite)
+  - System metrics module (Linux/Windows): real-time + historical charts for CPU, memory, swap, network, disk throughput, TCP states, process/file descriptor counts, and uptime
   - Real-time log panel
 - Utility tools in UI
   - HTTP request test
@@ -59,6 +60,7 @@ It provides one UI to manage:
 
 https://github.com/user-attachments/assets/b41b3d38-19c5-4124-a439-c4c011c16a5b
 
+![SystemMetrics](./screenshots/SystemMetrics.jpg)
 ![ScreenShot1](./screenshots/1.jpg)
 ![ScreenShot2](./screenshots/2.jpg)
 ![ScreenShot3](./screenshots/3.jpg)
@@ -97,6 +99,22 @@ Build release package:
 ```bash
 npm run tauri:build
 ```
+
+## CI: Manual Single-Platform Build
+
+Workflow: `.github/workflows/manual-build-single-platform.yml`
+
+- Trigger: GitHub Actions -> `Manual Build (Single Platform)` -> `Run workflow`
+- Input `platform`:
+  - `windows-x64`
+  - `linux-amd64`
+  - `macos-arm64`
+  - `macos-x64`
+- Input `publish_release`:
+  - `true`: upload installer bundles to GitHub Release and replace same-name assets (`--clobber`)
+  - `false`: build only, keep artifacts in workflow run
+- Input `release_tag`:
+  - Optional. If empty, workflow uses `v<version from Cargo.toml>`
 
 ## Configuration File Location
 
@@ -146,6 +164,25 @@ Note: WS rule uses `listen_addr` (not `listen_addrs`).
 - `[[stream.upstreams.servers]]`: `addr`, `weight`, `max_fails`, `fail_timeout`
 - `[[stream.servers]]`: `enabled`, `listen_port`, `listen_addr` (optional), `udp`, `proxy_pass`, `proxy_connect_timeout`, `proxy_timeout`
 
+### System Metrics
+
+- `system_metrics_sample_interval_secs`
+  - Sampling interval in seconds, range `1..300`
+  - Default: `10`
+  - On Windows, effective interval is clamped to at least `3` seconds to reduce collection overhead
+- `system_metrics_persistence_enabled`
+  - Controls whether system metrics points are written into the `system_metrics` table
+  - This switch only affects system metrics persistence, not global metrics persistence settings
+- Runtime behavior:
+  - Chart rendering and realtime push happen when the System Metrics page is opened/subscribed
+  - If both `metrics_storage.enabled = true` and `system_metrics_persistence_enabled = true`, backend continues sampling/persisting even when that page is not open
+  - If global metrics storage is disabled, system metrics persistence is effectively disabled
+
+### Metrics Storage (`[metrics_storage]`)
+
+- `enabled`: global metrics DB switch
+- `db_path`: SQLite database path
+
 ### Global Flags (Generated Default Config)
 
 Defaults below are from current backend code (`src/config.rs`) when creating a new config file:
@@ -173,10 +210,13 @@ Defaults below are from current backend code (`src/config.rs`) when creating a n
 - `compression_min_length = 1024`
 - `compression_gzip_level = 6`
 - `compression_brotli_level = 6`
+- `system_metrics_sample_interval_secs = 10`
+- `system_metrics_persistence_enabled = true`
 
 Notes:
 
 - `stream_proxy` is legacy and kept for compatibility. Prefer `[stream].enabled`.
+- `metrics_storage` is optional; when missing or `enabled = false`, historical DB writes/queries are unavailable.
 - `config.toml.example` may use sample values different from generated defaults.
 
 ## FAQ
