@@ -164,6 +164,10 @@ export async function QuitApp() {
   return await invoke('quit_app');
 }
 
+export async function OpenChartPreviewWindow(title: string, payloadKey: string) {
+  return await invoke('open_chart_preview_window', { title, payloadKey });
+}
+
 // 语言设置
 export async function SetLocale(locale: string) {
   return await invoke('set_locale', { locale });

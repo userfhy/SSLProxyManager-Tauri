@@ -10,6 +10,7 @@ use crate::test_tools;
 use crate::system_metrics;
 use anyhow::Result;
 use tauri::Manager;
+use tauri::{WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_dialog::DialogExt;
 use std::path::PathBuf;
 
@@ -363,6 +364,35 @@ pub fn hide_to_tray(app: tauri::AppHandle) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("main") {
         window.hide().map_err(|e| e.to_string())?;
     }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn open_chart_preview_window(
+    app: tauri::AppHandle,
+    title: String,
+    payload_key: String,
+) -> Result<(), String> {
+    if payload_key.trim().is_empty() {
+        return Err("payload_key is empty".to_string());
+    }
+
+    let label = format!(
+        "chart-preview-{}",
+        chrono::Local::now().timestamp_millis()
+    );
+    let app_url = format!(
+        "chart-preview-interactive.html?key={}",
+        urlencoding::encode(&payload_key)
+    );
+
+    WebviewWindowBuilder::new(&app, label, WebviewUrl::App(app_url.into()))
+        .title(title)
+        .inner_size(1400.0, 900.0)
+        .resizable(true)
+        .build()
+        .map_err(|e| e.to_string())?;
+
     Ok(())
 }
 

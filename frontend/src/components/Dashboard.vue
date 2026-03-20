@@ -77,35 +77,60 @@
 
       <el-card class="panel panel--qps" shadow="hover">
         <template #header>
-          <div class="panel-title">{{ $t('dashboard.qpsTrend') }}</div>
+          <div class="panel-header">
+            <div class="panel-title">{{ $t('dashboard.qpsTrend') }}</div>
+            <el-button text size="small" class="panel-preview-btn" @click="openChartPreview($t('dashboard.qpsTrend'), 'qps')">
+              {{ $t('common.fullscreenPreview') }}
+            </el-button>
+          </div>
         </template>
         <v-chart v-if="isActive" :option="qpsOption" class="chart" autoresize />
       </el-card>
 
       <el-card class="panel panel--status" shadow="hover">
         <template #header>
-          <div class="panel-title">{{ $t('dashboard.statusDistribution') }}</div>
+          <div class="panel-header">
+            <div class="panel-title">{{ $t('dashboard.statusDistribution') }}</div>
+            <el-button text size="small" class="panel-preview-btn" @click="openChartPreview($t('dashboard.statusDistribution'), 'status')">
+              {{ $t('common.fullscreenPreview') }}
+            </el-button>
+          </div>
         </template>
         <v-chart v-if="isActive" :option="statusOption" class="chart" autoresize />
       </el-card>
 
       <el-card class="panel panel--latency" shadow="hover">
         <template #header>
-          <div class="panel-title">{{ $t('dashboard.latencyTrend') }}</div>
+          <div class="panel-header">
+            <div class="panel-title">{{ $t('dashboard.latencyTrend') }}</div>
+            <el-button text size="small" class="panel-preview-btn" @click="openChartPreview($t('dashboard.latencyTrend'), 'latency')">
+              {{ $t('common.fullscreenPreview') }}
+            </el-button>
+          </div>
         </template>
         <v-chart v-if="isActive" :option="latencyOption" class="chart" autoresize />
       </el-card>
 
       <el-card class="panel panel--percentile" shadow="hover">
         <template #header>
-          <div class="panel-title">{{ $t('dashboard.percentile') }}</div>
+          <div class="panel-header">
+            <div class="panel-title">{{ $t('dashboard.percentile') }}</div>
+            <el-button text size="small" class="panel-preview-btn" @click="openChartPreview($t('dashboard.percentile'), 'percentile')">
+              {{ $t('common.fullscreenPreview') }}
+            </el-button>
+          </div>
         </template>
         <v-chart v-if="isActive" :option="pOption" class="chart" autoresize />
       </el-card>
 
       <el-card class="panel panel--upstream" shadow="hover">
         <template #header>
-          <div class="panel-title">{{ $t('dashboard.upstreamRequestDistributionTop20') }}</div>
+          <div class="panel-header">
+            <div class="panel-title">{{ $t('dashboard.upstreamRequestDistributionTop20') }}</div>
+            <el-button text size="small" class="panel-preview-btn" @click="openChartPreview($t('dashboard.upstreamRequestDistributionTop20'), 'upstream')">
+              {{ $t('common.fullscreenPreview') }}
+            </el-button>
+          </div>
         </template>
         <v-chart v-if="isActive" :option="upDistOption" class="chart" autoresize />
       </el-card>
@@ -172,38 +197,65 @@
 
       <el-card class="panel panel--rate" shadow="hover">
         <template #header>
-          <div class="panel-title">{{ $t('dashboard.errorSuccessRateTrend') }}</div>
+          <div class="panel-header">
+            <div class="panel-title">{{ $t('dashboard.errorSuccessRateTrend') }}</div>
+            <el-button text size="small" class="panel-preview-btn" @click="openChartPreview($t('dashboard.errorSuccessRateTrend'), 'rate')">
+              {{ $t('common.fullscreenPreview') }}
+            </el-button>
+          </div>
         </template>
         <v-chart v-if="isActive" :option="rateOption" class="chart" autoresize />
       </el-card>
 
       <el-card class="panel panel--pie" shadow="hover">
         <template #header>
-          <div class="panel-title">{{ $t('dashboard.statusDistributionPie') }}</div>
+          <div class="panel-header">
+            <div class="panel-title">{{ $t('dashboard.statusDistributionPie') }}</div>
+            <el-button text size="small" class="panel-preview-btn" @click="openChartPreview($t('dashboard.statusDistributionPie'), 'statusPie')">
+              {{ $t('common.fullscreenPreview') }}
+            </el-button>
+          </div>
         </template>
         <v-chart v-if="isActive" :option="statusPieOption" class="chart" autoresize />
       </el-card>
 
       <el-card class="panel panel--throughput" shadow="hover">
         <template #header>
-          <div class="panel-title">{{ $t('dashboard.throughputTrendCumulative') }}</div>
+          <div class="panel-header">
+            <div class="panel-title">{{ $t('dashboard.throughputTrendCumulative') }}</div>
+            <el-button text size="small" class="panel-preview-btn" @click="openChartPreview($t('dashboard.throughputTrendCumulative'), 'throughput')">
+              {{ $t('common.fullscreenPreview') }}
+            </el-button>
+          </div>
         </template>
         <v-chart v-if="isActive" :option="throughputOption" class="chart" autoresize />
       </el-card>
 
       <el-card class="panel panel--latency-dist" shadow="hover">
         <template #header>
-          <div class="panel-title">{{ $t('dashboard.latencyDistributionComparison') }}</div>
+          <div class="panel-header">
+            <div class="panel-title">{{ $t('dashboard.latencyDistributionComparison') }}</div>
+            <el-button text size="small" class="panel-preview-btn" @click="openChartPreview($t('dashboard.latencyDistributionComparison'), 'latencyDist')">
+              {{ $t('common.fullscreenPreview') }}
+            </el-button>
+          </div>
         </template>
         <v-chart v-if="isActive" :option="latencyDistOption" class="chart" autoresize />
       </el-card>
 
       <el-card class="panel panel--top-routes" shadow="hover">
         <template #header>
-          <div class="panel-title">{{ $t('dashboard.topRouteRequestDistribution') }}</div>
-          <el-tooltip :content="$t('dashboard.topRouteHint')" placement="top">
-            <el-icon class="header-icon"><InfoFilled /></el-icon>
-          </el-tooltip>
+          <div class="panel-header">
+            <div class="panel-header-left">
+              <div class="panel-title">{{ $t('dashboard.topRouteRequestDistribution') }}</div>
+              <el-tooltip :content="$t('dashboard.topRouteHint')" placement="top">
+                <el-icon class="header-icon"><InfoFilled /></el-icon>
+              </el-tooltip>
+            </div>
+            <el-button text size="small" class="panel-preview-btn" @click="openChartPreview($t('dashboard.topRouteRequestDistribution'), 'topRoutes')">
+              {{ $t('common.fullscreenPreview') }}
+            </el-button>
+          </div>
         </template>
         <div v-if="!isActive" class="chart-placeholder">
           <el-skeleton :rows="5" animated />
@@ -220,25 +272,55 @@
         </template>
       </el-card>
     </div>
+
+    <el-dialog
+      v-model="previewVisible"
+      class="chart-preview-dialog"
+      :title="previewTitle"
+      fullscreen
+      append-to-body
+      destroy-on-close
+      @opened="onPreviewDialogOpened"
+      @closed="onPreviewDialogClosed"
+    >
+      <template #header>
+        <div class="preview-header">
+          <span class="preview-title">{{ previewTitle }}</span>
+            <el-button size="small" plain @click="changePreviewZoom(12)">-</el-button>
+            <el-button size="small" plain @click="changePreviewZoom(-12)">+</el-button>
+            <el-button size="small" type="primary" plain @click="openPreviewInNewWindow">
+              {{ $t('common.openInNewWindow') }}
+            </el-button>
+          </div>
+        </template>
+      <v-chart
+        v-if="previewChartReady"
+        ref="previewChartRef"
+        :option="previewOptionWithZoom"
+        class="chart chart-preview"
+        autoresize
+      />
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessage, ElConfigProvider } from 'element-plus'
 import { InfoFilled } from '@element-plus/icons-vue'
 import zhCn from 'element-plus/dist/locale/zh-cn.mjs'
 import enUs from 'element-plus/dist/locale/en.mjs'
 import { EventsOn, EventsOff } from '../api'
-import { GetListenAddrs, GetMetrics, QueryHistoricalMetrics, GetDashboardStats, GetConfig } from '../api'
+import { GetListenAddrs, GetMetrics, QueryHistoricalMetrics, GetDashboardStats, GetConfig, OpenChartPreviewWindow } from '../api'
 import VChart from 'vue-echarts'
 import { use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
 import { LineChart, BarChart, PieChart } from 'echarts/charts'
-import { GridComponent, TooltipComponent, LegendComponent, GraphicComponent } from 'echarts/components'
+import { GridComponent, TooltipComponent, LegendComponent, GraphicComponent, DataZoomComponent } from 'echarts/components'
 import type { EChartsOption } from 'echarts'
 import { useI18n } from 'vue-i18n'
 import { useDateShortcuts } from '../composables/useDateShortcuts'
+import { emit, listen } from '@tauri-apps/api/event'
 
 const { t, locale } = useI18n()
 const { dateShortcuts } = useDateShortcuts()
@@ -253,6 +335,7 @@ use([
   TooltipComponent,
   LegendComponent,
   GraphicComponent,
+  DataZoomComponent,
 ])
 
 const props = defineProps<{ isActive: boolean }>()
@@ -317,6 +400,205 @@ const latest = ref<MetricsPayload | null>(null)
 const dateRange = ref<[number, number] | null>(null)
 const loadingHistorical = ref(false)
 const historicalData = ref<MetricsSeries | null>(null)
+const previewVisible = ref(false)
+const previewTitle = ref('')
+const previewChartRef = ref<any>(null)
+const previewChartReady = ref(false)
+const previewZoomStart = ref(0)
+const previewZoomEnd = ref(100)
+const previewChartKey = ref<
+  | 'qps'
+  | 'status'
+  | 'latency'
+  | 'percentile'
+  | 'upstream'
+  | 'rate'
+  | 'statusPie'
+  | 'throughput'
+  | 'latencyDist'
+  | 'topRoutes'
+  | ''
+>('')
+
+const openChartPreview = (title: string, key: typeof previewChartKey.value) => {
+  previewTitle.value = title
+  previewChartKey.value = key
+  previewZoomStart.value = 0
+  previewZoomEnd.value = 100
+  previewChartReady.value = false
+  previewVisible.value = true
+}
+
+const onPreviewDialogOpened = async () => {
+  previewChartReady.value = true
+  await nextTick()
+  requestAnimationFrame(() => {
+    const cmp = previewChartRef.value as any
+    const instance = cmp?.getEchartsInstance?.() || cmp?.chart
+    if (instance && typeof instance.resize === 'function') {
+      instance.resize()
+    }
+  })
+}
+
+const onPreviewDialogClosed = () => {
+  previewChartReady.value = false
+}
+
+const getPreviewOptionByKey = (key: typeof previewChartKey.value): EChartsOption => {
+  switch (key) {
+    case 'qps': return qpsOption.value
+    case 'status': return statusOption.value
+    case 'latency': return latencyOption.value
+    case 'percentile': return pOption.value
+    case 'upstream': return upDistOption.value
+    case 'rate': return rateOption.value
+    case 'statusPie': return statusPieOption.value
+    case 'throughput': return throughputOption.value
+    case 'latencyDist': return latencyDistOption.value
+    case 'topRoutes': return topRoutesOption.value
+    default: return {}
+  }
+}
+
+const currentPreviewOption = computed<EChartsOption>(() => {
+  return getPreviewOptionByKey(previewChartKey.value)
+})
+
+const applyPreviewZoom = (option: EChartsOption): EChartsOption => {
+  const base = option || {}
+  const xAxis = (base as any).xAxis
+  if (xAxis === undefined) return base
+
+  return {
+    ...(base as any),
+    dataZoom: [
+      {
+        type: 'inside',
+        xAxisIndex: 0,
+        start: previewZoomStart.value,
+        end: previewZoomEnd.value,
+        zoomOnMouseWheel: true,
+        moveOnMouseMove: true,
+      },
+      {
+        type: 'slider',
+        xAxisIndex: 0,
+        height: 18,
+        bottom: 6,
+        start: previewZoomStart.value,
+        end: previewZoomEnd.value,
+      },
+    ],
+  }
+}
+
+const previewOptionWithZoom = computed<EChartsOption>(() => {
+  return applyPreviewZoom(currentPreviewOption.value)
+})
+
+const changePreviewZoom = (delta: number) => {
+  const currStart = previewZoomStart.value
+  const currEnd = previewZoomEnd.value
+  const currSpan = Math.max(5, currEnd - currStart)
+
+  const nextSpan = delta > 0
+    ? Math.max(5, currSpan - delta)
+    : Math.min(100, currSpan + Math.abs(delta))
+
+  const center = (currStart + currEnd) / 2
+  let start = center - nextSpan / 2
+  let end = center + nextSpan / 2
+  if (start < 0) {
+    end -= start
+    start = 0
+  }
+  if (end > 100) {
+    start -= (end - 100)
+    end = 100
+  }
+
+  previewZoomStart.value = Math.max(0, Math.min(95, Number(start.toFixed(2))))
+  previewZoomEnd.value = Math.max(5, Math.min(100, Number(end.toFixed(2))))
+}
+
+const getPreviewOptionPayloadByKey = (key: typeof previewChartKey.value): any | null => {
+  const option = applyPreviewZoom(getPreviewOptionByKey(key)) as any
+  if (!option || typeof option !== 'object') {
+    return null
+  }
+  // 通过 JSON 深拷贝去掉函数，保证可序列化到 localStorage
+  try {
+    return JSON.parse(JSON.stringify(option))
+  } catch {
+    return null
+  }
+}
+
+const openPreviewInNewWindow = async () => {
+  const chartKey = previewChartKey.value
+  const optionPayload = getPreviewOptionPayloadByKey(chartKey)
+  if (!optionPayload) {
+    ElMessage.warning(t('common.previewUnavailable'))
+    return
+  }
+  const title = previewTitle.value
+  const payloadKey = `chart-preview:${Date.now()}:${Math.random().toString(36).slice(2)}`
+  localStorage.setItem(
+    payloadKey,
+    JSON.stringify({
+      title,
+      option: optionPayload,
+      source: 'dashboard',
+      chartKey,
+      createdAt: Date.now(),
+    }),
+  )
+  const previewUrl = new URL('/chart-preview-interactive.html', window.location.origin)
+  previewUrl.searchParams.set('key', payloadKey)
+
+  try {
+    if ((window as any).__TAURI_INTERNALS__) {
+      await OpenChartPreviewWindow(title, payloadKey)
+      return
+    }
+  } catch (e) {
+    console.error('open preview window failed:', e)
+    ElMessage.error(t('common.previewUnavailable'))
+    return
+  }
+
+  const popup = window.open(previewUrl.toString(), '_blank', 'noopener,noreferrer,width=1400,height=900')
+  if (!popup) {
+    ElMessage.warning(t('common.previewUnavailable'))
+    return
+  }
+}
+
+let previewSyncUnlisten: (() => void) | null = null
+
+const onPreviewSyncRequest = async (event: any) => {
+  const payload = event?.payload as any
+  if (!payload || payload.source !== 'dashboard') return
+
+  const requestId = String(payload.requestId || '').trim()
+  const chartKey = String(payload.chartKey || '').trim() as typeof previewChartKey.value
+  const responseEvent = 'chart-preview-sync-response'
+  if (!requestId) return
+
+  const option = getPreviewOptionPayloadByKey(chartKey)
+  if (!option) {
+    await emit(responseEvent, { requestId, ok: false, error: 'preview option unavailable' })
+    return
+  }
+  await emit(responseEvent, {
+    requestId,
+    ok: true,
+    option,
+    title: String(payload.title || previewTitle.value || ''),
+    updatedAt: Date.now(),
+  })
+}
 
 const maxPoints = 1200
 
@@ -1420,6 +1702,16 @@ onMounted(() => {
   themeObserver.observe(document.documentElement, {
     attributes: true,
   });
+
+  if ((window as any).__TAURI_INTERNALS__) {
+    listen('chart-preview-sync-request', onPreviewSyncRequest)
+      .then((unlisten) => {
+        previewSyncUnlisten = unlisten
+      })
+      .catch((err) => {
+        console.error('listen chart-preview-sync-request failed:', err)
+      })
+  }
 })
 
 onBeforeUnmount(() => {
@@ -1432,6 +1724,10 @@ onBeforeUnmount(() => {
   }
   if (themeObserver) {
     themeObserver.disconnect();
+  }
+  if (previewSyncUnlisten) {
+    previewSyncUnlisten()
+    previewSyncUnlisten = null
   }
 })
 </script>
@@ -1570,6 +1866,42 @@ h3 {
   font-size: 16px;
   font-weight: 600;
   color: var(--text);
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.panel-header-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.panel-preview-btn {
+  font-size: 12px;
+}
+
+.preview-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.preview-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.chart-preview {
+  height: calc(100vh - 140px);
+  min-height: 420px;
 }
 
 .chart {

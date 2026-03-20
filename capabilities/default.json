@@ -3,7 +3,8 @@
   "identifier": "default-capability",
   "description": "Default permissions for the app",
   "windows": [
-    "main"
+    "main",
+    "chart-preview-*"
   ],
   "permissions": [
     "core:default",
@@ -33,6 +34,12 @@
         },
         {
           "name": "logs"
+        },
+        {
+          "name": "chart-preview-sync-request"
+        },
+        {
+          "name": "chart-preview-sync-response"
         }
       ]
     },
@@ -56,6 +63,12 @@
         },
         {
           "name": "logs"
+        },
+        {
+          "name": "chart-preview-sync-request"
+        },
+        {
+          "name": "chart-preview-sync-response"
         }
       ]
     },
@@ -67,6 +80,8 @@
     "core:window:allow-request-user-attention",
     "core:window:allow-set-always-on-top",
     "core:window:allow-start-dragging",
+    "core:window:allow-create",
+    "core:webview:allow-create-webview-window",
     "process:default",
     "opener:default"
   ]

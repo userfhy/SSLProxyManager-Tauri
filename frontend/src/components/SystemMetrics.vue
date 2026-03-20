@@ -232,7 +232,12 @@
       <div class="charts-grid">
         <el-card class="chart-panel" shadow="never">
           <template #header>
-            <div class="panel-title">{{ $t('systemMetrics.resourceTrend') }}</div>
+            <div class="panel-header">
+              <div class="panel-title">{{ $t('systemMetrics.resourceTrend') }}</div>
+              <el-button text size="small" class="panel-preview-btn" @click="openChartPreview($t('systemMetrics.resourceTrend'), 'resource')">
+                {{ $t('common.fullscreenPreview') }}
+              </el-button>
+            </div>
           </template>
           <v-chart v-if="isActive && activePoints.length > 0" :option="resourceOption" class="chart" autoresize />
           <el-empty v-else :description="$t('systemMetrics.noData')" :image-size="64" />
@@ -240,7 +245,12 @@
 
         <el-card class="chart-panel" shadow="never">
           <template #header>
-            <div class="panel-title">{{ networkTrendTitle }}</div>
+            <div class="panel-header">
+              <div class="panel-title">{{ networkTrendTitle }}</div>
+              <el-button text size="small" class="panel-preview-btn" @click="openChartPreview(networkTrendTitle, 'network')">
+                {{ $t('common.fullscreenPreview') }}
+              </el-button>
+            </div>
           </template>
           <v-chart v-if="isActive && activePoints.length > 0" :option="networkOption" class="chart" autoresize />
           <el-empty v-else :description="$t('systemMetrics.noData')" :image-size="64" />
@@ -248,7 +258,12 @@
 
         <el-card class="chart-panel" shadow="never">
           <template #header>
-            <div class="panel-title">{{ diskTrendTitle }}</div>
+            <div class="panel-header">
+              <div class="panel-title">{{ diskTrendTitle }}</div>
+              <el-button text size="small" class="panel-preview-btn" @click="openChartPreview(diskTrendTitle, 'disk')">
+                {{ $t('common.fullscreenPreview') }}
+              </el-button>
+            </div>
           </template>
           <v-chart v-if="isActive && activePoints.length > 0" :option="diskOption" class="chart" autoresize />
           <el-empty v-else :description="$t('systemMetrics.noData')" :image-size="64" />
@@ -256,7 +271,12 @@
 
         <el-card class="chart-panel" shadow="never">
           <template #header>
-            <div class="panel-title">{{ $t('systemMetrics.loadTrend') }}</div>
+            <div class="panel-header">
+              <div class="panel-title">{{ $t('systemMetrics.loadTrend') }}</div>
+              <el-button text size="small" class="panel-preview-btn" @click="openChartPreview($t('systemMetrics.loadTrend'), 'load')">
+                {{ $t('common.fullscreenPreview') }}
+              </el-button>
+            </div>
           </template>
           <v-chart v-if="isActive && activePoints.length > 0" :option="loadOption" class="chart" autoresize />
           <el-empty v-else :description="$t('systemMetrics.noData')" :image-size="64" />
@@ -264,7 +284,12 @@
 
         <el-card class="chart-panel" shadow="never">
           <template #header>
-            <div class="panel-title">{{ $t('systemMetrics.connectionTrend') }}</div>
+            <div class="panel-header">
+              <div class="panel-title">{{ $t('systemMetrics.connectionTrend') }}</div>
+              <el-button text size="small" class="panel-preview-btn" @click="openChartPreview($t('systemMetrics.connectionTrend'), 'connection')">
+                {{ $t('common.fullscreenPreview') }}
+              </el-button>
+            </div>
           </template>
           <v-chart v-if="isActive && activePoints.length > 0" :option="connectionOption" class="chart" autoresize />
           <el-empty v-else :description="$t('systemMetrics.noData')" :image-size="64" />
@@ -285,12 +310,41 @@
           </el-table-column>
         </el-table>
       </el-card>
+
+      <el-dialog
+        v-model="previewVisible"
+        class="chart-preview-dialog"
+        :title="previewTitle"
+        fullscreen
+        append-to-body
+        destroy-on-close
+        @opened="onPreviewDialogOpened"
+        @closed="onPreviewDialogClosed"
+      >
+        <template #header>
+          <div class="preview-header">
+            <span class="preview-title">{{ previewTitle }}</span>
+            <el-button size="small" plain @click="changePreviewZoom(12)">-</el-button>
+            <el-button size="small" plain @click="changePreviewZoom(-12)">+</el-button>
+            <el-button size="small" type="primary" plain @click="openPreviewInNewWindow">
+              {{ $t('common.openInNewWindow') }}
+            </el-button>
+          </div>
+        </template>
+        <v-chart
+          v-if="previewChartReady"
+          ref="previewChartRef"
+          :option="previewOptionWithZoom"
+          class="chart chart-preview"
+          autoresize
+        />
+      </el-dialog>
     </el-card>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElConfigProvider, ElMessage } from 'element-plus'
 import zhCn from 'element-plus/dist/locale/zh-cn.mjs'
 import enUs from 'element-plus/dist/locale/en.mjs'
@@ -299,15 +353,17 @@ import {
   EventsOn,
   EventsOff,
   GetSystemMetrics,
+  OpenChartPreviewWindow,
   QueryHistoricalSystemMetrics,
   SetSystemMetricsSubscription,
 } from '../api'
 import { useDateShortcuts } from '../composables/useDateShortcuts'
+import { emit, listen } from '@tauri-apps/api/event'
 import VChart from 'vue-echarts'
 import { use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
 import { LineChart } from 'echarts/charts'
-import { GridComponent, TooltipComponent, LegendComponent } from 'echarts/components'
+import { GridComponent, TooltipComponent, LegendComponent, DataZoomComponent } from 'echarts/components'
 import type { EChartsOption } from 'echarts'
 
 type NetworkInterfaceStats = {
@@ -375,7 +431,7 @@ type SystemMetricsEventPayload = {
 
 type RateUnit = 'B' | 'KB' | 'MB'
 
-use([CanvasRenderer, LineChart, GridComponent, TooltipComponent, LegendComponent])
+use([CanvasRenderer, LineChart, GridComponent, TooltipComponent, LegendComponent, DataZoomComponent])
 
 const props = defineProps<{ isActive: boolean; config?: any }>()
 
@@ -403,9 +459,191 @@ const realtimePoints = ref<SystemMetricsPoint[]>([])
 const historicalPoints = ref<SystemMetricsPoint[] | null>(null)
 const latestPoint = ref<SystemMetricsPoint | null>(null)
 const latestInterfaces = ref<NetworkInterfaceStats[]>([])
+const previewVisible = ref(false)
+const previewTitle = ref('')
+const previewChartRef = ref<any>(null)
+const previewChartReady = ref(false)
+const previewChartKey = ref<'resource' | 'network' | 'disk' | 'load' | 'connection' | ''>('')
+const previewZoomStart = ref(0)
+const previewZoomEnd = ref(100)
 
 let metricsUnlisten: (() => void) | null = null
 let themeObserver: MutationObserver | null = null
+
+const openChartPreview = (title: string, key: typeof previewChartKey.value) => {
+  previewTitle.value = title
+  previewChartKey.value = key
+  previewZoomStart.value = 0
+  previewZoomEnd.value = 100
+  previewChartReady.value = false
+  previewVisible.value = true
+}
+
+const onPreviewDialogOpened = async () => {
+  previewChartReady.value = true
+  await nextTick()
+  requestAnimationFrame(() => {
+    const cmp = previewChartRef.value as any
+    const instance = cmp?.getEchartsInstance?.() || cmp?.chart
+    if (instance && typeof instance.resize === 'function') {
+      instance.resize()
+    }
+  })
+}
+
+const onPreviewDialogClosed = () => {
+  previewChartReady.value = false
+}
+
+const getPreviewOptionByKey = (key: typeof previewChartKey.value): EChartsOption => {
+  switch (key) {
+    case 'resource': return resourceOption.value
+    case 'network': return networkOption.value
+    case 'disk': return diskOption.value
+    case 'load': return loadOption.value
+    case 'connection': return connectionOption.value
+    default: return {}
+  }
+}
+
+const currentPreviewOption = computed<EChartsOption>(() => {
+  return getPreviewOptionByKey(previewChartKey.value)
+})
+
+const applyPreviewZoom = (option: EChartsOption): EChartsOption => {
+  const base = option || {}
+  const xAxis = (base as any).xAxis
+  if (xAxis === undefined) return base
+
+  return {
+    ...(base as any),
+    dataZoom: [
+      {
+        type: 'inside',
+        xAxisIndex: 0,
+        start: previewZoomStart.value,
+        end: previewZoomEnd.value,
+        zoomOnMouseWheel: true,
+        moveOnMouseMove: true,
+      },
+      {
+        type: 'slider',
+        xAxisIndex: 0,
+        height: 18,
+        bottom: 6,
+        start: previewZoomStart.value,
+        end: previewZoomEnd.value,
+      },
+    ],
+  }
+}
+
+const previewOptionWithZoom = computed<EChartsOption>(() => {
+  return applyPreviewZoom(currentPreviewOption.value)
+})
+
+const changePreviewZoom = (delta: number) => {
+  const currStart = previewZoomStart.value
+  const currEnd = previewZoomEnd.value
+  const currSpan = Math.max(5, currEnd - currStart)
+
+  const nextSpan = delta > 0
+    ? Math.max(5, currSpan - delta)
+    : Math.min(100, currSpan + Math.abs(delta))
+
+  const center = (currStart + currEnd) / 2
+  let start = center - nextSpan / 2
+  let end = center + nextSpan / 2
+  if (start < 0) {
+    end -= start
+    start = 0
+  }
+  if (end > 100) {
+    start -= (end - 100)
+    end = 100
+  }
+
+  previewZoomStart.value = Math.max(0, Math.min(95, Number(start.toFixed(2))))
+  previewZoomEnd.value = Math.max(5, Math.min(100, Number(end.toFixed(2))))
+}
+
+const getPreviewOptionPayloadByKey = (key: typeof previewChartKey.value): any | null => {
+  const option = applyPreviewZoom(getPreviewOptionByKey(key)) as any
+  if (!option || typeof option !== 'object') {
+    return null
+  }
+  // 通过 JSON 深拷贝去掉函数，保证可序列化到 localStorage
+  try {
+    return JSON.parse(JSON.stringify(option))
+  } catch {
+    return null
+  }
+}
+
+const openPreviewInNewWindow = async () => {
+  const chartKey = previewChartKey.value
+  const optionPayload = getPreviewOptionPayloadByKey(chartKey)
+  if (!optionPayload) {
+    ElMessage.warning(t('common.previewUnavailable'))
+    return
+  }
+  const title = previewTitle.value
+  const payloadKey = `chart-preview:${Date.now()}:${Math.random().toString(36).slice(2)}`
+  localStorage.setItem(
+    payloadKey,
+    JSON.stringify({
+      title,
+      option: optionPayload,
+      source: 'systemMetrics',
+      chartKey,
+      createdAt: Date.now(),
+    }),
+  )
+  const previewUrl = new URL('/chart-preview-interactive.html', window.location.origin)
+  previewUrl.searchParams.set('key', payloadKey)
+
+  try {
+    if ((window as any).__TAURI_INTERNALS__) {
+      await OpenChartPreviewWindow(title, payloadKey)
+      return
+    }
+  } catch (e) {
+    console.error('open preview window failed:', e)
+    ElMessage.error(t('common.previewUnavailable'))
+    return
+  }
+
+  const popup = window.open(previewUrl.toString(), '_blank', 'noopener,noreferrer,width=1400,height=900')
+  if (!popup) {
+    ElMessage.warning(t('common.previewUnavailable'))
+    return
+  }
+}
+
+let previewSyncUnlisten: (() => void) | null = null
+
+const onPreviewSyncRequest = async (event: any) => {
+  const payload = event?.payload as any
+  if (!payload || payload.source !== 'systemMetrics') return
+
+  const requestId = String(payload.requestId || '').trim()
+  const chartKey = String(payload.chartKey || '').trim() as typeof previewChartKey.value
+  const responseEvent = 'chart-preview-sync-response'
+  if (!requestId) return
+
+  const option = getPreviewOptionPayloadByKey(chartKey)
+  if (!option) {
+    await emit(responseEvent, { requestId, ok: false, error: 'preview option unavailable' })
+    return
+  }
+  await emit(responseEvent, {
+    requestId,
+    ok: true,
+    option,
+    title: String(payload.title || previewTitle.value || ''),
+    updatedAt: Date.now(),
+  })
+}
 
 const chartColors = ref({
   textMuted: '#94a3b8',
@@ -1086,6 +1324,16 @@ onMounted(() => {
     updateChartColors()
   })
   themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] })
+
+  if ((window as any).__TAURI_INTERNALS__) {
+    listen('chart-preview-sync-request', onPreviewSyncRequest)
+      .then((unlisten) => {
+        previewSyncUnlisten = unlisten
+      })
+      .catch((err) => {
+        console.error('listen chart-preview-sync-request failed:', err)
+      })
+  }
 })
 
 onBeforeUnmount(() => {
@@ -1093,6 +1341,10 @@ onBeforeUnmount(() => {
   if (themeObserver) {
     themeObserver.disconnect()
     themeObserver = null
+  }
+  if (previewSyncUnlisten) {
+    previewSyncUnlisten()
+    previewSyncUnlisten = null
   }
 })
 </script>
@@ -1222,9 +1474,39 @@ onBeforeUnmount(() => {
   font-weight: 600;
 }
 
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.panel-preview-btn {
+  font-size: 12px;
+}
+
 .chart {
   width: 100%;
   height: 260px;
+}
+
+.preview-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.preview-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.chart-preview {
+  height: calc(100vh - 140px);
+  min-height: 420px;
 }
 
 @media (max-width: 1300px) {

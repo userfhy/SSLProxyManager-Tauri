@@ -101,6 +101,7 @@ fn main() {
             commands::save_config_toml_as,
             commands::export_current_config_toml,
             commands::hide_to_tray,
+            commands::open_chart_preview_window,
             commands::quit_app,
             commands::get_dashboard_stats,
             commands::set_tray_proxy_state,
