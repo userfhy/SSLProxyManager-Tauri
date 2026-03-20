@@ -130,6 +130,14 @@ export async function OpenDirectoryDialog() {
   return await invoke('open_directory_dialog');
 }
 
+export async function OpenDbFileDialog() {
+  return await invoke('open_db_file_dialog');
+}
+
+export async function OpenExistingDbFileDialog() {
+  return await invoke('open_existing_db_file_dialog');
+}
+
 export async function SaveConfigTomlAs(content: string) {
   return await invoke('save_config_toml_as', { content });
 }

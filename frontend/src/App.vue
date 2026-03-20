@@ -722,6 +722,8 @@ onMounted(async () => {
   setupQuitHandler().catch(() => {
     // ignore
   })
+
+  window.addEventListener('save-config-request', onSaveConfigRequest as EventListener)
   
   // 检查条款接受状态（使用 localStorage）
   try {
@@ -906,7 +908,15 @@ const initializeAppWithoutReloadConfig = async () => {
 onBeforeUnmount(() => {
   stopAutoTheme()
   stopRuntimeTimer()
+  window.removeEventListener('save-config-request', onSaveConfigRequest as EventListener)
 })
+
+const onSaveConfigRequest = () => {
+  if (saving.value || starting.value) {
+    return
+  }
+  handleSaveConfig()
+}
 </script>
 
 <style scoped>

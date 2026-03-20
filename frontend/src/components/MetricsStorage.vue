@@ -14,11 +14,18 @@
       </el-form-item>
 
       <el-form-item v-if="localConfig.enabled" :label="$t('metricsStorage.dbPath')">
-        <el-input
-          v-model="localConfig.db_path"
-          :placeholder="$t('metricsStorage.dbPathPlaceholder')"
-          style="max-width: 500px;"
-        />
+        <div class="db-path-selector">
+          <el-input
+            v-model="localConfig.db_path"
+            :placeholder="$t('metricsStorage.dbPathPlaceholder')"
+          />
+          <el-button type="danger" plain :icon="FolderAdd" @click="createDbFile">
+            {{ $t('metricsStorage.createDb') }}
+          </el-button>
+          <el-button type="primary" plain :icon="FolderOpened" @click="loadDbFile">
+            {{ $t('metricsStorage.loadDb') }}
+          </el-button>
+        </div>
         <el-text type="info" size="small" class="hint">
           {{ $t('metricsStorage.dbPathHint') }}
         </el-text>
@@ -150,6 +157,9 @@
 
 <script setup lang="ts">
 import { computed, ref, watch, onMounted } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { FolderAdd, FolderOpened } from '@element-plus/icons-vue'
+import { OpenDbFileDialog, OpenExistingDbFileDialog } from '../api'
 import { useDBStatus } from '../composables/useDBStatus'
 import { useI18n } from 'vue-i18n'
 
@@ -266,6 +276,51 @@ const fragRateText = computed(() => {
   return `${rate.toFixed(2)}%`
 })
 
+const createDbFile = async () => {
+  try {
+    await ElMessageBox.confirm(
+      t('metricsStorage.createDbRiskMessage'),
+      t('metricsStorage.createDbRiskTitle'),
+      {
+        type: 'warning',
+        confirmButtonText: t('common.confirm'),
+        cancelButtonText: t('common.cancel'),
+      }
+    )
+
+    const filePath = await OpenDbFileDialog()
+    if (filePath) {
+      localConfig.value.db_path = String(filePath)
+      window.dispatchEvent(
+        new CustomEvent('save-config-request', {
+          detail: { source: 'metrics-storage-create-db' },
+        })
+      )
+    }
+  } catch (error: any) {
+    if (error === 'cancel' || error === 'close') {
+      return
+    }
+    ElMessage.error(t('metricsStorage.createDbFileFailed', { error: error?.message || String(error) }))
+  }
+}
+
+const loadDbFile = async () => {
+  try {
+    const filePath = await OpenExistingDbFileDialog()
+    if (filePath) {
+      localConfig.value.db_path = String(filePath)
+      window.dispatchEvent(
+        new CustomEvent('save-config-request', {
+          detail: { source: 'metrics-storage-load-db' },
+        })
+      )
+    }
+  } catch (error: any) {
+    ElMessage.error(t('metricsStorage.loadDbFileFailed', { error: error?.message || String(error) }))
+  }
+}
+
 watch(
   () => props.config,
   (newConfig) => {
@@ -369,6 +424,17 @@ defineExpose({
   line-height: 1.4;
 }
 
+.db-path-selector {
+  width: min(760px, 100%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.db-path-selector :deep(.el-input) {
+  flex: 1;
+}
+
 .status-card,
 .info-card {
   margin-top: 24px;
@@ -448,6 +514,11 @@ defineExpose({
 @media (max-width: 980px) {
   .config-page :deep(.el-form-item__label) {
     width: 140px !important;
+  }
+
+  .db-path-selector {
+    flex-direction: column;
+    align-items: stretch;
   }
 }
 </style>

@@ -328,6 +328,37 @@ pub async fn open_directory_dialog(app: tauri::AppHandle) -> Result<Option<Strin
 }
 
 #[tauri::command]
+pub async fn open_db_file_dialog(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    let file = app
+        .dialog()
+        .file()
+        .set_title("Select or Create Database File")
+        .set_file_name("metrics.db")
+        .add_filter("All Files", &["*"])
+        .add_filter("SQLite Database", &["db", "sqlite", "sqlite3"])
+        .blocking_save_file();
+
+    Ok(file
+        .and_then(|f| f.into_path().ok())
+        .map(|p| p.to_string_lossy().to_string()))
+}
+
+#[tauri::command]
+pub async fn open_existing_db_file_dialog(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    let file = app
+        .dialog()
+        .file()
+        .set_title("Load Existing Database File")
+        .add_filter("SQLite Database", &["db", "sqlite", "sqlite3"])
+        .add_filter("All Files", &["*"])
+        .blocking_pick_file();
+
+    Ok(file
+        .and_then(|f| f.into_path().ok())
+        .map(|p| p.to_string_lossy().to_string()))
+}
+
+#[tauri::command]
 pub fn hide_to_tray(app: tauri::AppHandle) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("main") {
         window.hide().map_err(|e| e.to_string())?;

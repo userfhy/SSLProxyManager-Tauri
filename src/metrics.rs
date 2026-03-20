@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePool, SqlitePoolOptions, SqliteSynchronous};
 use sqlx::{ConnectOptions, QueryBuilder}; // 移除了未使用的 Row
 use std::collections::{BTreeMap, HashMap};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -733,24 +733,26 @@ fn resolve_db_path(input: String) -> Result<PathBuf> {
     if s.is_empty() {
         return default_db_path();
     }
-    let p = PathBuf::from(s);
-    if p.is_absolute() {
-        Ok(p)
+    let raw_path = PathBuf::from(s);
+    let p = if raw_path.is_absolute() {
+        raw_path
     } else {
         let exe = std::env::current_exe().with_context(|| "无法获取可执行文件路径")?;
         let dir = exe
             .parent()
             .ok_or_else(|| anyhow!("无法获取可执行文件所在目录"))?;
-        Ok(dir.join(p))
-    }
-}
+        dir.join(raw_path)
+    };
 
-#[inline]
-fn sqlite_url(db_path: &Path) -> Result<String> {
-    let s = db_path
-        .to_str()
-        .ok_or_else(|| anyhow!("数据库路径包含非法字符"))?;
-    Ok(format!("sqlite://{}", s))
+    // 兼容用户将 db_path 配置为目录：
+    // - 已存在目录：自动落到 <dir>/metrics.db
+    // - 以路径分隔符结尾的输入：视为目录并自动补文件名
+    let is_dir_path = p.is_dir() || s.ends_with('/') || s.ends_with('\\');
+    if is_dir_path {
+        Ok(p.join("metrics.db"))
+    } else {
+        Ok(p)
+    }
 }
 
 #[inline]
@@ -853,11 +855,7 @@ pub async fn init_db(db_path: String) -> Result<()> {
             .await
             .with_context(|| format!("创建数据库目录失败: {}", dir.display()))?;
 
-        let url = sqlite_url(&path)?;
-
-        let mut opt: SqliteConnectOptions = url
-            .parse()
-            .with_context(|| format!("解析数据库 URL 失败: {url}"))?;
+        let mut opt = SqliteConnectOptions::new().filename(&path);
         opt = opt.create_if_missing(true);
         opt = opt.disable_statement_logging();
         // 关键性能优化：启用 WAL 模式和 Normal 同步
@@ -1268,8 +1266,12 @@ pub async fn get_metrics_db_status_detail() -> Result<MetricsDBStatus> {
 
 pub async fn test_metrics_db_connection(db_path: String) -> Result<(bool, String)> {
     let path = resolve_db_path(db_path)?;
-    let url = sqlite_url(&path)?;
-    let mut opt: SqliteConnectOptions = url.parse()?;
+    if let Some(dir) = path.parent() {
+        tokio::fs::create_dir_all(dir)
+            .await
+            .with_context(|| format!("创建数据库目录失败: {}", dir.display()))?;
+    }
+    let mut opt = SqliteConnectOptions::new().filename(&path);
     opt = opt.create_if_missing(true);
     opt = opt.disable_statement_logging();
     opt = opt.journal_mode(SqliteJournalMode::Wal);
