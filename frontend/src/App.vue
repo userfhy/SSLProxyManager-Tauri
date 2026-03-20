@@ -55,6 +55,15 @@
             <span v-if="status === 'running' && runTime" class="runtime-text">
               ({{ $t('app.runtime', { time: runTime }) }})
             </span>
+            <el-button
+              @click="handleQuit"
+              :disabled="status !== 'stopped'"
+              type="warning"
+              plain
+              class="control-btn"
+            >
+              {{ $t('app.quit') }}
+            </el-button>
             <el-button 
               @click="status==='running'?stop():start()" 
               :loading="starting"
@@ -734,25 +743,29 @@ const handleTermsAccepted = async () => {
   await initializeAppWithoutReloadConfig()
 }
 
+const handleQuit = () => {
+  ElMessageBox.confirm(
+    t('app.confirmQuit'),
+    t('app.quit'),
+    {
+      confirmButtonText: t('app.quit'),
+      cancelButtonText: t('common.cancel'),
+      type: 'warning',
+    }
+  )
+    .then(() => {
+      QuitApp()
+    })
+    .catch(() => {
+      // 用户取消
+    })
+}
+
 // 设置退出事件处理器（在应用启动时立即设置，确保退出功能始终可用）
 const setupQuitHandler = async () => {
   // 托盘请求退出：由前端弹确认框，避免后端/GTK 死锁
   await EventsOn('request-quit', () => {
-    ElMessageBox.confirm(
-      t('app.confirmQuit'),
-      t('app.quit'),
-      {
-        confirmButtonText: t('app.quit'),
-        cancelButtonText: t('common.cancel'),
-        type: 'warning',
-      }
-    )
-      .then(() => {
-        QuitApp()
-      })
-      .catch(() => {
-        // 用户取消
-      })
+    handleQuit()
   })
 }
 
