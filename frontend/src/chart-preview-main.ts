@@ -1,5 +1,7 @@
 import * as echarts from 'echarts'
 import { emit, listen } from '@tauri-apps/api/event'
+import { getCurrentWindow } from '@tauri-apps/api/window'
+import { SaveChartPngWithDialog } from './api'
 
 type PreviewPayload = {
   title?: string
@@ -12,9 +14,96 @@ type PreviewPayload = {
 const titleEl = document.getElementById('title') as HTMLElement | null
 const chartEl = document.getElementById('chart') as HTMLDivElement | null
 const refreshBtn = document.getElementById('refresh-btn') as HTMLButtonElement | null
+const exportPngBtn = document.getElementById('export-png-btn') as HTMLButtonElement | null
 const refreshStatusEl = document.getElementById('refresh-status') as HTMLElement | null
 const autoRefreshToggle = document.getElementById('auto-refresh-toggle') as HTMLInputElement | null
 const autoRefreshSeconds = document.getElementById('auto-refresh-seconds') as HTMLInputElement | null
+const autoRefreshLabel = document.getElementById('auto-refresh-label') as HTMLElement | null
+const autoRefreshSecondsLabel = document.getElementById('auto-refresh-seconds-label') as HTMLElement | null
+
+const localeRaw = localStorage.getItem('locale') || 'zh-CN'
+const locale: 'zh-CN' | 'en-US' = localeRaw === 'en-US' ? 'en-US' : 'zh-CN'
+
+const shouldUseDarkMode = (): boolean => {
+  const hour = new Date().getHours()
+  return hour >= 18 || hour < 6
+}
+
+const applyWindowTheme = () => {
+  const autoThemeEnabled = localStorage.getItem('autoThemeEnabled') !== 'false'
+  const theme = localStorage.getItem('theme') || 'dark'
+  let isDark = true
+  if (autoThemeEnabled || theme === 'auto') {
+    isDark = shouldUseDarkMode()
+  } else {
+    isDark = theme !== 'light'
+  }
+  document.documentElement.classList.toggle('light-mode', !isDark)
+}
+
+applyWindowTheme()
+window.setInterval(() => {
+  applyWindowTheme()
+}, 60000)
+
+type PreviewI18n = Record<string, string>
+const fallbackI18n: PreviewI18n = {
+  chartPreview: 'Chart Preview',
+  refresh: 'Refresh Latest',
+  exportPng: 'Export PNG',
+  autoRefresh: 'Auto Refresh',
+  seconds: 'sec',
+  loadingPreview: 'Loading preview...',
+  previewNotFound: 'Preview data not found or expired.',
+  noPreviewData: 'Preview data unavailable',
+  refreshedAt: 'Refreshed {time}',
+  syncInProgress: 'Syncing...',
+  updatedAt: 'Updated {time}',
+  refreshFailed: 'Refresh failed',
+  syncFailed: 'Sync failed: {error}',
+  syncTimeout: 'Sync timeout',
+  autoOn: 'Auto refresh enabled',
+  autoOff: 'Auto refresh disabled',
+  autoInterval: 'Auto refresh: {seconds} sec',
+  exportSuccess: 'PNG exported',
+  exportFailed: 'Export failed',
+}
+let i18nText: PreviewI18n = fallbackI18n
+
+const loadPreviewI18n = async () => {
+  try {
+    const mod = locale === 'en-US'
+      ? await import('./i18n/chart-preview/en-US.json')
+      : await import('./i18n/chart-preview/zh-CN.json')
+    const loaded = (mod?.default || {}) as PreviewI18n
+    i18nText = { ...fallbackI18n, ...loaded }
+  } catch {
+    i18nText = fallbackI18n
+  }
+}
+
+const t = (key: string, params?: Record<string, string | number>) => {
+  const tpl = i18nText[key] || key
+  if (!params) return tpl
+  return tpl.replace(/\{(\w+)\}/g, (_, p1) => String(params[p1] ?? ''))
+}
+
+const applyStaticI18nText = () => {
+  if (refreshBtn) refreshBtn.textContent = t('refresh')
+  if (exportPngBtn) exportPngBtn.textContent = t('exportPng')
+  if (autoRefreshLabel) autoRefreshLabel.textContent = t('autoRefresh')
+  if (autoRefreshSecondsLabel) autoRefreshSecondsLabel.textContent = t('seconds')
+  if (titleEl && !titleEl.textContent?.trim()) {
+    titleEl.textContent = t('chartPreview')
+  }
+  if (chartEl && chartEl.classList.contains('empty') && chartEl.textContent?.includes('Loading')) {
+    chartEl.textContent = t('loadingPreview')
+  }
+}
+
+void loadPreviewI18n().finally(() => {
+  applyStaticI18nText()
+})
 
 const showEmpty = (msg: string) => {
   if (!chartEl) return
@@ -44,10 +133,35 @@ const readPayloadByKey = (key: string): PreviewPayload | null => {
 
 let currentPayload = readPayloadByKey(payloadKey)
 if (!currentPayload || !currentPayload.option) {
-  showEmpty('Preview data not found or expired.')
+  showEmpty(t('previewNotFound'))
 } else if (!chartEl || !payloadKey) {
   // no-op
 } else {
+  const normalizeOptionForPreview = (option: any) => {
+    if (!option || typeof option !== 'object') return option
+    const next = JSON.parse(JSON.stringify(option))
+    if (next.tooltip && typeof next.tooltip === 'object' && !Array.isArray(next.tooltip)) {
+      next.tooltip.renderMode = 'richText'
+      next.tooltip.confine = true
+    }
+    return next
+  }
+
+  const formatLocalTimestamp = (d: Date) => {
+    const pad = (n: number) => String(n).padStart(2, '0')
+    const yyyy = d.getFullYear()
+    const mm = pad(d.getMonth() + 1)
+    const dd = pad(d.getDate())
+    const hh = pad(d.getHours())
+    const mi = pad(d.getMinutes())
+    const ss = pad(d.getSeconds())
+    return `${yyyy}${mm}${dd}-${hh}${mi}${ss}`
+  }
+
+  const waitNextFrame = () => new Promise<void>((resolve) => {
+    requestAnimationFrame(() => resolve())
+  })
+
   if (titleEl && currentPayload.title) {
     titleEl.textContent = String(currentPayload.title)
     document.title = String(currentPayload.title)
@@ -57,7 +171,17 @@ if (!currentPayload || !currentPayload.option) {
   chartEl.textContent = ''
 
   const chart = echarts.init(chartEl, undefined, { renderer: 'canvas' })
-  chart.setOption(currentPayload.option, { notMerge: true, lazyUpdate: false })
+  chart.setOption(normalizeOptionForPreview(currentPayload.option), { notMerge: true, lazyUpdate: false })
+  let pinnedTip: { seriesIndex: number; dataIndex: number } | null = null
+
+  const applyPinnedTip = () => {
+    if (!pinnedTip) return
+    chart.dispatchAction({
+      type: 'showTip',
+      seriesIndex: pinnedTip.seriesIndex,
+      dataIndex: pinnedTip.dataIndex,
+    } as any)
+  }
 
   const resize = () => chart.resize()
   window.addEventListener('resize', resize)
@@ -68,7 +192,8 @@ if (!currentPayload || !currentPayload.option) {
   const applyPayload = (payload: PreviewPayload) => {
     if (!payload || !payload.option) return false
     currentPayload = payload
-    chart.setOption(payload.option, { notMerge: true, lazyUpdate: false })
+    chart.setOption(normalizeOptionForPreview(payload.option), { notMerge: true, lazyUpdate: false })
+    applyPinnedTip()
     if (titleEl && payload.title) {
       titleEl.textContent = String(payload.title)
       document.title = String(payload.title)
@@ -90,7 +215,7 @@ if (!currentPayload || !currentPayload.option) {
     syncing = true
 
     if (!currentPayload) {
-      setRefreshStatus('未找到预览数据')
+      setRefreshStatus(t('noPreviewData'))
       syncing = false
       return
     }
@@ -102,14 +227,14 @@ if (!currentPayload || !currentPayload.option) {
       || !currentPayload.chartKey
     ) {
       const ok = reloadFromLocalStorage()
-      setRefreshStatus(ok ? `已刷新 ${new Date().toLocaleTimeString()}` : '刷新失败')
+      setRefreshStatus(ok ? t('refreshedAt', { time: new Date().toLocaleTimeString() }) : t('refreshFailed'))
       syncing = false
       return
     }
 
     const requestId = `${Date.now()}-${Math.random().toString(36).slice(2)}`
     const responseEvent = 'chart-preview-sync-response'
-    setRefreshStatus('同步中...')
+    setRefreshStatus(t('syncInProgress'))
     if (refreshBtn) refreshBtn.disabled = true
 
     try {
@@ -141,6 +266,7 @@ if (!currentPayload || !currentPayload.option) {
               source: currentPayload?.source,
               chartKey: currentPayload?.chartKey,
               title: currentPayload?.title || '',
+              requesterLabel: getCurrentWindow().label,
             }).catch((err) => {
               if (resolved) return
               resolved = true
@@ -164,18 +290,17 @@ if (!currentPayload || !currentPayload.option) {
           option: response.option,
           createdAt: Date.now(),
         }
-        localStorage.setItem(payloadKey, JSON.stringify(nextPayload))
         applyPayload(nextPayload)
-        setRefreshStatus(`已更新 ${new Date().toLocaleTimeString()}`)
+        setRefreshStatus(t('updatedAt', { time: new Date().toLocaleTimeString() }))
       } else {
-        setRefreshStatus('刷新失败')
+        setRefreshStatus(t('refreshFailed'))
       }
     } catch (e: any) {
       const msg = String(e?.message || e || '')
       if (msg) {
-        setRefreshStatus(`同步失败: ${msg}`)
+        setRefreshStatus(t('syncFailed', { error: msg }))
       } else {
-        setRefreshStatus('同步超时')
+        setRefreshStatus(t('syncTimeout'))
       }
     } finally {
       if (refreshBtn) refreshBtn.disabled = false
@@ -184,8 +309,8 @@ if (!currentPayload || !currentPayload.option) {
   }
 
   const getRefreshIntervalMs = () => {
-    const raw = Number(autoRefreshSeconds?.value || 5)
-    const sec = Number.isFinite(raw) ? Math.max(1, Math.min(3600, Math.floor(raw))) : 5
+    const raw = Number(autoRefreshSeconds?.value || 10)
+    const sec = Number.isFinite(raw) ? Math.max(1, Math.min(3600, Math.floor(raw))) : 10
     if (autoRefreshSeconds) {
       autoRefreshSeconds.value = String(sec)
     }
@@ -212,14 +337,105 @@ if (!currentPayload || !currentPayload.option) {
     })
   }
 
+  chart.on('click', (params: any) => {
+    if (params?.componentType !== 'series') return
+    const seriesIndex = Number(params?.seriesIndex)
+    const dataIndex = Number(params?.dataIndex)
+    if (!Number.isFinite(seriesIndex) || !Number.isFinite(dataIndex)) return
+
+    if (
+      pinnedTip
+      && pinnedTip.seriesIndex === seriesIndex
+      && pinnedTip.dataIndex === dataIndex
+    ) {
+      pinnedTip = null
+      chart.dispatchAction({ type: 'hideTip' } as any)
+      setRefreshStatus(t('tooltipUnpinned'))
+      return
+    }
+
+    pinnedTip = { seriesIndex, dataIndex }
+    applyPinnedTip()
+    setRefreshStatus(t('tooltipPinned'))
+  })
+
+  chart.getZr().on('mousemove', () => {
+    applyPinnedTip()
+  })
+
+  chart.on('globalout', () => {
+    applyPinnedTip()
+  })
+
+  window.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return
+    if (!pinnedTip) return
+    pinnedTip = null
+    chart.dispatchAction({ type: 'hideTip' } as any)
+    setRefreshStatus(t('tooltipUnpinned'))
+  })
+
+  if (exportPngBtn) {
+    exportPngBtn.addEventListener('click', async () => {
+      try {
+        if (pinnedTip) {
+          applyPinnedTip()
+          await waitNextFrame()
+        }
+        let dataUrl = ''
+        if (typeof chart.getDataURL === 'function') {
+          dataUrl = chart.getDataURL({
+            type: 'png',
+            pixelRatio: 2,
+            backgroundColor: '#ffffff',
+          })
+        }
+        if (!dataUrl) {
+          const canvas = chartEl.querySelector('canvas') as HTMLCanvasElement | null
+          dataUrl = canvas?.toDataURL('image/png') || ''
+        }
+        if (!dataUrl) {
+          setRefreshStatus(t('exportFailed'))
+          return
+        }
+
+        const safeTitle = String(currentPayload?.title || 'chart-preview')
+          .replace(/[\\/:*?"<>|]+/g, '-')
+          .replace(/\s+/g, '_')
+          .slice(0, 64)
+        const ts = formatLocalTimestamp(new Date())
+        const fileName = `${safeTitle || 'chart-preview'}-${ts}.png`
+
+        if ((window as any).__TAURI_INTERNALS__) {
+          const savedPath = await SaveChartPngWithDialog(fileName, dataUrl)
+          if (savedPath) {
+            setRefreshStatus(t('exportSuccess'))
+          } else {
+            setRefreshStatus(t('exportFailed'))
+          }
+        } else {
+          const a = document.createElement('a')
+          a.href = dataUrl
+          a.download = fileName
+          document.body.appendChild(a)
+          a.click()
+          a.remove()
+          setRefreshStatus(t('exportSuccess'))
+        }
+      } catch {
+        setRefreshStatus(t('exportFailed'))
+      }
+    })
+  }
+
   if (autoRefreshToggle) {
     autoRefreshToggle.addEventListener('change', () => {
       resetAutoRefreshTimer()
       if (autoRefreshToggle.checked) {
-        setRefreshStatus('已开启自动刷新')
+        setRefreshStatus(t('autoOn'))
         void requestLatestFromSource()
       } else {
-        setRefreshStatus('已关闭自动刷新')
+        setRefreshStatus(t('autoOff'))
       }
     })
   }
@@ -228,7 +444,7 @@ if (!currentPayload || !currentPayload.option) {
     autoRefreshSeconds.addEventListener('change', () => {
       if (autoRefreshToggle?.checked) {
         resetAutoRefreshTimer()
-        setRefreshStatus(`自动刷新: ${autoRefreshSeconds.value || '5'} 秒`)
+        setRefreshStatus(t('autoInterval', { seconds: autoRefreshSeconds.value || '10' }))
       }
     })
   }

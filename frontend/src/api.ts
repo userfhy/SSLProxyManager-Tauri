@@ -146,6 +146,10 @@ export async function ExportCurrentConfigToml() {
   return await invoke('export_current_config_toml');
 }
 
+export async function SaveChartPngWithDialog(defaultFileName: string, pngDataUrl: string) {
+  return await invoke('save_chart_png_with_dialog', { defaultFileName, pngDataUrl });
+}
+
 // 规则/路由启用开关
 export async function SetListenRuleEnabled(listenRuleId: string, enabled: boolean) {
   return await invoke('set_listen_rule_enabled', { args: { listenRuleId, enabled } });

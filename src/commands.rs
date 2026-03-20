@@ -9,6 +9,7 @@ use crate::cache_optimizer;
 use crate::test_tools;
 use crate::system_metrics;
 use anyhow::Result;
+use base64::Engine as _;
 use tauri::Manager;
 use tauri::{WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_dialog::DialogExt;
@@ -426,6 +427,44 @@ pub async fn save_config_toml_as(app: tauri::AppHandle, content: String) -> Resu
         .map_err(|e| format!("Failed to get save path: {e}"))?;
 
     std::fs::write(&path, content).map_err(|e| format!("Failed to write file: {e}"))?;
+
+    Ok(Some(path.to_string_lossy().to_string()))
+}
+
+#[tauri::command]
+pub async fn save_chart_png_with_dialog(
+    app: tauri::AppHandle,
+    default_file_name: String,
+    png_data_url: String,
+) -> Result<Option<String>, String> {
+    let file = app
+        .dialog()
+        .file()
+        .set_title("Save PNG Image")
+        .set_file_name(&default_file_name)
+        .add_filter("PNG Image", &["png"])
+        .add_filter("All Files", &["*"])
+        .blocking_save_file();
+
+    let Some(file) = file else {
+        return Ok(None);
+    };
+
+    let path: PathBuf = file
+        .into_path()
+        .map_err(|e| format!("Failed to get save path: {e}"))?;
+
+    let b64 = if let Some((_, raw)) = png_data_url.split_once(',') {
+        raw
+    } else {
+        png_data_url.as_str()
+    };
+
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(b64)
+        .map_err(|e| format!("Invalid PNG base64 data: {e}"))?;
+
+    std::fs::write(&path, bytes).map_err(|e| format!("Failed to write file: {e}"))?;
 
     Ok(Some(path.to_string_lossy().to_string()))
 }

@@ -1,0 +1,23 @@
+{
+  "chartPreview": "图表预览",
+  "refresh": "获取最新数据",
+  "exportPng": "导出 PNG",
+  "autoRefresh": "自动刷新",
+  "seconds": "秒",
+  "loadingPreview": "正在加载预览...",
+  "previewNotFound": "预览数据不存在或已过期。",
+  "noPreviewData": "未找到预览数据",
+  "refreshedAt": "已刷新 {time}",
+  "syncInProgress": "同步中...",
+  "updatedAt": "已更新 {time}",
+  "refreshFailed": "刷新失败",
+  "syncFailed": "同步失败: {error}",
+  "syncTimeout": "同步超时",
+  "autoOn": "已开启自动刷新",
+  "autoOff": "已关闭自动刷新",
+  "autoInterval": "自动刷新: {seconds} 秒",
+  "exportSuccess": "已导出 PNG",
+  "exportFailed": "导出失败",
+  "tooltipPinned": "已固定提示（Esc 取消）",
+  "tooltipUnpinned": "已取消固定提示"
+}

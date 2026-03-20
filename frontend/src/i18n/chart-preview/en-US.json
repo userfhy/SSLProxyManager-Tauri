@@ -1,0 +1,23 @@
+{
+  "chartPreview": "Chart Preview",
+  "refresh": "Refresh Latest",
+  "exportPng": "Export PNG",
+  "autoRefresh": "Auto Refresh",
+  "seconds": "sec",
+  "loadingPreview": "Loading preview...",
+  "previewNotFound": "Preview data not found or expired.",
+  "noPreviewData": "Preview data unavailable",
+  "refreshedAt": "Refreshed {time}",
+  "syncInProgress": "Syncing...",
+  "updatedAt": "Updated {time}",
+  "refreshFailed": "Refresh failed",
+  "syncFailed": "Sync failed: {error}",
+  "syncTimeout": "Sync timeout",
+  "autoOn": "Auto refresh enabled",
+  "autoOff": "Auto refresh disabled",
+  "autoInterval": "Auto refresh: {seconds} sec",
+  "exportSuccess": "PNG exported",
+  "exportFailed": "Export failed",
+  "tooltipPinned": "Tooltip pinned (press Esc to clear)",
+  "tooltipUnpinned": "Tooltip unpinned"
+}

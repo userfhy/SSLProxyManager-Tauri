@@ -320,7 +320,7 @@ import { GridComponent, TooltipComponent, LegendComponent, GraphicComponent, Dat
 import type { EChartsOption } from 'echarts'
 import { useI18n } from 'vue-i18n'
 import { useDateShortcuts } from '../composables/useDateShortcuts'
-import { emit, listen } from '@tauri-apps/api/event'
+import { emitTo, listen } from '@tauri-apps/api/event'
 
 const { t, locale } = useI18n()
 const { dateShortcuts } = useDateShortcuts()
@@ -584,20 +584,25 @@ const onPreviewSyncRequest = async (event: any) => {
   const requestId = String(payload.requestId || '').trim()
   const chartKey = String(payload.chartKey || '').trim() as typeof previewChartKey.value
   const responseEvent = 'chart-preview-sync-response'
+  const target = String(payload.requesterLabel || '').trim()
   if (!requestId) return
 
   const option = getPreviewOptionPayloadByKey(chartKey)
   if (!option) {
-    await emit(responseEvent, { requestId, ok: false, error: 'preview option unavailable' })
+    if (target) {
+      await emitTo(target, responseEvent, { requestId, ok: false, error: 'preview option unavailable' })
+    }
     return
   }
-  await emit(responseEvent, {
-    requestId,
-    ok: true,
-    option,
-    title: String(payload.title || previewTitle.value || ''),
-    updatedAt: Date.now(),
-  })
+  if (target) {
+    await emitTo(target, responseEvent, {
+      requestId,
+      ok: true,
+      option,
+      title: String(payload.title || previewTitle.value || ''),
+      updatedAt: Date.now(),
+    })
+  }
 }
 
 const maxPoints = 1200

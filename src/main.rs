@@ -99,6 +99,7 @@ fn main() {
             commands::open_db_file_dialog,
             commands::open_existing_db_file_dialog,
             commands::save_config_toml_as,
+            commands::save_chart_png_with_dialog,
             commands::export_current_config_toml,
             commands::hide_to_tray,
             commands::open_chart_preview_window,
