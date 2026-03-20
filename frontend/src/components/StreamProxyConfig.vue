@@ -495,6 +495,19 @@ defineExpose({
   color: var(--text-muted);
 }
 
+@media (max-width: 980px) {
+  .config-page :deep(.el-form-item__label) {
+    width: 150px !important;
+  }
+
+  .section-header,
+  .sub-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+}
+
 /* Transition styles */
 .list-enter-active,
 .list-leave-active {

@@ -39,7 +39,7 @@
           >
             <template #default>
               <div class="status-grid">
-                <el-descriptions :column="3" border class="status-detail-table">
+                <el-descriptions :column="2" border class="status-detail-table">
                   <template #title>{{ $t('metricsStorage.fileAndCapacity') }}</template>
                   <el-descriptions-item :label="$t('metricsStorage.dbPathLabel')" :span="3">{{ dbStatus.path }}</el-descriptions-item>
 
@@ -52,14 +52,14 @@
                   <el-descriptions-item :label="$t('metricsStorage.recyclableMB')">{{ formatBytes(freeBytesTotal) }}</el-descriptions-item>
                 </el-descriptions>
 
-                <el-descriptions :column="3" border class="status-detail-table">
+                <el-descriptions :column="2" border class="status-detail-table">
                   <template #title>{{ $t('metricsStorage.logsAndTimeRange') }}</template>
                   <el-descriptions-item :label="$t('metricsStorage.recordCount')">{{ formatNumber(dbStatus.request_logs_count) }}</el-descriptions-item>
                   <el-descriptions-item :label="$t('metricsStorage.earliestRecord')">{{ formatTs(dbStatus.request_logs_min_ts) }}</el-descriptions-item>
                   <el-descriptions-item :label="$t('metricsStorage.latestRecord')">{{ formatTs(dbStatus.request_logs_max_ts) }}</el-descriptions-item>
                 </el-descriptions>
 
-                <el-descriptions :column="3" border class="status-detail-table">
+                <el-descriptions :column="2" border class="status-detail-table">
                   <template #title>{{ $t('metricsStorage.sqliteConfig') }}</template>
                   <el-descriptions-item :label="$t('metricsStorage.sqliteVersion')">{{ dbStatus.sqlite_version || '—' }}</el-descriptions-item>
                   <el-descriptions-item :label="$t('metricsStorage.journalMode')">{{ dbStatus.journal_mode || '—' }}</el-descriptions-item>
@@ -387,7 +387,12 @@ defineExpose({
 .status-grid {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 12px;
+  gap: 16px;
+}
+
+.status-detail-table {
+  border-radius: var(--radius-sm);
+  overflow: hidden;
 }
 
 .status-detail-table :deep(.el-descriptions__label) {
@@ -438,5 +443,11 @@ defineExpose({
 .info-hint {
   color: var(--el-color-info);
   font-style: italic;
+}
+
+@media (max-width: 980px) {
+  .config-page :deep(.el-form-item__label) {
+    width: 140px !important;
+  }
 }
 </style>

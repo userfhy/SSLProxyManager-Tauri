@@ -172,7 +172,7 @@ onBeforeUnmount(() => {
 <style scoped>
 .title-bar {
   height: 32px;
-  background: transparent;
+  background: linear-gradient(180deg, rgba(79, 156, 249, 0.12), rgba(79, 156, 249, 0.03));
   display: flex;
   align-items: center;
   user-select: none;
@@ -180,6 +180,7 @@ onBeforeUnmount(() => {
   position: relative;
   z-index: 1000;
   flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
 }
 
 .title-bar-drag-region {
@@ -240,7 +241,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background-color 0.2s, color 0.2s;
+  transition: background-color 0.2s, color 0.2s, box-shadow 0.2s;
   padding: 0;
   margin: 0;
   outline: none;
@@ -250,6 +251,7 @@ onBeforeUnmount(() => {
 .window-control-btn:hover {
   background: var(--btn-hover);
   color: var(--text);
+  box-shadow: 0 0 0 1px rgba(79, 156, 249, 0.32);
 }
 
 .window-control-btn:active {

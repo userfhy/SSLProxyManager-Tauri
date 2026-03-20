@@ -239,19 +239,22 @@ const clearLogs = () => {
   min-height: 0;
   border-radius: var(--radius-md);
   margin: 16px;
+  border: 1px solid var(--border);
 }
 
 .log-line {
   white-space: pre-wrap;
   word-break: break-all;
-  padding: 2px 8px;
+  padding: 4px 8px;
   color: var(--text);
   border-radius: 4px;
   transition: background-color 0.2s;
+  border-left: 2px solid transparent;
 }
 
 .log-line:hover {
   background-color: var(--card-bg);
+  border-left-color: rgba(79, 156, 249, 0.7);
 }
 
 .text-selectable {

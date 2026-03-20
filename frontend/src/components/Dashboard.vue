@@ -1482,12 +1482,16 @@ h3 {
   gap: 12px;
   flex-wrap: wrap;
   align-items: center;
+  padding: 10px 12px;
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
 }
 
 .grid {
   display: grid;
   grid-template-columns: repeat(12, 1fr);
-  gap: 20px;
+  gap: 16px;
 }
 
 .panel {
@@ -1555,11 +1559,11 @@ h3 {
 
 .panel :deep(.el-card__header) {
   border-bottom: 1px solid var(--border);
-  padding: 16px 20px;
+  padding: 14px 18px;
 }
 
 .panel :deep(.el-card__body) {
-  padding: 20px;
+  padding: 16px 18px;
 }
 
 .panel-title {
@@ -1569,18 +1573,22 @@ h3 {
 }
 
 .chart {
-  height: 280px;
+  height: 300px;
   width: 100%;
 }
 
 .stats {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 14px;
 }
 
 .stat {
   text-align: center;
+  padding: 10px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--input-bg);
+  border: 1px solid var(--border);
 }
 
 .stat-label {
@@ -1597,8 +1605,8 @@ h3 {
 
 .tables {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 20px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
 }
 
 .table :deep(.el-card__header) {
@@ -1615,7 +1623,7 @@ h3 {
 .rows {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
   max-height: 240px;
   overflow: auto;
 }
@@ -1674,7 +1682,7 @@ h3 {
   .grid { gap: 16px; }
   .header { margin-bottom: 16px; }
   h3 { font-size: 20px; }
-  .chart { height: 240px; }
+  .chart { height: 250px; }
   .stats { grid-template-columns: repeat(2, 1fr); }
   .tables { grid-template-columns: 1fr; }
   
@@ -1697,6 +1705,7 @@ h3 {
     flex-direction: column;
     align-items: stretch;
     width: 100%;
+    padding: 8px;
   }
   .controls .el-form-item {
     width: 100%;

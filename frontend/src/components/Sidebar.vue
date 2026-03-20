@@ -96,7 +96,7 @@ const handleMenuSelect = (key: string) => {
 
 <style scoped>
 .sidebar-nav {
-  width: 200px;
+  width: 210px;
   flex-shrink: 0;
   border-radius: var(--radius-lg);
   background: var(--card-bg);
@@ -229,7 +229,7 @@ const handleMenuSelect = (key: string) => {
   background: var(--primary-light);
   color: var(--primary);
   font-weight: 600;
-  box-shadow: 0 2px 8px rgba(79, 156, 249, 0.2);
+  box-shadow: inset 0 0 0 1px rgba(79, 156, 249, 0.35);
 }
 
 .nav-menu :deep(.el-menu-item.is-active)::before {

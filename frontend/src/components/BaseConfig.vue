@@ -324,10 +324,20 @@ defineExpose({
   margin-bottom: 24px;
 }
 
+.config-page :deep(.el-input-number),
+.config-page :deep(.el-slider) {
+  max-width: 340px;
+}
+
+.config-page :deep(.el-divider) {
+  margin: 28px 0 22px;
+}
+
 :deep(.el-form-item__content) {
   display: flex;
   align-items: center;
   gap: 12px;
+  flex-wrap: wrap;
 }
 
 .mini-hint {

@@ -327,7 +327,16 @@ watch(
 }
 
 :deep(.el-descriptions__label) {
-  width: 120px;
+  width: 140px;
+}
+
+:deep(.el-descriptions__cell) {
+  background: var(--card-bg);
+  border-color: var(--border);
+}
+
+:deep(.el-descriptions__content) {
+  color: var(--text);
 }
 
 .mini-hint {
@@ -336,5 +345,11 @@ watch(
   font-size: 12px;
   line-height: 1.4;
   color: var(--text-muted);
+}
+
+@media (max-width: 980px) {
+  .config-page :deep(.el-form-item__label) {
+    width: 140px !important;
+  }
 }
 </style>

@@ -1344,6 +1344,33 @@ defineExpose({
   background: var(--primary-light);
 }
 
+:global(.light-mode) .rule-nav-panel {
+  background: rgba(255, 255, 255, 0.94);
+  border-color: rgba(203, 213, 225, 0.9);
+}
+
+:global(.light-mode) .rule-nav-title {
+  color: #64748b;
+}
+
+:global(.light-mode) .rule-nav-btn {
+  background: rgba(241, 245, 249, 0.95) !important;
+  border-color: rgba(203, 213, 225, 0.95) !important;
+  color: #475569 !important;
+}
+
+:global(.light-mode) .rule-nav-btn:hover {
+  background: rgba(226, 232, 240, 0.95) !important;
+  border-color: rgba(148, 163, 184, 0.82) !important;
+  color: #334155 !important;
+}
+
+:global(.light-mode) .rule-nav-btn.is-active {
+  background: rgba(219, 234, 254, 0.95) !important;
+  border-color: rgba(96, 165, 250, 0.9) !important;
+  color: #1d4ed8 !important;
+}
+
 .rule-anchor {
   scroll-margin-top: 120px;
 }

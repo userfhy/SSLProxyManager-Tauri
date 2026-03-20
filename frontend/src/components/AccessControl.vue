@@ -575,6 +575,11 @@ defineExpose({
   margin: 0;
 }
 
+.config-page :deep(.el-form-item__content) {
+  align-items: flex-start;
+  gap: 10px;
+}
+
 .mini-hint {
   display: block;
   margin-top: 6px;
@@ -621,6 +626,7 @@ defineExpose({
 
 .blacklist-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
 }
 
@@ -629,6 +635,27 @@ defineExpose({
   display: block;
   margin-top: 4px;
   color: var(--text-muted);
+}
+
+.config-page :deep(.el-table) {
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.config-page :deep(.el-alert) {
+  border-radius: var(--radius-sm);
+}
+
+@media (max-width: 980px) {
+  .blacklist-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .whitelist-item {
+    max-width: 100%;
+  }
 }
 
 /* Transition styles */

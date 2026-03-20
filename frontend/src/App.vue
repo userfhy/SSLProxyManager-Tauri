@@ -55,15 +55,22 @@
             <span v-if="status === 'running' && runTime" class="runtime-text">
               ({{ $t('app.runtime', { time: runTime }) }})
             </span>
-            <el-button
-              @click="handleQuit"
-              :disabled="status !== 'stopped'"
-              type="warning"
-              plain
-              class="control-btn"
-            >
-              {{ $t('app.quit') }}
-            </el-button>
+            <el-tooltip
+              :content="$t('app.quitHint')"
+              placement="bottom"
+              :disabled="status==='stopped'">
+              <span>
+                <el-button
+                  @click="handleQuit"
+                  :disabled="status !== 'stopped'"
+                  type="warning"
+                  plain
+                  class="control-btn quit-btn"
+                >
+                  {{ $t('app.quit') }}
+                </el-button>
+              </span>
+            </el-tooltip>
             <el-button 
               @click="status==='running'?stop():start()" 
               :loading="starting"
@@ -937,6 +944,8 @@ onBeforeUnmount(() => {
   background: var(--card-bg);
   border: 1px solid var(--border);
   backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: var(--shadow-sm);
 }
 
 .top-bar :deep(.el-card__body) {
@@ -947,6 +956,7 @@ onBeforeUnmount(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 16px;
 }
 
 .top-bar-right {
@@ -969,12 +979,13 @@ onBeforeUnmount(() => {
   color: var(--text);
   --el-button-bg-color: transparent;
   --el-button-border-color: transparent;
-  --el-button-hover-bg-color: var(--el-fill-color-light);
-  --el-button-hover-border-color: transparent;
-  --el-button-hover-text-color: var(--text);
+  --el-button-hover-bg-color: rgba(79, 156, 249, 0.3);
+  --el-button-hover-border-color: rgba(79, 156, 249, 0.58);
+  --el-button-hover-text-color: #eef6ff;
   --el-button-active-bg-color: var(--el-fill-color-light);
   --el-button-active-border-color: transparent;
   --el-button-active-text-color: var(--text);
+  border: 1px solid transparent;
 }
 
 .font-size-btn :deep(.el-icon) {
@@ -993,12 +1004,13 @@ onBeforeUnmount(() => {
   color: var(--text);
   --el-button-bg-color: transparent;
   --el-button-border-color: transparent;
-  --el-button-hover-bg-color: var(--el-fill-color-light);
-  --el-button-hover-border-color: transparent;
-  --el-button-hover-text-color: var(--text);
+  --el-button-hover-bg-color: rgba(79, 156, 249, 0.3);
+  --el-button-hover-border-color: rgba(79, 156, 249, 0.58);
+  --el-button-hover-text-color: #eef6ff;
   --el-button-active-bg-color: var(--el-fill-color-light);
   --el-button-active-border-color: transparent;
   --el-button-active-text-color: var(--text);
+  border: 1px solid transparent;
   transition: background-color 0.2s;
 }
 
@@ -1007,7 +1019,17 @@ onBeforeUnmount(() => {
 }
 
 .theme-btn:hover {
-  transform: none;
+  background-color: rgba(79, 156, 249, 0.3);
+  color: #eef6ff;
+  border-color: rgba(79, 156, 249, 0.58);
+  box-shadow: 0 0 0 2px rgba(79, 156, 249, 0.28), 0 8px 18px rgba(79, 156, 249, 0.24);
+}
+
+.font-size-btn:hover {
+  background-color: rgba(79, 156, 249, 0.3);
+  color: #eef6ff;
+  border-color: rgba(79, 156, 249, 0.58);
+  box-shadow: 0 0 0 2px rgba(79, 156, 249, 0.28), 0 8px 18px rgba(79, 156, 249, 0.24);
 }
 
 :deep(.font-size-dropdown .el-dropdown-menu__item) {
@@ -1083,6 +1105,37 @@ h1 {
   box-shadow: var(--shadow-sm);
 }
 
+.quit-btn {
+  transition: none !important;
+  --el-button-bg-color: rgba(245, 158, 11, 0.16);
+  --el-button-border-color: rgba(245, 158, 11, 0.56);
+  --el-button-text-color: #f5c15d;
+  --el-button-hover-bg-color: rgba(245, 158, 11, 0.22);
+  --el-button-hover-border-color: rgba(245, 158, 11, 0.72);
+  --el-button-hover-text-color: #ffd98a;
+  --el-button-active-bg-color: rgba(245, 158, 11, 0.22);
+  --el-button-active-border-color: rgba(245, 158, 11, 0.72);
+  --el-button-active-text-color: #ffd98a;
+  color: #f5c15d !important;
+  border-color: rgba(245, 158, 11, 0.56) !important;
+  background: rgba(245, 158, 11, 0.16) !important;
+}
+
+.quit-btn:hover:not(:disabled),
+.quit-btn:focus:not(:disabled),
+.quit-btn:active:not(:disabled) {
+  box-shadow: none !important;
+  filter: none !important;
+}
+
+.quit-btn.is-disabled,
+.quit-btn:disabled {
+  opacity: 1 !important;
+  color: #eab347 !important;
+  border-color: rgba(245, 158, 11, 0.5) !important;
+  background: rgba(245, 158, 11, 0.14) !important;
+}
+
 .save-btn {
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
@@ -1112,6 +1165,9 @@ h1 {
   border-radius: var(--radius-lg);
   background: var(--card-bg);
   border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 }
 
 /* 响应式布局 */

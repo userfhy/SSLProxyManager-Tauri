@@ -376,6 +376,17 @@ defineExpose({
   width: 100%;
 }
 
+@media (max-width: 980px) {
+  .config-page :deep(.el-form-item__label) {
+    width: 120px !important;
+  }
+
+  .file-selector {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
 /* Transition styles */
 .list-enter-active,
 .list-leave-active {

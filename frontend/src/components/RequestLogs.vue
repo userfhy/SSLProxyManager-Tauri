@@ -482,10 +482,38 @@ onBeforeUnmount(() => {
   border-radius: var(--radius-md);
   background: var(--input-bg);
   border: 1px solid var(--border);
+  padding: 4px;
+}
+
+.search-card :deep(.el-form) {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 12px 14px;
+  align-items: end;
 }
 
 .search-card :deep(.el-form-item) {
-  margin-bottom: 12px;
+  margin-bottom: 0;
+  grid-column: span 3;
+}
+
+.search-card :deep(.el-form-item:nth-child(1)) {
+  grid-column: span 6;
+}
+
+.search-card :deep(.el-form-item:last-child) {
+  grid-column: span 12;
+}
+
+.search-card :deep(.el-form-item__content) {
+  width: 100%;
+}
+
+.search-card :deep(.el-input),
+.search-card :deep(.el-input-number),
+.search-card :deep(.el-select),
+.search-card :deep(.el-date-editor) {
+  width: 100% !important;
 }
 
 .el-table {
@@ -498,5 +526,29 @@ onBeforeUnmount(() => {
   display: flex;
   justify-content: flex-end;
   flex-shrink: 0;
+}
+
+@media (max-width: 1200px) {
+  .search-card :deep(.el-form-item) {
+    grid-column: span 4;
+  }
+}
+
+@media (max-width: 900px) {
+  .search-card :deep(.el-form-item),
+  .search-card :deep(.el-form-item:nth-child(1)) {
+    grid-column: span 6;
+  }
+}
+
+@media (max-width: 640px) {
+  .search-card :deep(.el-form-item),
+  .search-card :deep(.el-form-item:nth-child(1)) {
+    grid-column: span 12;
+  }
+
+  .pagination {
+    justify-content: center;
+  }
 }
 </style>

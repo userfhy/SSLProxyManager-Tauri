@@ -1719,14 +1719,20 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  background: var(--card-bg);
+  backdrop-filter: blur(10px) saturate(160%);
+  -webkit-backdrop-filter: blur(10px) saturate(160%);
 }
 
 .tools-tabs {
-  margin-left: 10px;
+  margin-left: 0;
   flex: 1;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  padding: 8px 10px 10px;
 }
 
 .tools-tabs :deep(.el-tabs__content) {
@@ -1737,6 +1743,8 @@ onBeforeUnmount(() => {
 
 .tool-card {
   margin-bottom: 16px;
+  border: 1px solid var(--border);
+  background: var(--input-bg);
 }
 
 .card-header {
@@ -1754,6 +1762,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   margin-bottom: 8px;
+  gap: 8px;
 }
 
 .file-selector {
@@ -1764,6 +1773,10 @@ onBeforeUnmount(() => {
 
 .response-section {
   margin-top: 16px;
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  background: var(--card-bg);
+  border: 1px solid var(--border);
 }
 
 .response-section h4 {
@@ -1777,7 +1790,7 @@ onBeforeUnmount(() => {
 }
 
 .response-body {
-  font-family: 'Courier New', monospace;
+  font-family: 'JetBrains Mono', 'Courier New', monospace;
 }
 
 .error-box {
@@ -1841,22 +1854,22 @@ onBeforeUnmount(() => {
 }
 
 .ws-message.sent {
-  background: #e3f2fd;
-  border-left: 3px solid #2196f3;
+  background: rgba(79, 156, 249, 0.2);
+  border-left: 3px solid #4f9cf9;
 }
 
 .ws-message.received {
-  background: #e8f5e9;
-  border-left: 3px solid #4caf50;
+  background: rgba(34, 197, 94, 0.18);
+  border-left: 3px solid #22c55e;
 }
 
 .ws-message.system {
-  background: #fff3e0;
-  border-left: 3px solid #ff9800;
+  background: rgba(245, 158, 11, 0.2);
+  border-left: 3px solid #f59e0b;
 }
 
 .ws-time {
-  color: #666;
+  color: var(--text-muted);
   min-width: 60px;
 }
 
@@ -1874,6 +1887,16 @@ onBeforeUnmount(() => {
 .ws-content {
   flex: 1;
   word-break: break-all;
+}
+
+@media (max-width: 980px) {
+  .tools-tabs :deep(.el-tabs__content) {
+    padding: 10px;
+  }
+
+  .ws-filter-bar {
+    flex-direction: column;
+  }
 }
 
 </style>

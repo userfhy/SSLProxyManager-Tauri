@@ -1103,7 +1103,7 @@ onBeforeUnmount(() => {
   overflow-y: auto;
   overflow-x: hidden;
   box-sizing: border-box;
-  padding: 6px;
+  padding: 12px;
 }
 
 .config-card {
@@ -1116,19 +1116,19 @@ onBeforeUnmount(() => {
 .main-panel :deep(.el-card__body) {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 10px 12px;
+  gap: 12px;
+  padding: 14px 16px;
 }
 
 .main-panel :deep(.el-card__header) {
-  padding: 10px 12px;
+  padding: 14px 16px;
 }
 
 .header {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  gap: 8px;
+  gap: 12px;
   flex-wrap: wrap;
 }
 
@@ -1141,33 +1141,33 @@ onBeforeUnmount(() => {
 .title-area {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
 
 .title-inline-controls {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   flex-wrap: wrap;
 }
 
 .header-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   flex-wrap: wrap;
 }
 
 .title-inline-controls :deep(.el-form-item__label),
 .header-actions :deep(.el-form-item__label) {
   padding-right: 6px;
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 6px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
 }
 
 .stat-card {
@@ -1176,31 +1176,31 @@ onBeforeUnmount(() => {
 }
 
 .stat-card :deep(.el-card__body) {
-  padding: 8px 10px;
+  padding: 10px 12px;
 }
 
 .stat-label {
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.2;
   color: var(--text-muted);
 }
 
 .stat-value {
-  margin-top: 2px;
-  font-size: 16px;
+  margin-top: 4px;
+  font-size: 17px;
   line-height: 1.2;
   font-weight: 700;
   color: var(--text);
 }
 
 .meta {
-  margin-top: 2px;
+  margin-top: 4px;
 }
 
 .charts-grid {
   display: grid;
-  grid-template-columns: 1fr;
-  gap: 6px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
 }
 
 .chart-panel,
@@ -1209,9 +1209,13 @@ onBeforeUnmount(() => {
   background: var(--card-bg);
 }
 
+.table-panel {
+  grid-column: 1 / -1;
+}
+
 .chart-panel :deep(.el-card__body),
 .table-panel :deep(.el-card__body) {
-  padding: 8px 10px;
+  padding: 10px 12px;
 }
 
 .panel-title {
@@ -1220,32 +1224,42 @@ onBeforeUnmount(() => {
 
 .chart {
   width: 100%;
-  height: 230px;
+  height: 260px;
 }
 
 @media (max-width: 1300px) {
   .stats-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
 
 @media (max-width: 1100px) {
   .stats-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .charts-grid {
+    grid-template-columns: 1fr;
   }
 }
 
 @media (max-width: 700px) {
   .system-metrics {
-    padding: 4px;
+    padding: 8px;
   }
 
   .stats-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .chart {
-    height: 210px;
+    height: 220px;
+  }
+}
+
+@media (max-width: 480px) {
+  .stats-grid {
+    grid-template-columns: 1fr;
   }
 }
 </style>
