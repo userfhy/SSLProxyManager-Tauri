@@ -137,6 +137,14 @@
           <div class="stat-label">{{ $t('systemMetrics.load1') }}</div>
           <div class="stat-value">{{ formatNumber(currentPoint?.load1 || 0, 2) }}</div>
         </el-card>
+        <el-card class="stat-card" shadow="never">
+          <div class="stat-label">{{ $t('systemMetrics.load5') }}</div>
+          <div class="stat-value">{{ formatNumber(currentPoint?.load5 || 0, 2) }}</div>
+        </el-card>
+        <el-card class="stat-card" shadow="never">
+          <div class="stat-label">{{ $t('systemMetrics.load15') }}</div>
+          <div class="stat-value">{{ formatNumber(currentPoint?.load15 || 0, 2) }}</div>
+        </el-card>
 
         <el-card class="stat-card" shadow="never">
           <div class="stat-label">{{ $t('systemMetrics.inboundRate') }}</div>
@@ -172,6 +180,10 @@
           <div class="stat-value">{{ currentPoint?.tcp_time_wait || 0 }}</div>
         </el-card>
         <el-card class="stat-card" shadow="never">
+          <div class="stat-label">{{ $t('systemMetrics.tcpCloseWait') }}</div>
+          <div class="stat-value">{{ currentPoint?.tcp_close_wait || 0 }}</div>
+        </el-card>
+        <el-card class="stat-card" shadow="never">
           <div class="stat-label">{{ $t('systemMetrics.processCount') }}</div>
           <div class="stat-value">{{ currentPoint?.process_count || 0 }}</div>
         </el-card>
@@ -181,7 +193,7 @@
         </el-card>
       </div>
 
-      <el-descriptions :column="3" border size="small" class="meta">
+      <el-descriptions :column="4" border size="small" class="meta">
         <el-descriptions-item :label="$t('systemMetrics.lastUpdate')">
           {{ formatDateTime(currentPoint?.timestamp || null) }}
         </el-descriptions-item>
@@ -190,6 +202,30 @@
         </el-descriptions-item>
         <el-descriptions-item :label="$t('systemMetrics.uptime')">
           {{ formatUptime(currentPoint?.uptime_seconds || 0) }}
+        </el-descriptions-item>
+        <el-descriptions-item :label="$t('systemMetrics.fdUsedMax')">
+          {{ currentPoint ? `${currentPoint.fd_used || 0} / ${currentPoint.fd_max || 0}` : '-' }}
+        </el-descriptions-item>
+        <el-descriptions-item :label="$t('systemMetrics.procsRunningBlocked')">
+          {{ currentPoint ? `${currentPoint.procs_running || 0} / ${currentPoint.procs_blocked || 0}` : '-' }}
+        </el-descriptions-item>
+        <el-descriptions-item :label="$t('systemMetrics.contextSwitches')">
+          {{ currentPoint?.context_switches || 0 }}
+        </el-descriptions-item>
+        <el-descriptions-item :label="$t('systemMetrics.forksTotal')">
+          {{ currentPoint?.processes_forked_total || 0 }}
+        </el-descriptions-item>
+        <el-descriptions-item :label="$t('systemMetrics.memUsedTotal')">
+          {{ `${formatBytes(currentPoint?.mem_used_bytes || 0)} / ${formatBytes(currentPoint?.mem_total_bytes || 0)}` }}
+        </el-descriptions-item>
+        <el-descriptions-item :label="$t('systemMetrics.swapUsedTotal')">
+          {{ `${formatBytes(currentPoint?.swap_used_bytes || 0)} / ${formatBytes(currentPoint?.swap_total_bytes || 0)}` }}
+        </el-descriptions-item>
+        <el-descriptions-item :label="$t('systemMetrics.diskReadTotal')">
+          {{ formatBytes(currentPoint?.disk_read_bytes || 0) }}
+        </el-descriptions-item>
+        <el-descriptions-item :label="$t('systemMetrics.diskWriteTotal')">
+          {{ formatBytes(currentPoint?.disk_write_bytes || 0) }}
         </el-descriptions-item>
       </el-descriptions>
 
@@ -215,6 +251,14 @@
             <div class="panel-title">{{ diskTrendTitle }}</div>
           </template>
           <v-chart v-if="isActive && activePoints.length > 0" :option="diskOption" class="chart" autoresize />
+          <el-empty v-else :description="$t('systemMetrics.noData')" :image-size="64" />
+        </el-card>
+
+        <el-card class="chart-panel" shadow="never">
+          <template #header>
+            <div class="panel-title">{{ $t('systemMetrics.loadTrend') }}</div>
+          </template>
+          <v-chart v-if="isActive && activePoints.length > 0" :option="loadOption" class="chart" autoresize />
           <el-empty v-else :description="$t('systemMetrics.noData')" :image-size="64" />
         </el-card>
 
@@ -597,6 +641,9 @@ const chartDerived = computed(() => {
   return {
     xAxis: points.map((p) => formatAxisClock(p.timestamp)),
     cpu: points.map((p) => Number(p.cpu_usage_percent.toFixed(2))),
+    load1: points.map((p) => Number((p.load1 || 0).toFixed(2))),
+    load5: points.map((p) => Number((p.load5 || 0).toFixed(2))),
+    load15: points.map((p) => Number((p.load15 || 0).toFixed(2))),
     mem: points.map((p) => Number(p.mem_used_percent.toFixed(2))),
     swap: points.map((p) => Number(p.swap_used_percent.toFixed(2))),
     netRx: points.map((p) => convertRateByUnit(p.net_rx_bps)),
@@ -762,6 +809,43 @@ const diskOption = computed<EChartsOption>(() => ({
       data: chartDerived.value.diskWrite,
       lineStyle: { width: 2, color: chartColors.value.danger },
       itemStyle: { color: chartColors.value.danger },
+    },
+  ],
+}))
+
+const loadOption = computed<EChartsOption>(() => ({
+  ...baseChart.value,
+  legend: {
+    ...baseChart.value.legend,
+    data: [t('systemMetrics.load1'), t('systemMetrics.load5'), t('systemMetrics.load15')],
+  },
+  series: [
+    {
+      name: t('systemMetrics.load1'),
+      type: 'line',
+      smooth: true,
+      showSymbol: false,
+      data: chartDerived.value.load1,
+      lineStyle: { width: 2, color: chartColors.value.primary },
+      itemStyle: { color: chartColors.value.primary },
+    },
+    {
+      name: t('systemMetrics.load5'),
+      type: 'line',
+      smooth: true,
+      showSymbol: false,
+      data: chartDerived.value.load5,
+      lineStyle: { width: 2, color: chartColors.value.success },
+      itemStyle: { color: chartColors.value.success },
+    },
+    {
+      name: t('systemMetrics.load15'),
+      type: 'line',
+      smooth: true,
+      showSymbol: false,
+      data: chartDerived.value.load15,
+      lineStyle: { width: 2, color: chartColors.value.warning },
+      itemStyle: { color: chartColors.value.warning },
     },
   ],
 }))
