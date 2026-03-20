@@ -746,6 +746,13 @@ pub fn show_realtime_logs_enabled() -> bool {
     CONFIG.read().show_realtime_logs
 }
 
+/// 返回实时日志相关开关，避免在热路径 clone 整个 Config。
+#[inline]
+pub fn realtime_logs_settings() -> (bool, bool) {
+    let cfg = CONFIG.read();
+    (cfg.show_realtime_logs, cfg.realtime_logs_only_errors)
+}
+
 pub fn set_config(config: Config) {
     *CONFIG.write() = config;
 }

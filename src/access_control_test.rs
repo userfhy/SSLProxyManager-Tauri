@@ -70,7 +70,7 @@ mod access_control_tests {
         let headers = HeaderMap::new();
         let whitelist = vec![];
         
-        let allowed = access_control::is_allowed_fast(&remote, &headers, false, &whitelist);
+        let allowed = access_control::is_allowed_fast(&remote, &headers, false, false, &whitelist);
         assert!(allowed, "IPv6 loopback should be allowed even without allow_all_lan");
         println!("✓ IPv6 loopback (::1) is allowed");
     }
@@ -83,7 +83,7 @@ mod access_control_tests {
         let headers = HeaderMap::new();
         let whitelist = vec![];
         
-        let allowed = access_control::is_allowed_fast(&remote, &headers, true, &whitelist);
+        let allowed = access_control::is_allowed_fast(&remote, &headers, true, false, &whitelist);
         assert!(allowed, "IPv4-mapped IPv6 LAN address should be allowed with allow_all_lan=true");
         println!("✓ IPv4-mapped IPv6 LAN address (::ffff:192.168.1.128) is allowed with allow_all_lan=true");
     }
@@ -96,7 +96,7 @@ mod access_control_tests {
         let headers = HeaderMap::new();
         let whitelist = vec![];
         
-        let allowed = access_control::is_allowed_fast(&remote, &headers, true, &whitelist);
+        let allowed = access_control::is_allowed_fast(&remote, &headers, true, false, &whitelist);
         assert!(allowed, "IPv6 unique local address should be allowed with allow_all_lan=true");
         println!("✓ IPv6 unique local address (fc00::1) is allowed with allow_all_lan=true");
     }

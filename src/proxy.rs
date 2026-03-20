@@ -16,7 +16,7 @@ use std::{
     collections::{HashSet, VecDeque},
     net::SocketAddr,
     sync::Arc,
-    time::Duration,
+    time::{Duration, Instant},
 };
 use dashmap::DashMap;
 
@@ -126,6 +126,16 @@ static REGEX_CACHE: once_cell::sync::Lazy<DashMap<String, Arc<Regex>>> =
 /// 避免热路径每次 split/to_lowercase 分配。
 static CONTENT_TYPE_LIST_CACHE: once_cell::sync::Lazy<DashMap<String, Arc<[String]>>> =
     once_cell::sync::Lazy::new(DashMap::new);
+
+/// 静态目录服务缓存：避免每次请求重建 ServeDir。
+static STATIC_DIR_SERVICE_CACHE: once_cell::sync::Lazy<DashMap<String, ServeDir>> =
+    once_cell::sync::Lazy::new(DashMap::new);
+
+/// SPA index.html 内容缓存：降低高并发时磁盘读取频率。
+static INDEX_HTML_CACHE: once_cell::sync::Lazy<DashMap<String, (Instant, Bytes)>> =
+    once_cell::sync::Lazy::new(DashMap::new);
+
+const INDEX_HTML_CACHE_TTL: Duration = Duration::from_secs(2);
 
 /// 从缓存中获取或编译正则表达式。
 /// 优先使用全局缓存管理器，回退到本地 DashMap 缓存。
@@ -601,12 +611,12 @@ pub fn send_log_with_app(app: &tauri::AppHandle, message: impl Into<String>) {
         append_log(&mut LOGS.write(), message.clone());
     }
 
-    let cfg = config::get_config();
-    if !cfg.show_realtime_logs {
+    let (show_realtime_logs, realtime_logs_only_errors) = config::realtime_logs_settings();
+    if !show_realtime_logs {
         return;
     }
 
-    if cfg.realtime_logs_only_errors {
+    if realtime_logs_only_errors {
         let lower = message.to_ascii_lowercase();
         if !(lower.contains("error")
             || lower.contains("failed")
@@ -878,8 +888,40 @@ async fn healthz() -> impl IntoResponse {
 
 #[inline]
 fn normalize_host(host: &str) -> &str {
-    // 去除端口号，只保留主机名部分
-    host.split(':').next().unwrap_or(host).trim()
+    // 统一去掉空白
+    let host = host.trim();
+    if host.is_empty() {
+        return host;
+    }
+
+    // [::1]:8443 / [2001:db8::1] => ::1 / 2001:db8::1
+    if let Some(rest) = host.strip_prefix('[') {
+        if let Some(end) = rest.find(']') {
+            return &rest[..end];
+        }
+        return host;
+    }
+
+    // host:port / 127.0.0.1:8080 => host / 127.0.0.1
+    if let Some(idx) = host.rfind(':') {
+        // 仅处理单冒号场景；多冒号通常是未加 [] 的 IPv6
+        if !host[..idx].contains(':')
+            && !host[idx + 1..].is_empty()
+            && host[idx + 1..].bytes().all(|b| b.is_ascii_digit())
+        {
+            return &host[..idx];
+        }
+    }
+
+    host
+}
+
+#[inline]
+fn ends_with_ignore_ascii_case(s: &str, suffix: &str) -> bool {
+    if s.len() < suffix.len() {
+        return false;
+    }
+    s[s.len() - suffix.len()..].eq_ignore_ascii_case(suffix)
 }
 
 /// 检查请求的 Host 是否匹配路由配置的 Host
@@ -888,8 +930,8 @@ fn normalize_host(host: &str) -> &str {
 /// 2. 通配符匹配：*.example.com 匹配 example.com, www.example.com, api.example.com 等
 #[inline]
 fn host_matches(route_host: &str, request_host: &str) -> bool {
-    let route_host = normalize_host(route_host);
-    let request_host = normalize_host(request_host);
+    let route_host = normalize_host(route_host).trim_end_matches('.');
+    let request_host = normalize_host(request_host).trim_end_matches('.');
     
     // 如果请求 Host 为空，只匹配路由 Host 也为空的情况
     if request_host.is_empty() {
@@ -902,21 +944,28 @@ fn host_matches(route_host: &str, request_host: &str) -> bool {
     }
     
     // 通配符匹配：*.example.com
-    if route_host.starts_with("*.") {
-        let suffix = &route_host[2..]; // 去掉 "*."
-        if !suffix.is_empty() && request_host.ends_with(suffix) {
-            // 确保匹配的是完整的域名部分，而不是部分匹配
-            // 例如 *.example.com 应该匹配 www.example.com，但不匹配 evil-example.com
-            let prefix_len = request_host.len() - suffix.len();
-            if prefix_len > 0 {
-                // 检查是否有正确的分隔符（点）
-                let prefix = &request_host[..prefix_len];
-                // 前缀不能包含点（确保是子域名），且不能为空
-                if !prefix.contains('.') && !prefix.is_empty() {
-                    return true;
-                }
-            }
+    if let Some(suffix) = route_host.strip_prefix("*.") {
+        let suffix = suffix.trim_matches('.');
+        if suffix.is_empty() {
+            return false;
         }
+
+        // 与注释保持一致：*.example.com 同时匹配 example.com 和其子域。
+        if request_host.eq_ignore_ascii_case(suffix) {
+            return true;
+        }
+
+        if !ends_with_ignore_ascii_case(request_host, suffix) {
+            return false;
+        }
+
+        // 要求后缀前有 '.' 分隔，避免命中 evil-example.com 这类部分匹配。
+        let dot_idx = request_host.len().saturating_sub(suffix.len() + 1);
+        return request_host
+            .as_bytes()
+            .get(dot_idx)
+            .copied()
+            .is_some_and(|b| b == b'.');
     }
     
     false
@@ -1188,6 +1237,46 @@ fn format_access_log(node: &str, ctx: &RequestContext, status: StatusCode) -> St
     )
 }
 
+#[inline]
+fn enqueue_request_log(
+    node: &str,
+    ctx: &RequestContext,
+    remote: &SocketAddr,
+    status: StatusCode,
+    upstream: &str,
+    matched_route_id: &str,
+) {
+    metrics::try_enqueue_request_log(metrics::RequestLogInsert {
+        timestamp: chrono::Utc::now().timestamp(),
+        listen_addr: node.to_string(),
+        client_ip: ctx.client_ip.clone(),
+        remote_ip: remote.ip().to_string(),
+        method: ctx.method.as_str().to_string(),
+        request_path: ctx.path.clone(),
+        request_host: ctx.host_header.clone(),
+        status_code: status.as_u16() as i32,
+        upstream: upstream.to_string(),
+        latency_ms: ctx.elapsed_ms(),
+        user_agent: ctx.user_agent_header.clone(),
+        referer: ctx.referer_header.clone(),
+        matched_route_id: matched_route_id.to_string(),
+    });
+}
+
+#[inline]
+fn format_headers_for_log(headers: &HeaderMap) -> String {
+    use std::fmt::Write;
+
+    let mut buf = crate::buffer_pool::acquire_buffer();
+    for (k, v) in headers.iter() {
+        if !buf.is_empty() {
+            let _ = write!(buf, " ## ");
+        }
+        let _ = write!(buf, "{}: {}", k, v.to_str().unwrap_or("[invalid utf8]"));
+    }
+    std::str::from_utf8(&buf).unwrap_or("").to_string()
+}
+
 // 延迟日志格式化：只在需要时才格式化
 fn push_log_lazy<F>(_app: &tauri::AppHandle, f: F)
 where
@@ -1253,16 +1342,7 @@ async fn proxy_handler(
             let status = StatusCode::FORBIDDEN;
             push_log_lazy(&state.app, || format_access_log(node, &ctx, status));
 
-            // 403响应详细日志 - 使用缓冲池优化
-            use std::fmt::Write;
-            let mut buf = crate::buffer_pool::acquire_buffer();
-            for (k, v) in req.headers().iter() {
-                if !buf.is_empty() {
-                    let _ = write!(buf, " ## ");
-                }
-                let _ = write!(buf, "{}: {}", k, v.to_str().unwrap_or("[invalid utf8]"));
-            }
-            let inbound_headers_line = std::str::from_utf8(&buf).unwrap_or("");
+            let inbound_headers_line = format_headers_for_log(req.headers());
 
             send_log_with_app(&state.app, format!(
                 "Reverse proxy error (IN): {} {} -> [IP Blacklist] status={} | inbound_headers=[{}]",
@@ -1272,21 +1352,7 @@ async fn proxy_handler(
                 inbound_headers_line
             ));
 
-            metrics::try_enqueue_request_log(metrics::RequestLogInsert {
-                timestamp: chrono::Utc::now().timestamp(),
-                listen_addr: node.to_string(),
-                client_ip: ctx.client_ip.clone(),
-                remote_ip: remote.ip().to_string(),
-                method: ctx.method.as_str().to_string(),
-                request_path: ctx.path.to_string(),
-                request_host: ctx.host_header.to_string(),
-                status_code: status.as_u16() as i32,
-                upstream: "".to_string(),
-                latency_ms: ctx.elapsed_ms(),
-                user_agent: ctx.user_agent_header.to_string(),
-                referer: ctx.referer_header.to_string(),
-                matched_route_id: matched_route_id.clone(),
-            });
+            enqueue_request_log(node, &ctx, &remote, status, "", &matched_route_id);
 
             return (status, "IP Forbidden").into_response();
         }
@@ -1310,16 +1376,7 @@ async fn proxy_handler(
             info!("{}", debug_msg);
             push_log_lazy(&state.app, || format_access_log(node, &ctx, status));
 
-            // 403响应详细日志 - 使用缓冲池优化
-            use std::fmt::Write;
-            let mut buf = crate::buffer_pool::acquire_buffer();
-            for (k, v) in req.headers().iter() {
-                if !buf.is_empty() {
-                    let _ = write!(buf, " ## ");
-                }
-                let _ = write!(buf, "{}: {}", k, v.to_str().unwrap_or("[invalid utf8]"));
-            }
-            let inbound_headers_line = std::str::from_utf8(&buf).unwrap_or("");
+            let inbound_headers_line = format_headers_for_log(req.headers());
 
             send_log_with_app(&state.app, format!(
                 "Reverse proxy error (IN): {} {} -> [Access Control Denied] status={} | inbound_headers=[{}] | client_ip={}, remote_ip={}, allow_all_lan={}, allow_all_ip={}, whitelist_len={}",
@@ -1334,21 +1391,7 @@ async fn proxy_handler(
                 state.whitelist.len()
             ));
 
-            metrics::try_enqueue_request_log(metrics::RequestLogInsert {
-                timestamp: chrono::Utc::now().timestamp(),
-                listen_addr: node.to_string(),
-                client_ip: ctx.client_ip.clone(),
-                remote_ip: remote.ip().to_string(),
-                method: ctx.method.as_str().to_string(),
-                request_path: ctx.path.to_string(),
-                request_host: ctx.host_header.to_string(),
-                status_code: status.as_u16() as i32,
-                upstream: "".to_string(),
-                latency_ms: ctx.elapsed_ms(),
-                user_agent: ctx.user_agent_header.to_string(),
-                referer: ctx.referer_header.to_string(),
-                matched_route_id: matched_route_id.clone(),
-            });
+            enqueue_request_log(node, &ctx, &remote, status, "", &matched_route_id);
 
             return (status, "Forbidden").into_response();
         }
@@ -1387,21 +1430,7 @@ async fn proxy_handler(
                 let status = StatusCode::TOO_MANY_REQUESTS;
                 push_log_lazy(&state.app, || format_access_log(node, &ctx, status));
 
-                metrics::try_enqueue_request_log(metrics::RequestLogInsert {
-                    timestamp: chrono::Utc::now().timestamp(),
-                    listen_addr: node.to_string(),
-                    client_ip: ctx.client_ip.clone(),
-                    remote_ip: remote.ip().to_string(),
-                    method: ctx.method.as_str().to_string(),
-                    request_path: ctx.path.to_string(),
-                    request_host: ctx.host_header.to_string(),
-                    status_code: status.as_u16() as i32,
-                    upstream: "".to_string(),
-                    latency_ms: ctx.elapsed_ms(),
-                    user_agent: ctx.user_agent_header.to_string(),
-                    referer: ctx.referer_header.to_string(),
-                    matched_route_id: matched_route_id.clone(),
-                });
+                enqueue_request_log(node, &ctx, &remote, status, "", &matched_route_id);
 
                 return (status, "Rate limit exceeded").into_response();
             }
@@ -1413,16 +1442,7 @@ async fn proxy_handler(
         let status = StatusCode::UNAUTHORIZED;
         push_log_lazy(&state.app, || format_access_log(node, &ctx, status));
 
-        // 401响应详细日志 - 使用缓冲池优化
-        use std::fmt::Write;
-        let mut buf = crate::buffer_pool::acquire_buffer();
-        for (k, v) in req.headers().iter() {
-            if !buf.is_empty() {
-                let _ = write!(buf, " ## ");
-            }
-            let _ = write!(buf, "{}: {}", k, v.to_str().unwrap_or("[invalid utf8]"));
-        }
-        let inbound_headers_line = std::str::from_utf8(&buf).unwrap_or("");
+        let inbound_headers_line = format_headers_for_log(req.headers());
 
         send_log_with_app(&state.app, format!(
             "Reverse proxy error (IN): {} {} -> [Basic Auth Failed] status={} | inbound_headers=[{}]",
@@ -1432,21 +1452,7 @@ async fn proxy_handler(
             inbound_headers_line
         ));
 
-        metrics::try_enqueue_request_log(metrics::RequestLogInsert {
-            timestamp: chrono::Utc::now().timestamp(),
-            listen_addr: node.to_string(),
-            client_ip: ctx.client_ip.clone(),
-            remote_ip: remote.ip().to_string(),
-            method: ctx.method.as_str().to_string(),
-            request_path: ctx.path.to_string(),
-            request_host: ctx.host_header.to_string(),
-            status_code: status.as_u16() as i32,
-            upstream: "".to_string(),
-            latency_ms: ctx.elapsed_ms(),
-            user_agent: ctx.user_agent_header.to_string(),
-            referer: ctx.referer_header.to_string(),
-            matched_route_id: matched_route_id.clone(),
-        });
+        enqueue_request_log(node, &ctx, &remote, status, "", &matched_route_id);
 
         let mut resp = Response::new(Body::from("Unauthorized"));
         *resp.status_mut() = status;
@@ -1461,121 +1467,51 @@ async fn proxy_handler(
         let status = StatusCode::NOT_FOUND;
         push_log_lazy(&state.app, || format_access_log(node, &ctx, status));
 
-        metrics::try_enqueue_request_log(metrics::RequestLogInsert {
-            timestamp: chrono::Utc::now().timestamp(),
-            listen_addr: node.to_string(),
-            client_ip: ctx.client_ip.clone(),
-            remote_ip: remote.ip().to_string(),
-            method: ctx.method.as_str().to_string(),
-            request_path: ctx.path.to_string(),
-            request_host: ctx.host_header.to_string(),
-            status_code: status.as_u16() as i32,
-            upstream: "".to_string(),
-            latency_ms: ctx.elapsed_ms(),
-            user_agent: ctx.user_agent_header.to_string(),
-            referer: ctx.referer_header.to_string(),
-            matched_route_id: matched_route_id.clone(),
-        });
+        enqueue_request_log(node, &ctx, &remote, status, "", &matched_route_id);
 
         return (status, "No route").into_response();
     };
 
     // 2. 优先处理静态资源
     if let Some(dir) = route.static_dir.as_ref() {
-        // 优化静态文件服务：支持预压缩文件
-        let serve_dir = ServeDir::new(dir)
-            .precompressed_gzip()    // 支持 .gz 预压缩文件
-            .precompressed_br();     // 支持 .br 预压缩文件
+        let serve_dir = cached_serve_dir(dir);
+        let response = match serve_dir.oneshot(req).await {
+            Ok(r) => r,
+            Err(never) => match never {},
+        };
+        let status = response.status();
+        let response = response.map(Body::new);
 
-        match serve_dir.oneshot(req).await {
-            Ok(response) => {
-                let status = response.status();
-                let response = response.map(Body::new);
+        if status.is_success() || status.is_redirection() {
+            push_log_lazy(&state.app, || format_access_log(node, &ctx, status));
 
-                if status.is_success() || status.is_redirection() {
-                    push_log_lazy(&state.app, || format_access_log(node, &ctx, status));
+            enqueue_request_log(node, &ctx, &remote, status, "", &matched_route_id);
 
-                    metrics::try_enqueue_request_log(metrics::RequestLogInsert {
-                        timestamp: chrono::Utc::now().timestamp(),
-                        listen_addr: node.to_string(),
-                        client_ip: ctx.client_ip.clone(),
-                        remote_ip: remote.ip().to_string(),
-                        method: ctx.method.as_str().to_string(),
-                        request_path: ctx.path.to_string(),
-                        request_host: ctx.host_header.to_string(),
-                        status_code: status.as_u16() as i32,
-                        upstream: "".to_string(),
-                        latency_ms: ctx.elapsed_ms(),
-                        user_agent: ctx.user_agent_header.to_string(),
-                        referer: ctx.referer_header.to_string(),
-                        matched_route_id: matched_route_id.clone(),
-                    });
-
-                    return response;
-                }
-
-                // SPA 回退
-                if status == StatusCode::NOT_FOUND
-                    && (ctx.method == Method::GET || ctx.method == Method::HEAD)
-                    && !is_asset_path(&ctx.path)
-                {
-                    if let Ok(bytes) =
-                        tokio::fs::read(std::path::Path::new(dir).join("index.html")).await
-                    {
-                        let mut resp = Response::new(Body::from(bytes));
-                        resp.headers_mut().insert(
-                            axum::http::header::CONTENT_TYPE,
-                            HeaderValue::from_static("text/html; charset=utf-8"),
-                        );
-
-                        let status = StatusCode::OK;
-                        push_log_lazy(&state.app, || format_access_log(node, &ctx, status));
-
-                        metrics::try_enqueue_request_log(metrics::RequestLogInsert {
-                            timestamp: chrono::Utc::now().timestamp(),
-                            listen_addr: node.to_string(),
-                            client_ip: ctx.client_ip.clone(),
-                            remote_ip: remote.ip().to_string(),
-                            method: ctx.method.as_str().to_string(),
-                            request_path: ctx.path.to_string(),
-                            request_host: ctx.host_header.to_string(),
-                            status_code: status.as_u16() as i32,
-                            upstream: "".to_string(),
-                            latency_ms: ctx.elapsed_ms(),
-                            user_agent: ctx.user_agent_header.to_string(),
-                            referer: ctx.referer_header.to_string(),
-                            matched_route_id: matched_route_id.clone(),
-                        });
-
-                        return resp;
-                    }
-                }
-
-                return response;
-            }
-            Err(_) => {}
+            return response;
         }
 
-        let status = StatusCode::NOT_FOUND;
-        push_log_lazy(&state.app, || format_access_log(node, &ctx, status));
+        // SPA 回退
+        if status == StatusCode::NOT_FOUND
+            && (ctx.method == Method::GET || ctx.method == Method::HEAD)
+            && !is_asset_path(&ctx.path)
+        {
+            if let Some(bytes) = cached_index_html(dir).await {
+                let mut resp = Response::new(Body::from(bytes));
+                resp.headers_mut().insert(
+                    axum::http::header::CONTENT_TYPE,
+                    HeaderValue::from_static("text/html; charset=utf-8"),
+                );
 
-        metrics::try_enqueue_request_log(metrics::RequestLogInsert {
-            timestamp: chrono::Utc::now().timestamp(),
-            listen_addr: node.to_string(),
-            client_ip: ctx.client_ip.clone(),
-            remote_ip: remote.ip().to_string(),
-            method: ctx.method.as_str().to_string(),
-            request_path: ctx.path.to_string(),
-            request_host: ctx.host_header.to_string(),
-            status_code: status.as_u16() as i32,
-            upstream: "".to_string(),
-            latency_ms: ctx.elapsed_ms(),
-            user_agent: ctx.user_agent_header.to_string(),
-            referer: ctx.referer_header.to_string(),
-            matched_route_id: matched_route_id.clone(),
-        });
+                let status = StatusCode::OK;
+                push_log_lazy(&state.app, || format_access_log(node, &ctx, status));
 
-        return (status, "Static file not found").into_response();
+                enqueue_request_log(node, &ctx, &remote, status, "", &matched_route_id);
+
+                return resp;
+            }
+        }
+
+        return response;
     }
 
     // 3. 处理反代逻辑
@@ -1622,21 +1558,7 @@ async fn proxy_handler(
                 let status = StatusCode::BAD_GATEWAY;
                 push_log_lazy(&state.app, || format_access_log(node, &ctx, status));
 
-                metrics::try_enqueue_request_log(metrics::RequestLogInsert {
-                    timestamp: chrono::Utc::now().timestamp(),
-                    listen_addr: node.to_string(),
-                    client_ip: ctx.client_ip.clone(),
-                    remote_ip: remote.ip().to_string(),
-                    method: ctx.method.as_str().to_string(),
-                    request_path: ctx.path.to_string(),
-                    request_host: ctx.host_header.to_string(),
-                    status_code: status.as_u16() as i32,
-                    upstream: upstream_url.clone(),
-                    latency_ms: ctx.elapsed_ms(),
-                    user_agent: ctx.user_agent_header.to_string(),
-                    referer: ctx.referer_header.to_string(),
-                    matched_route_id: matched_route_id.clone(),
-                });
+                enqueue_request_log(node, &ctx, &remote, status, &upstream_url, &matched_route_id);
 
                 return (status, format!("bad upstream url: {e}")).into_response();
             }
@@ -1858,21 +1780,7 @@ async fn proxy_handler(
             )
         });
 
-        metrics::try_enqueue_request_log(metrics::RequestLogInsert {
-            timestamp: chrono::Utc::now().timestamp(),
-            listen_addr: node.to_string(),
-            client_ip: ctx.client_ip.clone(),
-            remote_ip: remote.ip().to_string(),
-            method: ctx.method.as_str().to_string(),
-            request_path: ctx.path.to_string(),
-            request_host: ctx.host_header.to_string(),
-            status_code: status.as_u16() as i32,
-            upstream: target.clone(),
-            latency_ms: ctx.elapsed_ms(),
-            user_agent: ctx.user_agent_header.to_string(),
-            referer: ctx.referer_header.to_string(),
-            matched_route_id: matched_route_id.clone(),
-        });
+        enqueue_request_log(node, &ctx, &remote, status, &target, &matched_route_id);
 
         let mut out = Response::new(Body::empty());
         *out.status_mut() = StatusCode::from_u16(status.as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
@@ -1964,26 +1872,8 @@ async fn proxy_handler(
 
         // 仅错误时记录详细日志
         if !status.is_success() {
-            // 使用缓冲池优化字符串拼接，减少内存分配
-            use std::fmt::Write;
-
-            let mut inbound_buf = crate::buffer_pool::acquire_buffer();
-            for (k, v) in inbound_headers.iter() {
-                if !inbound_buf.is_empty() {
-                    let _ = write!(inbound_buf, " ## ");
-                }
-                let _ = write!(inbound_buf, "{}: {}", k, v.to_str().unwrap_or("[invalid utf8]"));
-            }
-            let inbound_headers_line = std::str::from_utf8(&inbound_buf).unwrap_or("");
-
-            let mut outbound_buf = crate::buffer_pool::acquire_buffer();
-            for (k, v) in outbound_headers_snapshot.iter() {
-                if !outbound_buf.is_empty() {
-                    let _ = write!(outbound_buf, " ## ");
-                }
-                let _ = write!(outbound_buf, "{}: {}", k, v.to_str().unwrap_or("[invalid utf8]"));
-            }
-            let outbound_headers_line = std::str::from_utf8(&outbound_buf).unwrap_or("");
+            let inbound_headers_line = format_headers_for_log(&inbound_headers);
+            let outbound_headers_line = format_headers_for_log(&outbound_headers_snapshot);
 
             send_log_with_app(&state.app, format!(
                 "Reverse proxy error (IN): {} {} -> {} status={} | inbound_headers=[{}]",
@@ -2068,6 +1958,36 @@ fn build_upstream_url(
         base.push_str(q);
     }
     Ok(base)
+}
+
+#[inline]
+fn cached_serve_dir(dir: &str) -> ServeDir {
+    if let Some(entry) = STATIC_DIR_SERVICE_CACHE.get(dir) {
+        return entry.clone();
+    }
+
+    let service = ServeDir::new(dir)
+        .precompressed_gzip()
+        .precompressed_br();
+    STATIC_DIR_SERVICE_CACHE.insert(dir.to_string(), service.clone());
+    service
+}
+
+async fn cached_index_html(dir: &str) -> Option<Bytes> {
+    let now = Instant::now();
+    if let Some(entry) = INDEX_HTML_CACHE.get(dir) {
+        let (cached_at, bytes) = entry.value();
+        if now.duration_since(*cached_at) <= INDEX_HTML_CACHE_TTL {
+            return Some(bytes.clone());
+        }
+    }
+
+    let bytes = tokio::fs::read(std::path::Path::new(dir).join("index.html"))
+        .await
+        .ok()?;
+    let bytes = Bytes::from(bytes);
+    INDEX_HTML_CACHE.insert(dir.to_string(), (now, bytes.clone()));
+    Some(bytes)
 }
 
 #[inline]
@@ -2160,4 +2080,29 @@ fn expand_proxy_header_value(raw: &str, remote: &SocketAddr, inbound_headers: &H
     }
 
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{host_matches, normalize_host};
+
+    #[test]
+    fn normalize_host_handles_port_and_ipv6() {
+        assert_eq!(normalize_host("example.com:443"), "example.com");
+        assert_eq!(normalize_host("[::1]:8443"), "::1");
+        assert_eq!(normalize_host("::1"), "::1");
+    }
+
+    #[test]
+    fn wildcard_host_matches_apex_and_subdomain() {
+        assert!(host_matches("*.example.com", "example.com"));
+        assert!(host_matches("*.example.com", "api.example.com"));
+        assert!(host_matches("*.example.com", "A.B.Example.Com"));
+    }
+
+    #[test]
+    fn wildcard_host_does_not_partial_match() {
+        assert!(!host_matches("*.example.com", "evil-example.com"));
+        assert!(!host_matches("*.example.com", "example.com.evil"));
+    }
 }
