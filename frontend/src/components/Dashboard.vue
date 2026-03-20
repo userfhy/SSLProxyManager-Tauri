@@ -1189,6 +1189,7 @@ let subscribed = false
 let metricsUnlisten: (() => void) | null = null
 let pollingTimer: number | null = null
 let heartbeatCleanup: (() => void) | null = null
+let pollingEnabled = false
 
 let lastEventTime = 0
 let eventEverReceived = false
@@ -1238,61 +1239,47 @@ const onMetrics = (payload: MetricsPayload) => {
   // Top Routes：实时模式不查库（仅载入历史数据后才查询）
 }
 
-const convertMetricsSeriesMap = (map: Record<string, any> | undefined): Record<string, MetricsSeries> => {
-  if (!map) return {}
-  const result: Record<string, MetricsSeries> = {}
-  for (const [key, value] of Object.entries(map)) {
-    result[key] = {
-      timestamps: value.timestamps || [],
-      counts: value.counts || [],
-      s2xx: value.s2xx || [],
-      s3xx: value.s3xx || [],
-      s4xx: value.s4xx || [],
-      s5xx: value.s5xx || [],
-      s0: value.s0 || [],
-      avgLatencyMs: value.avgLatencyMs || [],
-      maxLatencyMs: value.maxLatencyMs || [],
-      p50: value.p50,
-      p95: value.p95,
-      p99: value.p99,
-      upstreamDist: (value.upstreamDist || []).map((kv: any) => ({ key: kv.key || kv.Key || '', value: kv.value || kv.Value || 0 })),
-      topRouteErr: (value.topRouteErr || []).map((kv: any) => ({ key: kv.key || kv.Key || '', value: kv.value || kv.Value || 0 })),
-      topUpErr: (value.topUpErr || []).map((kv: any) => ({ key: kv.key || kv.Key || '', value: kv.value || kv.Value || 0 })),
-      latencyDist: (value.latencyDist || []).map((kv: any) => ({ key: kv.key || kv.Key || '', value: kv.value || kv.Value || 0 })),
-    }
-  }
-  return result
-}
+const normalizeMetricsPayload = (payload: any): MetricsPayload => ({
+  windowSeconds: Number(payload?.windowSeconds) || 0,
+  listenAddrs: Array.isArray(payload?.listenAddrs) ? payload.listenAddrs : [],
+  byListenAddr:
+    payload?.byListenAddr && typeof payload.byListenAddr === 'object'
+      ? payload.byListenAddr
+      : {},
+  minuteWindowSeconds:
+    payload?.minuteWindowSeconds == null ? undefined : Number(payload.minuteWindowSeconds) || 0,
+  byListenMinute:
+    payload?.byListenMinute && typeof payload.byListenMinute === 'object'
+      ? payload.byListenMinute
+      : undefined,
+  topRoutes: Array.isArray(payload?.topRoutes) ? payload.topRoutes : undefined,
+  topPaths: Array.isArray(payload?.topPaths) ? payload.topPaths : undefined,
+  topClientIps: Array.isArray(payload?.topClientIps) ? payload.topClientIps : undefined,
+  topUpstreamErrors: Array.isArray(payload?.topUpstreamErrors) ? payload.topUpstreamErrors : undefined,
+})
 
 const startPolling = () => {
   if (pollingTimer) return
+  pollingEnabled = true
   
   const poll = async () => {
-    if (!props.isActive) {
+    if (!props.isActive || !pollingEnabled) {
       stopPolling()
       return
     }
     
     try {
       const payload = await GetMetrics()
-      const converted: MetricsPayload = {
-        windowSeconds: payload.windowSeconds,
-        listenAddrs: payload.listenAddrs || [],
-        byListenAddr: convertMetricsSeriesMap(payload.byListenAddr),
-        minuteWindowSeconds: payload.minuteWindowSeconds,
-        byListenMinute: convertMetricsSeriesMap(payload.byListenMinute),
-        topRoutes: payload.topRoutes,
-        topPaths: payload.topPaths,
-        topClientIps: payload.topClientIps,
-        topUpstreamErrors: payload.topUpstreamErrors,
-      }
-      processMetricsPayload(converted)
+      processMetricsPayload(normalizeMetricsPayload(payload))
 
       // Top Routes：实时模式不查库（仅载入历史数据后才查询）
     } catch (err) {
       console.error('轮询获取 metrics 失败:', err)
     }
-    
+
+    if (!pollingEnabled || !props.isActive) {
+      return
+    }
     pollingTimer = window.setTimeout(poll, POLLING_INTERVAL)
   }
   
@@ -1300,6 +1287,7 @@ const startPolling = () => {
 }
 
 const stopPolling = () => {
+  pollingEnabled = false
   if (pollingTimer) {
     clearTimeout(pollingTimer)
     pollingTimer = null
@@ -1361,20 +1349,6 @@ const startSubscription = () => {
         })
 }
 
-// Top Routes：完全并入 metrics 的订阅/轮询兜底体系（这里只做节流刷新）
-let topRoutesLastRefreshAt = 0
-const TOP_ROUTES_THROTTLE_MS = 2500
-
-const refreshTopRoutesThrottled = async () => {
-  // 实时模式不查库（TopRoutes 依赖 DB 聚合）
-  if (!historicalData.value) return
-
-  const now = Date.now()
-  if (now - topRoutesLastRefreshAt < TOP_ROUTES_THROTTLE_MS) return
-  topRoutesLastRefreshAt = now
-  await fetchTopRoutes()
-}
-
 const stopSubscription = () => {
   if (metricsUnlisten) {
     try {
@@ -1387,15 +1361,22 @@ const stopSubscription = () => {
         subscribed = false
       }
 
-watch([selectedListen, selectedWindow], () => {
+watch(selectedListen, () => {
   if (!props.isActive) return
-  if (lastValidView && (lastValidView.window !== selectedWindow.value || lastValidView.listen !== selectedListen.value)) {
+  if (lastValidView && lastValidView.listen !== selectedListen.value) {
     lastValidView = null
   }
 
   // Top Routes 仅在历史模式下查询数据库
   if (historicalData.value) {
     fetchTopRoutes()
+  }
+})
+
+watch(selectedWindow, () => {
+  if (!props.isActive) return
+  if (lastValidView && lastValidView.window !== selectedWindow.value) {
+    lastValidView = null
   }
 })
 
@@ -1519,7 +1500,6 @@ h3 {
 }
 
 .panel:hover {
-  transform: translateY(-4px);
   box-shadow: var(--shadow-glow);
   border-color: var(--border-hover);
 }

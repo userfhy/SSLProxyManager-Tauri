@@ -563,15 +563,28 @@ fn parse_proc_stat() -> Result<(u64, u64, i64, i64, u64, u64)> {
 
     for line in content.lines() {
         if line.starts_with("cpu ") {
-            let nums: Vec<u64> = line
+            let mut total = 0u64;
+            let mut idle = 0u64;
+            let mut iowait = 0u64;
+            let mut count = 0usize;
+
+            for (idx, v) in line
                 .split_whitespace()
                 .skip(1)
                 .filter_map(|s| s.parse::<u64>().ok())
-                .collect();
-            if nums.len() >= 4 {
-                cpu_total = nums.iter().copied().sum::<u64>();
-                let idle = nums.get(3).copied().unwrap_or(0);
-                let iowait = nums.get(4).copied().unwrap_or(0);
+                .enumerate()
+            {
+                total = total.saturating_add(v);
+                if idx == 3 {
+                    idle = v;
+                } else if idx == 4 {
+                    iowait = v;
+                }
+                count += 1;
+            }
+
+            if count >= 4 {
+                cpu_total = total;
                 cpu_idle = idle.saturating_add(iowait);
             }
         } else if let Some(v) = line.strip_prefix("procs_running ") {
@@ -755,12 +768,15 @@ fn parse_tcp_states_from(path: &str) -> (i64, i64, i64) {
     let mut close_wait = 0i64;
 
     for line in content.lines().skip(1) {
-        let cols: Vec<&str> = line.split_whitespace().collect();
-        if cols.len() < 4 {
+        let mut cols = line.split_whitespace();
+        let _ = cols.next();
+        let _ = cols.next();
+        let _ = cols.next();
+        let Some(state) = cols.next() else {
             continue;
-        }
+        };
 
-        match cols[3] {
+        match state {
             "01" => established += 1,
             "06" => time_wait += 1,
             "08" => close_wait += 1,
@@ -801,15 +817,15 @@ fn parse_file_nr() -> (u64, u64) {
         return (0, 0);
     };
 
-    let nums: Vec<u64> = content
+    let mut nums = content
         .split_whitespace()
-        .filter_map(|v| v.parse::<u64>().ok())
-        .collect();
+        .filter_map(|v| v.parse::<u64>().ok());
 
-    if nums.len() >= 3 {
-        let allocated = nums[0];
-        let unused = nums[1];
-        let max = nums[2];
+    let allocated = nums.next();
+    let unused = nums.next();
+    let max = nums.next();
+
+    if let (Some(allocated), Some(unused), Some(max)) = (allocated, unused, max) {
         (allocated.saturating_sub(unused), max)
     } else {
         (0, 0)

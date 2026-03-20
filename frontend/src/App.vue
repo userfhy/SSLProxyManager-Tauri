@@ -1080,7 +1080,7 @@ h1 {
 }
 
 .control-btn:hover:not(:disabled) {
-  transform: translateY(-2px);
+  box-shadow: var(--shadow-sm);
 }
 
 .save-btn {
@@ -1088,7 +1088,7 @@ h1 {
 }
 
 .save-btn:hover:not(:disabled) {
-  transform: translateY(-2px);
+  box-shadow: var(--shadow-sm);
 }
 
 .main-content {

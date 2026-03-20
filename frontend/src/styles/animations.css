@@ -208,7 +208,6 @@
 }
 
 .hover-lift:hover {
-  transform: translateY(-4px);
   box-shadow: var(--shadow-lg);
 }
 
@@ -217,7 +216,7 @@
 }
 
 .hover-scale:hover {
-  transform: scale(1.05);
+  box-shadow: var(--shadow-sm);
 }
 
 .hover-glow {

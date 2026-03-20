@@ -56,6 +56,17 @@ fn hash_fnv1a_64(s: &str) -> u64 {
     h
 }
 
+#[inline]
+fn get_or_default_by_str<'a, V: Default>(
+    map: &'a mut HashMap<String, V>,
+    key: &str,
+) -> &'a mut V {
+    if !map.contains_key(key) {
+        map.insert(key.to_string(), V::default());
+    }
+    map.get_mut(key).expect("key inserted or existed")
+}
+
 const METRICS_CACHE_TTL: Duration = Duration::from_millis(500);
 static METRICS_CACHE: Lazy<RwLock<Option<(Instant, MetricsPayload)>>> =
     Lazy::new(|| RwLock::new(None));
@@ -95,6 +106,8 @@ pub struct QueryRequestLogsRequest {
     pub page: i32,
     pub page_size: i32,
     pub matched_route_id: Option<String>,
+    pub sort_by: Option<String>,
+    pub sort_order: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -386,6 +399,83 @@ impl RtSeriesAgg {
     }
 }
 
+#[inline]
+fn merge_rt_series_map(dst: &mut HashMap<String, RtSeriesAgg>, src: &HashMap<String, RtSeriesAgg>) {
+    for (k, v) in src.iter() {
+        let dst_series = dst.entry(k.clone()).or_default();
+        for (ts, b) in v.buckets.iter() {
+            let out = dst_series
+                .buckets
+                .entry(*ts)
+                .or_insert_with(|| RtBucket { ts: *ts, ..Default::default() });
+            out.count += b.count;
+            out.s2xx += b.s2xx;
+            out.s3xx += b.s3xx;
+            out.s4xx += b.s4xx;
+            out.s5xx += b.s5xx;
+            out.s0 += b.s0;
+            out.latency_sum_ms += b.latency_sum_ms;
+            if b.latency_max_ms > out.latency_max_ms {
+                out.latency_max_ms = b.latency_max_ms;
+            }
+        }
+    }
+}
+
+#[inline]
+fn merge_count_map(
+    dst: &mut HashMap<String, HashMap<String, i64>>,
+    src: &HashMap<String, HashMap<String, i64>>,
+) {
+    for (k, m) in src.iter() {
+        let out = dst.entry(k.clone()).or_default();
+        for (item, cnt) in m.iter() {
+            *out.entry(item.clone()).or_insert(0) += *cnt;
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct RequestLogQueryFilters<'a> {
+    start_time: i64,
+    end_time: i64,
+    listen_addr: Option<&'a str>,
+    upstream: Option<&'a str>,
+    request_path: Option<&'a str>,
+    client_ip: Option<&'a str>,
+    status_code: Option<i32>,
+    matched_route_id: Option<&'a str>,
+}
+
+fn append_request_logs_where<'a>(
+    qb: &mut QueryBuilder<'a, sqlx::Sqlite>,
+    filters: RequestLogQueryFilters<'a>,
+) {
+    qb.push(" WHERE timestamp >= ")
+        .push_bind(filters.start_time)
+        .push(" AND timestamp <= ")
+        .push_bind(filters.end_time);
+
+    if let Some(v) = filters.listen_addr {
+        qb.push(" AND listen_addr = ").push_bind(v);
+    }
+    if let Some(v) = filters.upstream {
+        qb.push(" AND upstream LIKE ").push_bind(format!("%{}%", v));
+    }
+    if let Some(v) = filters.request_path {
+        qb.push(" AND request_path LIKE ").push_bind(format!("%{}%", v));
+    }
+    if let Some(v) = filters.client_ip {
+        qb.push(" AND client_ip LIKE ").push_bind(format!("%{}%", v));
+    }
+    if let Some(v) = filters.status_code {
+        qb.push(" AND status_code = ").push_bind(v);
+    }
+    if let Some(v) = filters.matched_route_id {
+        qb.push(" AND matched_route_id = ").push_bind(v);
+    }
+}
+
 #[derive(Debug, Default)]
 struct RealtimeAgg {
     per_sec: HashMap<String, RtSeriesAgg>,
@@ -451,47 +541,47 @@ impl RealtimeAgg {
     ) {
         let min_ts = (ts_sec / 60) * 60;
 
-        let sec = self.per_sec.entry(key.to_string()).or_default();
+        let sec = get_or_default_by_str(&mut self.per_sec, key);
         sec.add(ts_sec, status_code, latency_ms);
         sec.trim_older_than(ts_sec - REALTIME_WINDOW_SECS);
 
-        let min = self.per_min.entry(key.to_string()).or_default();
+        let min = get_or_default_by_str(&mut self.per_min, key);
         min.add(min_ts, status_code, latency_ms);
         min.trim_older_than(ts_sec - REALTIME_MINUTE_WINDOW_SECS);
 
         // Top Routes（matched_route_id）实时聚合
         let rid = matched_route_id.trim();
         if !rid.is_empty() {
-            let m = self.route_counts.entry(key.to_string()).or_default();
+            let m = get_or_default_by_str(&mut self.route_counts, key);
             *m.entry(rid.to_string()).or_insert(0) += 1;
         }
 
         // Top request_path 实时聚合
         let p = normalize_request_path_for_top(request_path);
         {
-            let m = self.path_counts.entry(key.to_string()).or_default();
+            let m = get_or_default_by_str(&mut self.path_counts, key);
             *m.entry(p).or_insert(0) += 1;
         }
 
         // Top client_ip 实时聚合
         let ip = client_ip.trim();
         if !ip.is_empty() {
-            let m = self.ip_counts.entry(key.to_string()).or_default();
+            let m = get_or_default_by_str(&mut self.ip_counts, key);
             *m.entry(ip.to_string()).or_insert(0) += 1;
         }
 
+        let normalized_upstream = normalize_upstream_for_top(upstream);
+
         // Upstream 请求分布实时聚合
         {
-            let up = normalize_upstream_for_top(upstream);
-            let m = self.upstream_counts.entry(key.to_string()).or_default();
-            *m.entry(up).or_insert(0) += 1;
+            let m = get_or_default_by_str(&mut self.upstream_counts, key);
+            *m.entry(normalized_upstream.clone()).or_insert(0) += 1;
         }
 
         // Top upstream(错误) 实时聚合
         if status_code >= 400 {
-            let up = normalize_upstream_for_top(upstream);
-            let m = self.upstream_error_counts.entry(key.to_string()).or_default();
-            *m.entry(up).or_insert(0) += 1;
+            let m = get_or_default_by_str(&mut self.upstream_error_counts, key);
+            *m.entry(normalized_upstream).or_insert(0) += 1;
         }
     }
 
@@ -1420,63 +1510,66 @@ pub async fn query_request_logs(req: QueryRequestLogsRequest) -> Result<QueryReq
         .as_deref()
         .map(str::trim)
         .filter(|s| !s.is_empty());
+    let sort_by = req.sort_by.as_deref().map(str::trim).filter(|s| !s.is_empty());
+    let sort_order = req
+        .sort_order
+        .as_deref()
+        .map(str::trim)
+        .map(|s| s.to_ascii_lowercase());
+
+    let sort_column = match sort_by {
+        Some("id") => "id",
+        Some("timestamp") => "timestamp",
+        Some("listen_addr") | Some("listenAddr") => "listen_addr",
+        Some("client_ip") | Some("clientIP") => "client_ip",
+        Some("remote_ip") | Some("remoteIP") => "remote_ip",
+        Some("method") => "method",
+        Some("request_path") | Some("requestPath") => "request_path",
+        Some("request_host") | Some("requestHost") => "request_host",
+        Some("status_code") | Some("statusCode") => "status_code",
+        Some("upstream") => "upstream",
+        Some("latency_ms") | Some("latencyMs") => "latency_ms",
+        Some("user_agent") | Some("userAgent") => "user_agent",
+        Some("referer") => "referer",
+        _ => "timestamp",
+    };
+    let sort_dir = match sort_order.as_deref() {
+        Some("asc") | Some("ascending") | Some("ascend") => "ASC",
+        _ => "DESC",
+    };
+    let filters = RequestLogQueryFilters {
+        start_time: req.start_time,
+        end_time: req.end_time,
+        listen_addr,
+        upstream,
+        request_path,
+        client_ip,
+        status_code,
+        matched_route_id,
+    };
 
     // COUNT
-    let mut count_qb = QueryBuilder::new("SELECT COUNT(1) FROM request_logs WHERE timestamp >= ");
-    count_qb.push_bind(req.start_time);
-    count_qb.push(" AND timestamp <= ");
-    count_qb.push_bind(req.end_time);
-
-    if let Some(v) = listen_addr {
-        count_qb.push(" AND listen_addr = ").push_bind(v);
-    }
-    if let Some(v) = upstream {
-        count_qb.push(" AND upstream LIKE ").push_bind(format!("%{}%", v));
-    }
-    if let Some(v) = request_path {
-        count_qb.push(" AND request_path LIKE ").push_bind(format!("%{}%", v));
-    }
-    if let Some(v) = client_ip {
-        count_qb.push(" AND client_ip LIKE ").push_bind(format!("%{}%", v));
-    }
-    if let Some(v) = status_code {
-        count_qb.push(" AND status_code = ").push_bind(v);
-    }
-    if let Some(v) = matched_route_id {
-        count_qb.push(" AND matched_route_id = ").push_bind(v);
-    }
+    let mut count_qb = QueryBuilder::new("SELECT COUNT(1) FROM request_logs");
+    append_request_logs_where(&mut count_qb, filters);
 
     let total: i64 = count_qb.build_query_as::<(i64,)>().fetch_one(&*pool).await?.0;
     let total_page = if total == 0 { 0 } else { (total + page_size - 1) / page_size };
 
     // SELECT
     let mut sel_qb = QueryBuilder::new(
-        "SELECT id, timestamp, listen_addr, client_ip, remote_ip, method, request_path, request_host, status_code, upstream, latency_ms, user_agent, referer, matched_route_id FROM request_logs WHERE timestamp >= "
+        "SELECT id, timestamp, listen_addr, client_ip, remote_ip, method, request_path, request_host, status_code, upstream, latency_ms, user_agent, referer, matched_route_id FROM request_logs"
     );
-    sel_qb.push_bind(req.start_time);
-    sel_qb.push(" AND timestamp <= ");
-    sel_qb.push_bind(req.end_time);
+    append_request_logs_where(&mut sel_qb, filters);
 
-    if let Some(v) = listen_addr {
-        sel_qb.push(" AND listen_addr = ").push_bind(v);
-    }
-    if let Some(v) = upstream {
-        sel_qb.push(" AND upstream LIKE ").push_bind(format!("%{}%", v));
-    }
-    if let Some(v) = request_path {
-        sel_qb.push(" AND request_path LIKE ").push_bind(format!("%{}%", v));
-    }
-    if let Some(v) = client_ip {
-        sel_qb.push(" AND client_ip LIKE ").push_bind(format!("%{}%", v));
-    }
-    if let Some(v) = status_code {
-        sel_qb.push(" AND status_code = ").push_bind(v);
-    }
-    if let Some(v) = matched_route_id {
-        sel_qb.push(" AND matched_route_id = ").push_bind(v);
-    }
-
-    sel_qb.push(" ORDER BY timestamp DESC LIMIT ").push_bind(page_size).push(" OFFSET ").push_bind(offset);
+    sel_qb
+        .push(" ORDER BY ")
+        .push(sort_column)
+        .push(" ")
+        .push(sort_dir)
+        .push(", id DESC LIMIT ")
+        .push_bind(page_size)
+        .push(" OFFSET ")
+        .push_bind(offset);
 
     let logs = sel_qb.build_query_as::<RequestLog>().fetch_all(&*pool).await?;
 
@@ -1499,81 +1592,13 @@ pub fn get_metrics() -> MetricsPayload {
     for shard in REALTIME_AGG_SHARDS.iter() {
         let guard = shard.read();
 
-        // per_sec
-        for (k, v) in guard.per_sec.iter() {
-            let dst = merged.per_sec.entry(k.clone()).or_default();
-            for (ts, b) in v.buckets.iter() {
-                let out = dst.buckets.entry(*ts).or_insert_with(|| RtBucket { ts: *ts, ..Default::default() });
-                out.count += b.count;
-                out.s2xx += b.s2xx;
-                out.s3xx += b.s3xx;
-                out.s4xx += b.s4xx;
-                out.s5xx += b.s5xx;
-                out.s0 += b.s0;
-                out.latency_sum_ms += b.latency_sum_ms;
-                if b.latency_max_ms > out.latency_max_ms {
-                    out.latency_max_ms = b.latency_max_ms;
-                }
-            }
-        }
-
-        // per_min
-        for (k, v) in guard.per_min.iter() {
-            let dst = merged.per_min.entry(k.clone()).or_default();
-            for (ts, b) in v.buckets.iter() {
-                let out = dst.buckets.entry(*ts).or_insert_with(|| RtBucket { ts: *ts, ..Default::default() });
-                out.count += b.count;
-                out.s2xx += b.s2xx;
-                out.s3xx += b.s3xx;
-                out.s4xx += b.s4xx;
-                out.s5xx += b.s5xx;
-                out.s0 += b.s0;
-                out.latency_sum_ms += b.latency_sum_ms;
-                if b.latency_max_ms > out.latency_max_ms {
-                    out.latency_max_ms = b.latency_max_ms;
-                }
-            }
-        }
-
-        // top routes
-        for (k, m) in guard.route_counts.iter() {
-            let dst = merged.route_counts.entry(k.clone()).or_default();
-            for (rid, cnt) in m.iter() {
-                *dst.entry(rid.clone()).or_insert(0) += *cnt;
-            }
-        }
-
-        // top paths
-        for (k, m) in guard.path_counts.iter() {
-            let dst = merged.path_counts.entry(k.clone()).or_default();
-            for (p, cnt) in m.iter() {
-                *dst.entry(p.clone()).or_insert(0) += *cnt;
-            }
-        }
-
-        // top ips
-        for (k, m) in guard.ip_counts.iter() {
-            let dst = merged.ip_counts.entry(k.clone()).or_default();
-            for (ip, cnt) in m.iter() {
-                *dst.entry(ip.clone()).or_insert(0) += *cnt;
-            }
-        }
-
-        // top upstream errors
-        for (k, m) in guard.upstream_error_counts.iter() {
-            let dst = merged.upstream_error_counts.entry(k.clone()).or_default();
-            for (up, cnt) in m.iter() {
-                *dst.entry(up.clone()).or_insert(0) += *cnt;
-            }
-        }
-
-        // upstream dist
-        for (k, m) in guard.upstream_counts.iter() {
-            let dst = merged.upstream_counts.entry(k.clone()).or_default();
-            for (up, cnt) in m.iter() {
-                *dst.entry(up.clone()).or_insert(0) += *cnt;
-            }
-        }
+        merge_rt_series_map(&mut merged.per_sec, &guard.per_sec);
+        merge_rt_series_map(&mut merged.per_min, &guard.per_min);
+        merge_count_map(&mut merged.route_counts, &guard.route_counts);
+        merge_count_map(&mut merged.path_counts, &guard.path_counts);
+        merge_count_map(&mut merged.ip_counts, &guard.ip_counts);
+        merge_count_map(&mut merged.upstream_error_counts, &guard.upstream_error_counts);
+        merge_count_map(&mut merged.upstream_counts, &guard.upstream_counts);
     }
 
     let payload = merged.to_payload();

@@ -124,7 +124,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { ref, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
 import { ElMessage, ElConfigProvider, ElMessageBox } from 'element-plus'
 import { Lock } from '@element-plus/icons-vue'
 import zhCn from 'element-plus/dist/locale/zh-cn.mjs'
@@ -174,6 +174,25 @@ const pagination = ref({
   totalPage: 0,
 })
 const sortConfig = ref<{ prop?: string; order?: string }>({})
+const AUTO_SEARCH_DEBOUNCE_MS = 500
+let autoSearchTimer: number | null = null
+let searchSeq = 0
+
+const toServerSortBy = (prop?: string): string => {
+  switch (prop) {
+    case 'timestamp': return 'timestamp'
+    case 'listenAddr': return 'listen_addr'
+    case 'clientIP': return 'client_ip'
+    case 'remoteIP': return 'remote_ip'
+    case 'method': return 'method'
+    case 'requestPath': return 'request_path'
+    case 'requestHost': return 'request_host'
+    case 'statusCode': return 'status_code'
+    case 'upstream': return 'upstream'
+    case 'latencyMs': return 'latency_ms'
+    default: return 'timestamp'
+  }
+}
 
 const formatTime = (timestamp: number) => {
   const date = new Date(timestamp * 1000)
@@ -209,18 +228,20 @@ const getStatusTagType = (statusCode: number) => {
   return ''
 }
 
-const handleSearch = async () => {
+const handleSearch = async (opts?: { silent?: boolean }) => {
+  const silent = !!opts?.silent
   if (!dateRange.value || dateRange.value.length !== 2) {
-    ElMessage.warning(t('requestLogs.selectTimeRange'))
+    if (!silent) ElMessage.warning(t('requestLogs.selectTimeRange'))
     return
   }
 
   const [startTime, endTime] = dateRange.value
   if (startTime >= endTime) {
-    ElMessage.warning(t('requestLogs.startTimeMustBeLess'))
+    if (!silent) ElMessage.warning(t('requestLogs.startTimeMustBeLess'))
     return
   }
 
+  const reqSeq = ++searchSeq
   loading.value = true
   try {
     const startSec = Math.floor(startTime / 1000)
@@ -237,7 +258,11 @@ const handleSearch = async () => {
       status_code: searchForm.value.statusCode || 0,
       page: pagination.value.page,
       page_size: pagination.value.pageSize,
+      sort_by: toServerSortBy(sortConfig.value.prop),
+      sort_order: sortConfig.value.order || 'descending',
     })
+
+    if (reqSeq !== searchSeq) return
 
     if (response) {
       const list = Array.isArray(response.logs) ? response.logs : []
@@ -260,20 +285,35 @@ const handleSearch = async () => {
       }))
       pagination.value.total = response.total || 0
       pagination.value.totalPage = response.total_page ?? response.totalPage ?? 0
-      ElMessage.success(t('requestLogs.searchSuccess', { total: response.total }))
+      if (!silent) ElMessage.success(t('requestLogs.searchSuccess', { total: response.total }))
     } else {
       logs.value = []
       pagination.value.total = 0
-      ElMessage.warning(t('requestLogs.noDataFound'))
+      if (!silent) ElMessage.warning(t('requestLogs.noDataFound'))
     }
   } catch (error: any) {
+    if (reqSeq !== searchSeq) return
     console.error('查询失败:', error)
-    ElMessage.error(t('requestLogs.searchFailed', { error: error.message || String(error) }))
+    if (!silent) ElMessage.error(t('requestLogs.searchFailed', { error: error.message || String(error) }))
     logs.value = []
     pagination.value.total = 0
   } finally {
-    loading.value = false
+    if (reqSeq === searchSeq) {
+      loading.value = false
+    }
   }
+}
+
+const scheduleAutoSearch = () => {
+  if (autoSearchTimer) {
+    clearTimeout(autoSearchTimer)
+    autoSearchTimer = null
+  }
+  autoSearchTimer = window.setTimeout(() => {
+    autoSearchTimer = null
+    pagination.value.page = 1
+    void handleSearch({ silent: true })
+  }, AUTO_SEARCH_DEBOUNCE_MS)
 }
 
 const handleReset = () => {
@@ -288,6 +328,7 @@ const handleReset = () => {
   pagination.value.page = 1
   logs.value = []
   pagination.value.total = 0
+  searchSeq += 1
 }
 
 const handleSizeChange = (size: number) => {
@@ -303,34 +344,8 @@ const handlePageChange = (page: number) => {
 
 const handleSortChange = ({ prop, order }: { prop?: string; order?: string }) => {
   sortConfig.value = { prop, order }
-  // 前端排序
-  if (prop && order) {
-    const sortedLogs = [...logs.value]
-    sortedLogs.sort((a: any, b: any) => {
-      let aVal = a[prop]
-      let bVal = b[prop]
-      
-      // 处理数字类型
-      if (prop === 'timestamp' || prop === 'statusCode' || prop === 'latencyMs') {
-        aVal = Number(aVal)
-        bVal = Number(bVal)
-      } else {
-        // 字符串类型
-        aVal = String(aVal || '')
-        bVal = String(bVal || '')
-      }
-      
-      if (order === 'ascending') {
-        return aVal > bVal ? 1 : aVal < bVal ? -1 : 0
-      } else {
-        return aVal < bVal ? 1 : aVal > bVal ? -1 : 0
-      }
-    })
-    logs.value = sortedLogs
-  } else {
-    // 恢复原始顺序，重新查询
-    handleSearch()
-  }
+  pagination.value.page = 1
+  handleSearch()
 }
 
 const handleBlacklistIP = async (ip: string) => {
@@ -395,7 +410,30 @@ onMounted(() => {
   })
 })
 
+watch(
+  [
+    () => dateRange.value?.[0],
+    () => dateRange.value?.[1],
+    () => searchForm.value.listenAddr,
+    () => searchForm.value.upstream,
+    () => searchForm.value.requestPath,
+    () => searchForm.value.clientIP,
+    () => searchForm.value.statusCode,
+  ],
+  () => {
+    if (!dateRange.value || dateRange.value.length !== 2) return
+    const [startTime, endTime] = dateRange.value
+    if (startTime >= endTime) return
+    scheduleAutoSearch()
+  },
+)
+
 onBeforeUnmount(() => {
+  if (autoSearchTimer) {
+    clearTimeout(autoSearchTimer)
+    autoSearchTimer = null
+  }
+  searchSeq += 1
   // 清理拖动事件监听器
   if (dragEventHandlers) {
     dragEventHandlers.element.removeEventListener('dragstart', dragEventHandlers.preventDrag)

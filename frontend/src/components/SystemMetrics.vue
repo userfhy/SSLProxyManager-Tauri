@@ -592,7 +592,23 @@ const currentPoint = computed<SystemMetricsPoint | null>(() => {
   return latestPoint.value
 })
 
-const chartXAxis = computed(() => chartPoints.value.map((p) => formatAxisClock(p.timestamp)))
+const chartDerived = computed(() => {
+  const points = chartPoints.value
+  return {
+    xAxis: points.map((p) => formatAxisClock(p.timestamp)),
+    cpu: points.map((p) => Number(p.cpu_usage_percent.toFixed(2))),
+    mem: points.map((p) => Number(p.mem_used_percent.toFixed(2))),
+    swap: points.map((p) => Number(p.swap_used_percent.toFixed(2))),
+    netRx: points.map((p) => convertRateByUnit(p.net_rx_bps)),
+    netTx: points.map((p) => convertRateByUnit(p.net_tx_bps)),
+    diskRead: points.map((p) => convertRateByUnit(p.disk_read_bps)),
+    diskWrite: points.map((p) => convertRateByUnit(p.disk_write_bps)),
+    tcpEstablished: points.map((p) => p.tcp_established || 0),
+    tcpTimeWait: points.map((p) => p.tcp_time_wait || 0),
+    processCount: points.map((p) => p.process_count || 0),
+  }
+})
+
 const networkTrendTitle = computed(() => t('systemMetrics.networkTrend', { unit: rateUnitLabel.value }))
 const diskTrendTitle = computed(() => t('systemMetrics.diskTrend', { unit: rateUnitLabel.value }))
 
@@ -615,7 +631,7 @@ const baseChart = computed(() => ({
   xAxis: {
     type: 'category' as const,
     boundaryGap: false,
-    data: chartXAxis.value,
+    data: chartDerived.value.xAxis,
     axisLabel: {
       color: chartColors.value.textMuted,
       hideOverlap: true,
@@ -645,7 +661,7 @@ const resourceOption = computed<EChartsOption>(() => ({
       type: 'line',
       smooth: true,
       showSymbol: false,
-      data: chartPoints.value.map((p) => Number(p.cpu_usage_percent.toFixed(2))),
+      data: chartDerived.value.cpu,
       lineStyle: { width: 2, color: chartColors.value.primary },
       itemStyle: { color: chartColors.value.primary },
     },
@@ -654,7 +670,7 @@ const resourceOption = computed<EChartsOption>(() => ({
       type: 'line',
       smooth: true,
       showSymbol: false,
-      data: chartPoints.value.map((p) => Number(p.mem_used_percent.toFixed(2))),
+      data: chartDerived.value.mem,
       lineStyle: { width: 2, color: chartColors.value.success },
       itemStyle: { color: chartColors.value.success },
     },
@@ -663,7 +679,7 @@ const resourceOption = computed<EChartsOption>(() => ({
       type: 'line',
       smooth: true,
       showSymbol: false,
-      data: chartPoints.value.map((p) => Number(p.swap_used_percent.toFixed(2))),
+      data: chartDerived.value.swap,
       lineStyle: { width: 2, color: chartColors.value.warning },
       itemStyle: { color: chartColors.value.warning },
     },
@@ -693,7 +709,7 @@ const networkOption = computed<EChartsOption>(() => ({
       type: 'line',
       smooth: true,
       showSymbol: false,
-      data: chartPoints.value.map((p) => convertRateByUnit(p.net_rx_bps)),
+      data: chartDerived.value.netRx,
       lineStyle: { width: 2, color: chartColors.value.success },
       itemStyle: { color: chartColors.value.success },
       areaStyle: { opacity: 0.08, color: chartColors.value.success },
@@ -703,7 +719,7 @@ const networkOption = computed<EChartsOption>(() => ({
       type: 'line',
       smooth: true,
       showSymbol: false,
-      data: chartPoints.value.map((p) => convertRateByUnit(p.net_tx_bps)),
+      data: chartDerived.value.netTx,
       lineStyle: { width: 2, color: chartColors.value.primary },
       itemStyle: { color: chartColors.value.primary },
       areaStyle: { opacity: 0.08, color: chartColors.value.primary },
@@ -734,7 +750,7 @@ const diskOption = computed<EChartsOption>(() => ({
       type: 'line',
       smooth: true,
       showSymbol: false,
-      data: chartPoints.value.map((p) => convertRateByUnit(p.disk_read_bps)),
+      data: chartDerived.value.diskRead,
       lineStyle: { width: 2, color: chartColors.value.info },
       itemStyle: { color: chartColors.value.info },
     },
@@ -743,7 +759,7 @@ const diskOption = computed<EChartsOption>(() => ({
       type: 'line',
       smooth: true,
       showSymbol: false,
-      data: chartPoints.value.map((p) => convertRateByUnit(p.disk_write_bps)),
+      data: chartDerived.value.diskWrite,
       lineStyle: { width: 2, color: chartColors.value.danger },
       itemStyle: { color: chartColors.value.danger },
     },
@@ -762,7 +778,7 @@ const connectionOption = computed<EChartsOption>(() => ({
       type: 'line',
       smooth: true,
       showSymbol: false,
-      data: chartPoints.value.map((p) => p.tcp_established || 0),
+      data: chartDerived.value.tcpEstablished,
       lineStyle: { width: 2, color: chartColors.value.success },
       itemStyle: { color: chartColors.value.success },
     },
@@ -771,7 +787,7 @@ const connectionOption = computed<EChartsOption>(() => ({
       type: 'line',
       smooth: true,
       showSymbol: false,
-      data: chartPoints.value.map((p) => p.tcp_time_wait || 0),
+      data: chartDerived.value.tcpTimeWait,
       lineStyle: { width: 2, color: chartColors.value.warning },
       itemStyle: { color: chartColors.value.warning },
     },
@@ -780,7 +796,7 @@ const connectionOption = computed<EChartsOption>(() => ({
       type: 'line',
       smooth: true,
       showSymbol: false,
-      data: chartPoints.value.map((p) => p.process_count || 0),
+      data: chartDerived.value.processCount,
       lineStyle: { width: 2, color: chartColors.value.primary },
       itemStyle: { color: chartColors.value.primary },
     },
@@ -790,7 +806,10 @@ const connectionOption = computed<EChartsOption>(() => ({
 const appendRealtimePoint = (point: SystemMetricsPoint) => {
   realtimePoints.value.push(point)
   const keepSince = point.timestamp - maxWindowSeconds.value
-  realtimePoints.value = realtimePoints.value.filter((p) => p.timestamp >= keepSince)
+  const firstValidIdx = realtimePoints.value.findIndex((p) => p.timestamp >= keepSince)
+  if (firstValidIdx > 0) {
+    realtimePoints.value.splice(0, firstValidIdx)
+  }
   latestPoint.value = point
 }
 

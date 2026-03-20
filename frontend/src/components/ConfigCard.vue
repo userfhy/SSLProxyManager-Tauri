@@ -1406,7 +1406,6 @@ defineExpose({
 
 .route-card:hover {
   border-color: var(--border-hover);
-  transform: translateY(-2px);
 }
 
 .route-header {

@@ -240,7 +240,6 @@ button,
 .el-card:hover {
   border-color: var(--border-hover);
   box-shadow: var(--shadow-md);
-  transform: translateY(-2px);
 }
 
 /* 增强的按钮样式 */
@@ -286,7 +285,6 @@ button,
 
 .el-button--primary:hover {
   box-shadow: 0 6px 20px rgba(79, 156, 249, 0.4);
-  transform: translateY(-2px);
 }
 
 .el-button--success {
@@ -297,7 +295,6 @@ button,
 
 .el-button--success:hover {
   box-shadow: 0 6px 20px rgba(34, 197, 94, 0.4);
-  transform: translateY(-2px);
 }
 
 .el-button--danger {
@@ -308,7 +305,6 @@ button,
 
 .el-button--danger:hover {
   box-shadow: 0 6px 20px rgba(239, 68, 68, 0.4);
-  transform: translateY(-2px);
 }
 
 /* 增强的输入框样式 */
@@ -349,7 +345,6 @@ button,
 
 .el-table tbody tr:hover {
   background: var(--card-hover);
-  transform: scale(1.01);
 }
 
 .el-table td.el-table__cell {
@@ -365,7 +360,7 @@ button,
 }
 
 .el-tag:hover {
-  transform: scale(1.05);
+  box-shadow: var(--shadow-sm);
 }
 
 .el-tag--success {
@@ -386,7 +381,7 @@ button,
 }
 
 .el-switch:hover {
-  transform: scale(1.05);
+  box-shadow: var(--shadow-sm);
 }
 
 .el-switch.is-checked .el-switch__core {

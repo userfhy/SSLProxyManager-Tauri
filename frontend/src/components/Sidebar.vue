@@ -150,7 +150,6 @@ const handleMenuSelect = (key: string) => {
 }
 
 .collapse-btn:hover {
-  transform: scale(1.1) rotate(180deg);
   background: var(--btn-hover);
   box-shadow: var(--shadow-sm);
 }
@@ -224,11 +223,6 @@ const handleMenuSelect = (key: string) => {
 .nav-menu :deep(.el-menu-item:hover) {
   background: var(--primary-light);
   color: var(--primary);
-  transform: translateX(4px);
-}
-
-.nav-menu :deep(.el-menu-item:hover)::before {
-  transform: scaleY(1);
 }
 
 .nav-menu :deep(.el-menu-item.is-active) {
