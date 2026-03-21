@@ -32,3 +32,5 @@ config.toml
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+.qoder/

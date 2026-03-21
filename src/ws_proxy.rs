@@ -19,7 +19,7 @@ use std::{net::SocketAddr, sync::Arc};
 use tauri::Emitter;
 use tracing::{error, info};
 
-use crate::{access_control, config};
+use crate::{access_control, config, network_optimizer::TcpOptimizer};
 
 static WS_SERVERS: RwLock<Vec<WsServerHandle>> = RwLock::new(Vec::new());
 
@@ -218,7 +218,8 @@ async fn start_ws_rule_server(
                 ),
             );
             
-            let listener = tokio::net::TcpListener::bind(addr).await?;
+            let optimizer = TcpOptimizer::default();
+            let listener = optimizer.optimize_listener(addr).await?;
             let server_future = axum::serve(listener, app_router);
             tokio::select! {
                 res = server_future => {
@@ -229,7 +230,8 @@ async fn start_ws_rule_server(
                 }
             }
         } else {
-            let listener = tokio::net::TcpListener::bind(addr).await?;
+            let optimizer = TcpOptimizer::default();
+            let listener = optimizer.optimize_listener(addr).await?;
             let server_future = axum::serve(listener, app_router);
             tokio::select! {
                 res = server_future => {

@@ -137,6 +137,69 @@ static INDEX_HTML_CACHE: once_cell::sync::Lazy<DashMap<String, (Instant, Bytes)>
 
 const INDEX_HTML_CACHE_TTL: Duration = Duration::from_secs(2);
 
+/// ETag 缓存条目
+struct EtagEntry {
+    mtime: std::time::SystemTime,
+    etag: String,
+}
+
+/// ETag 缓存：存储文件的 etag 和修改时间，用于条件请求验证。
+/// Key: 文件路径, Value: EtagEntry
+static ETAG_CACHE: once_cell::sync::Lazy<DashMap<String, EtagEntry>> =
+    once_cell::sync::Lazy::new(DashMap::new);
+
+/// 生成文件的 ETag：使用修改时间 + 文件大小的组合
+#[inline]
+fn generate_etag(path: &std::path::Path, mtime: std::time::SystemTime, size: u64) -> String {
+    use std::hash::{Hash, Hasher};
+    use std::time::UNIX_EPOCH;
+    
+    let mtime_secs = mtime.duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    let hash_input = format!("{}-{}-{}", mtime_secs, size, path.display());
+    
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    hash_input.hash(&mut hasher);
+    let hash = hasher.finish();
+    
+    format!("\"{:x}\"", hash)
+}
+
+/// 获取或生成文件的 ETag
+#[inline]
+fn get_or_create_etag(path: &std::path::Path) -> Option<String> {
+    let metadata = path.metadata().ok()?;
+    let mtime = metadata.modified().ok()?;
+    let size = metadata.len();
+    
+    let key = path.to_string_lossy().to_string();
+    
+    // DashMap 返回 Ref 而不是直接的值，需要用 .value() 获取
+    if let Some(entry) = ETAG_CACHE.get(&key) {
+        let cached_mtime = entry.mtime;
+        let cached_etag = entry.etag.clone();
+        if cached_mtime == mtime {
+            return Some(cached_etag);
+        }
+    }
+    
+    let etag = generate_etag(path, mtime, size);
+    ETAG_CACHE.insert(key, EtagEntry { mtime, etag: etag.clone() });
+    Some(etag)
+}
+
+/// 检查请求是否匹配 ETag（304 Not Modified）
+#[inline]
+fn check_etag_match(request_etag: Option<&str>, file_etag: &str) -> bool {
+    match request_etag {
+        None => false,
+        Some(req_etag) => {
+            // 支持单个 ETag 或多个 ETag（用逗号分隔）
+            req_etag.split(',')
+                .any(|e| e.trim() == file_etag || e.trim() == "*")
+        }
+    }
+}
+
 /// 从缓存中获取或编译正则表达式。
 /// 优先使用全局缓存管理器，回退到本地 DashMap 缓存。
 #[inline]
@@ -271,17 +334,18 @@ pub struct RuleStartErrorPayload {
 }
 
 // 请求上下文：统一管理请求相关数据，减少参数传递
+// 使用 Arc<str> 优化频繁 clone 的字段，避免不必要的内存分配
 struct RequestContext {
-    client_ip: String,
+    client_ip: Arc<str>,
     started_at: std::time::Instant,
-    client_ip_header: String,
-    real_ip_header: String,
-    host_header: String,
-    referer_header: String,
-    user_agent_header: String,
+    client_ip_header: Arc<str>,
+    real_ip_header: Arc<str>,
+    host_header: Arc<str>,
+    referer_header: Arc<str>,
+    user_agent_header: Arc<str>,
     method: Method,
     uri: Uri,
-    path: String,
+    path: Arc<str>,
 }
 
 impl RequestContext {
@@ -289,16 +353,16 @@ impl RequestContext {
         let path = uri.path();
 
         #[inline]
-        fn header_to_string(headers: &HeaderMap, key: &'static str) -> String {
+        fn header_to_arc_str(headers: &HeaderMap, key: &'static str) -> Arc<str> {
             headers
                 .get(key)
                 .and_then(|v| v.to_str().ok())
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| "-".to_string())
+                .map(|s| Arc::from(s.to_string()))
+                .unwrap_or_else(|| Arc::from("-".to_string()))
         }
 
-        let xff = header_to_string(headers, "x-forwarded-for");
-        let xri = header_to_string(headers, "x-real-ip");
+        let xff = header_to_arc_str(headers, "x-forwarded-for");
+        let xri = header_to_arc_str(headers, "x-real-ip");
 
         // Host: prefer Host header; fallback to :authority; finally fallback to uri.authority()
         let host = headers
@@ -309,20 +373,20 @@ impl RequestContext {
             .unwrap_or("")
             .to_string();
 
-        let referer = header_to_string(headers, "referer");
-        let ua = header_to_string(headers, "user-agent");
+        let referer = header_to_arc_str(headers, "referer");
+        let ua = header_to_arc_str(headers, "user-agent");
 
         Self {
-            client_ip: access_control::client_ip_from_headers(&remote, headers),
+            client_ip: Arc::from(access_control::client_ip_from_headers(&remote, headers)),
             started_at: std::time::Instant::now(),
             client_ip_header: xff,
             real_ip_header: xri,
-            host_header: host,
+            host_header: Arc::from(host),
             referer_header: referer,
             user_agent_header: ua,
             method: method.clone(),
             uri: uri.clone(),
-            path: path.to_string(),
+            path: Arc::from(path),
         }
     }
 
@@ -1208,15 +1272,16 @@ fn request_line(method: &Method, uri: &Uri) -> String {
 fn format_access_log(node: &str, ctx: &RequestContext, status: StatusCode) -> String {
     // 优先使用解析后的 client_ip（会从 XFF/X-Real-IP/remote 推导）
     // 兜底再回退到原始 header 字段，避免日志里出现空/"-"。
-    let ip = if !ctx.client_ip.is_empty() {
+    // client_ip 和 header 字段现在使用 Arc<str>，可以直接作为 &str 使用
+    let ip: &str = if !ctx.client_ip.is_empty() {
         &ctx.client_ip
-    } else if ctx.client_ip_header != "-" {
+    } else if !ctx.client_ip_header.is_empty() && ctx.client_ip_header.as_ref() != "-" {
         ctx.client_ip_header
             .split(',')
             .next()
             .unwrap_or("-")
             .trim()
-    } else if ctx.real_ip_header != "-" {
+    } else if !ctx.real_ip_header.is_empty() && ctx.real_ip_header.as_ref() != "-" {
         &ctx.real_ip_header
     } else {
         "-"
@@ -1246,19 +1311,20 @@ fn enqueue_request_log(
     upstream: &str,
     matched_route_id: &str,
 ) {
+    // Arc<str> 转换为 String（Arc 的 clone 只是引用计数 +1，开销很小）
     metrics::try_enqueue_request_log(metrics::RequestLogInsert {
         timestamp: chrono::Utc::now().timestamp(),
         listen_addr: node.to_string(),
-        client_ip: ctx.client_ip.clone(),
+        client_ip: ctx.client_ip.as_ref().to_string(),
         remote_ip: remote.ip().to_string(),
         method: ctx.method.as_str().to_string(),
-        request_path: ctx.path.clone(),
-        request_host: ctx.host_header.clone(),
+        request_path: ctx.path.as_ref().to_string(),
+        request_host: ctx.host_header.as_ref().to_string(),
         status_code: status.as_u16() as i32,
         upstream: upstream.to_string(),
         latency_ms: ctx.elapsed_ms(),
-        user_agent: ctx.user_agent_header.clone(),
-        referer: ctx.referer_header.clone(),
+        user_agent: ctx.user_agent_header.as_ref().to_string(),
+        referer: ctx.referer_header.as_ref().to_string(),
         matched_route_id: matched_route_id.to_string(),
     });
 }
@@ -1407,20 +1473,20 @@ async fn proxy_handler(
                 if should_ban {
                     let ban_seconds = state.rule.rate_limit_ban_seconds.unwrap_or(0) as i32;
                     if ban_seconds > 0 {
-                        let ip_clone = ctx.client_ip.clone();
+                        let ip_str: String = ctx.client_ip.as_ref().into();
                         let app_clone = state.app.clone();
                         // 异步添加到黑名单，不阻塞请求处理
                         tokio::spawn(async move {
                             if let Err(e) = metrics::add_blacklist_entry(
-                                ip_clone.clone(),
+                                ip_str.clone(),
                                 format!("Rate limit exceeded, auto-ban for {} seconds", ban_seconds),
                                 ban_seconds,
                             ).await {
-                                tracing::warn!("Failed to add IP to blacklist: {} - {}", ip_clone, e);
+                                tracing::warn!("Failed to add IP to blacklist: {} - {}", ip_str, e);
                             } else {
                                 send_log_with_app(&app_clone, format!(
                                     "[Rate Limit] IP {} was banned for {} seconds due to rate limit exceeded",
-                                    ip_clone, ban_seconds
+                                    ip_str, ban_seconds
                                 ));
                             }
                         });
@@ -1475,6 +1541,12 @@ async fn proxy_handler(
     // 2. 优先处理静态资源
     if let Some(dir) = route.static_dir.as_ref() {
         let serve_dir = cached_serve_dir(dir);
+        // 先提取 If-None-Match header 并转换为 owned String，避免 req 被 move 后无法访问
+        let request_etag: Option<String> = req.headers()
+            .get("if-none-match")
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.to_string());
+        
         let response = match serve_dir.oneshot(req).await {
             Ok(r) => r,
             Err(never) => match never {},
@@ -1483,10 +1555,30 @@ async fn proxy_handler(
         let response = response.map(Body::new);
 
         if status.is_success() || status.is_redirection() {
+            // 获取文件路径以生成 ETag
+            let full_path = std::path::Path::new(dir);
+            if let Some(etag) = get_or_create_etag(full_path) {
+                // 检查是否命中缓存（304 Not Modified）
+                if check_etag_match(request_etag.as_deref(), &etag) {
+                    push_log_lazy(&state.app, || format_access_log(node, &ctx, StatusCode::NOT_MODIFIED));
+                    enqueue_request_log(node, &ctx, &remote, StatusCode::NOT_MODIFIED, "", &matched_route_id);
+                    return (StatusCode::NOT_MODIFIED).into_response();
+                }
+                
+                // 添加 ETag 头
+                let mut resp = response.into_response();
+                resp.headers_mut().insert(
+                    axum::http::header::ETAG,
+                    HeaderValue::from_str(&etag).unwrap_or_else(|_| HeaderValue::from_static("")),
+                );
+                
+                push_log_lazy(&state.app, || format_access_log(node, &ctx, status));
+                enqueue_request_log(node, &ctx, &remote, status, "", &matched_route_id);
+                return resp;
+            }
+            
             push_log_lazy(&state.app, || format_access_log(node, &ctx, status));
-
             enqueue_request_log(node, &ctx, &remote, status, "", &matched_route_id);
-
             return response;
         }
 
@@ -1496,15 +1588,27 @@ async fn proxy_handler(
             && !is_asset_path(&ctx.path)
         {
             if let Some(bytes) = cached_index_html(dir).await {
-                let mut resp = Response::new(Body::from(bytes));
+                let mut resp = Response::new(Body::from(bytes.clone()));
                 resp.headers_mut().insert(
                     axum::http::header::CONTENT_TYPE,
                     HeaderValue::from_static("text/html; charset=utf-8"),
                 );
+                
+                // SPA 也要支持 ETag
+                let etag = format!("\"spa-{:x}\"", bytes.len());
+                if check_etag_match(request_etag.as_deref(), &etag) {
+                    let status = StatusCode::NOT_MODIFIED;
+                    push_log_lazy(&state.app, || format_access_log(node, &ctx, status));
+                    enqueue_request_log(node, &ctx, &remote, status, "", &matched_route_id);
+                    return (status).into_response();
+                }
+                resp.headers_mut().insert(
+                    axum::http::header::ETAG,
+                    HeaderValue::from_str(&etag).unwrap_or_else(|_| HeaderValue::from_static("")),
+                );
 
                 let status = StatusCode::OK;
                 push_log_lazy(&state.app, || format_access_log(node, &ctx, status));
-
                 enqueue_request_log(node, &ctx, &remote, status, "", &matched_route_id);
 
                 return resp;
