@@ -369,7 +369,7 @@ pub fn hide_to_tray(app: tauri::AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn open_chart_preview_window(
+pub async fn open_chart_preview_window(
     app: tauri::AppHandle,
     title: String,
     payload_key: String,
