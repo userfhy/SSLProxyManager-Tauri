@@ -311,40 +311,12 @@
         </el-table>
       </el-card>
 
-      <el-dialog
-        v-model="previewVisible"
-        class="chart-preview-dialog"
-        :title="previewTitle"
-        fullscreen
-        append-to-body
-        destroy-on-close
-        @opened="onPreviewDialogOpened"
-        @closed="onPreviewDialogClosed"
-      >
-        <template #header>
-          <div class="preview-header">
-            <span class="preview-title">{{ previewTitle }}</span>
-            <el-button size="small" plain @click="changePreviewZoom(12)">-</el-button>
-            <el-button size="small" plain @click="changePreviewZoom(-12)">+</el-button>
-            <el-button size="small" type="primary" plain @click="openPreviewInNewWindow">
-              {{ $t('common.openInNewWindow') }}
-            </el-button>
-          </div>
-        </template>
-        <v-chart
-          v-if="previewChartReady"
-          ref="previewChartRef"
-          :option="previewOptionWithZoom"
-          class="chart chart-preview"
-          autoresize
-        />
-      </el-dialog>
     </el-card>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElConfigProvider, ElMessage } from 'element-plus'
 import zhCn from 'element-plus/dist/locale/zh-cn.mjs'
 import enUs from 'element-plus/dist/locale/en.mjs'
@@ -459,13 +431,8 @@ const realtimePoints = ref<SystemMetricsPoint[]>([])
 const historicalPoints = ref<SystemMetricsPoint[] | null>(null)
 const latestPoint = ref<SystemMetricsPoint | null>(null)
 const latestInterfaces = ref<NetworkInterfaceStats[]>([])
-const previewVisible = ref(false)
 const previewTitle = ref('')
-const previewChartRef = ref<any>(null)
-const previewChartReady = ref(false)
 const previewChartKey = ref<'resource' | 'network' | 'disk' | 'load' | 'connection' | ''>('')
-const previewZoomStart = ref(0)
-const previewZoomEnd = ref(100)
 
 let metricsUnlisten: (() => void) | null = null
 let themeObserver: MutationObserver | null = null
@@ -473,26 +440,7 @@ let themeObserver: MutationObserver | null = null
 const openChartPreview = (title: string, key: typeof previewChartKey.value) => {
   previewTitle.value = title
   previewChartKey.value = key
-  previewZoomStart.value = 0
-  previewZoomEnd.value = 100
-  previewChartReady.value = false
-  previewVisible.value = true
-}
-
-const onPreviewDialogOpened = async () => {
-  previewChartReady.value = true
-  await nextTick()
-  requestAnimationFrame(() => {
-    const cmp = previewChartRef.value as any
-    const instance = cmp?.getEchartsInstance?.() || cmp?.chart
-    if (instance && typeof instance.resize === 'function') {
-      instance.resize()
-    }
-  })
-}
-
-const onPreviewDialogClosed = () => {
-  previewChartReady.value = false
+  void openPreviewInNewWindow()
 }
 
 const getPreviewOptionByKey = (key: typeof previewChartKey.value): EChartsOption => {
@@ -506,10 +454,6 @@ const getPreviewOptionByKey = (key: typeof previewChartKey.value): EChartsOption
   }
 }
 
-const currentPreviewOption = computed<EChartsOption>(() => {
-  return getPreviewOptionByKey(previewChartKey.value)
-})
-
 const applyPreviewZoom = (option: EChartsOption): EChartsOption => {
   const base = option || {}
   const xAxis = (base as any).xAxis
@@ -521,8 +465,8 @@ const applyPreviewZoom = (option: EChartsOption): EChartsOption => {
       {
         type: 'inside',
         xAxisIndex: 0,
-        start: previewZoomStart.value,
-        end: previewZoomEnd.value,
+        start: 0,
+        end: 100,
         zoomOnMouseWheel: true,
         moveOnMouseMove: true,
       },
@@ -531,40 +475,11 @@ const applyPreviewZoom = (option: EChartsOption): EChartsOption => {
         xAxisIndex: 0,
         height: 18,
         bottom: 6,
-        start: previewZoomStart.value,
-        end: previewZoomEnd.value,
+        start: 0,
+        end: 100,
       },
     ],
   }
-}
-
-const previewOptionWithZoom = computed<EChartsOption>(() => {
-  return applyPreviewZoom(currentPreviewOption.value)
-})
-
-const changePreviewZoom = (delta: number) => {
-  const currStart = previewZoomStart.value
-  const currEnd = previewZoomEnd.value
-  const currSpan = Math.max(5, currEnd - currStart)
-
-  const nextSpan = delta > 0
-    ? Math.max(5, currSpan - delta)
-    : Math.min(100, currSpan + Math.abs(delta))
-
-  const center = (currStart + currEnd) / 2
-  let start = center - nextSpan / 2
-  let end = center + nextSpan / 2
-  if (start < 0) {
-    end -= start
-    start = 0
-  }
-  if (end > 100) {
-    start -= (end - 100)
-    end = 100
-  }
-
-  previewZoomStart.value = Math.max(0, Math.min(95, Number(start.toFixed(2))))
-  previewZoomEnd.value = Math.max(5, Math.min(100, Number(end.toFixed(2))))
 }
 
 const getPreviewOptionPayloadByKey = (key: typeof previewChartKey.value): any | null => {
@@ -605,7 +520,7 @@ const openPreviewInNewWindow = async () => {
 
   try {
     if ((window as any).__TAURI_INTERNALS__) {
-      await OpenChartPreviewWindow(title, payloadKey)
+      await OpenChartPreviewWindow(title, payloadKey, `systemMetrics-${chartKey}`)
       return
     }
   } catch (e) {
@@ -614,11 +529,13 @@ const openPreviewInNewWindow = async () => {
     return
   }
 
-  const popup = window.open(previewUrl.toString(), '_blank', 'noopener,noreferrer,width=1400,height=900')
+  const popupName = `chart-preview-systemMetrics-${chartKey}`
+  const popup = window.open(previewUrl.toString(), popupName, 'width=1400,height=900')
   if (!popup) {
     ElMessage.warning(t('common.previewUnavailable'))
     return
   }
+  popup.focus()
 }
 
 let previewSyncUnlisten: (() => void) | null = null
@@ -1494,25 +1411,6 @@ onBeforeUnmount(() => {
 .chart {
   width: 100%;
   height: 260px;
-}
-
-.preview-header {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.preview-title {
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--text);
-}
-
-.chart-preview {
-  height: calc(100vh - 140px);
-  min-height: 420px;
 }
 
 @media (max-width: 1300px) {

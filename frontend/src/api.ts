@@ -168,8 +168,8 @@ export async function QuitApp() {
   return await invoke('quit_app');
 }
 
-export async function OpenChartPreviewWindow(title: string, payloadKey: string) {
-  return await invoke('open_chart_preview_window', { title, payloadKey });
+export async function OpenChartPreviewWindow(title: string, payloadKey: string, windowKey?: string) {
+  return await invoke('open_chart_preview_window', { title, payloadKey, windowKey });
 }
 
 // 语言设置

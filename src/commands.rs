@@ -10,6 +10,7 @@ use crate::test_tools;
 use crate::system_metrics;
 use anyhow::Result;
 use base64::Engine as _;
+use tauri::Emitter;
 use tauri::Manager;
 use tauri::{WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_dialog::DialogExt;
@@ -373,19 +374,57 @@ pub async fn open_chart_preview_window(
     app: tauri::AppHandle,
     title: String,
     payload_key: String,
+    window_key: Option<String>,
 ) -> Result<(), String> {
     if payload_key.trim().is_empty() {
         return Err("payload_key is empty".to_string());
     }
 
-    let label = format!(
-        "chart-preview-{}",
-        chrono::Local::now().timestamp_millis()
-    );
+    let label_suffix = window_key
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| {
+            let sanitized = s
+                .chars()
+                .map(|ch| {
+                    if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+                        ch
+                    } else {
+                        '-'
+                    }
+                })
+                .collect::<String>()
+                .trim_matches('-')
+                .to_string();
+            if sanitized.is_empty() {
+                chrono::Local::now().timestamp_millis().to_string()
+            } else {
+                sanitized
+            }
+        })
+        .unwrap_or_else(|| chrono::Local::now().timestamp_millis().to_string());
+    let label = format!("chart-preview-{label_suffix}");
+
     let app_url = format!(
         "/index.html?chart_preview=1&key={}",
         urlencoding::encode(&payload_key)
     );
+
+    if let Some(window) = app.get_webview_window(&label) {
+        let _ = window.set_title(&title);
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+        let _ = window.emit(
+            "chart-preview-opened-existing",
+            serde_json::json!({
+                "payloadKey": payload_key,
+                "targetLabel": label,
+            }),
+        );
+        return Ok(());
+    }
 
     WebviewWindowBuilder::new(&app, label, WebviewUrl::App(app_url.into()))
         .title(title)

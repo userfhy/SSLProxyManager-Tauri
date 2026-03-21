@@ -117,7 +117,7 @@ const setRefreshStatus = (msg: string) => {
 }
 
 const params = new URLSearchParams(window.location.search)
-const payloadKey = params.get('key') || ''
+let currentPayloadKey = params.get('key') || ''
 
 const readPayloadByKey = (key: string): PreviewPayload | null => {
   if (!key) return null
@@ -131,10 +131,10 @@ const readPayloadByKey = (key: string): PreviewPayload | null => {
   }
 }
 
-let currentPayload = readPayloadByKey(payloadKey)
+let currentPayload = readPayloadByKey(currentPayloadKey)
 if (!currentPayload || !currentPayload.option) {
   showEmpty(t('previewNotFound'))
-} else if (!chartEl || !payloadKey) {
+} else if (!chartEl || !currentPayloadKey) {
   // no-op
 } else {
   const normalizeOptionForPreview = (option: any) => {
@@ -173,6 +173,7 @@ if (!currentPayload || !currentPayload.option) {
   const chart = echarts.init(chartEl, undefined, { renderer: 'canvas' })
   chart.setOption(normalizeOptionForPreview(currentPayload.option), { notMerge: true, lazyUpdate: false })
   let pinnedTip: { seriesIndex: number; dataIndex: number } | null = null
+  const currentWindowLabel = (window as any).__TAURI_INTERNALS__ ? getCurrentWindow().label : ''
 
   const applyPinnedTip = () => {
     if (!pinnedTip) return
@@ -203,7 +204,7 @@ if (!currentPayload || !currentPayload.option) {
   }
 
   const reloadFromLocalStorage = () => {
-    const next = readPayloadByKey(payloadKey)
+    const next = readPayloadByKey(currentPayloadKey)
     if (!next || !next.option) return false
     return applyPayload(next)
   }
@@ -248,17 +249,21 @@ if (!currentPayload || !currentPayload.option) {
           reject(new Error('sync timeout'))
         }, 4000)
 
-        listen(responseEvent, (event) => {
-          const payload = event.payload as any
-          if (!payload || payload.requestId !== requestId) {
-            return
-          }
-          if (resolved) return
-          resolved = true
-          clearTimeout(timeout)
-          if (off) off()
-          resolve(payload)
-        })
+        listen(
+          responseEvent,
+          (event) => {
+            const payload = event.payload as any
+            if (!payload || payload.requestId !== requestId) {
+              return
+            }
+            if (resolved) return
+            resolved = true
+            clearTimeout(timeout)
+            if (off) off()
+            resolve(payload)
+          },
+          currentWindowLabel ? { target: currentWindowLabel } : undefined,
+        )
           .then((unlisten) => {
             off = unlisten
             emit('chart-preview-sync-request', {
@@ -449,10 +454,45 @@ if (!currentPayload || !currentPayload.option) {
     })
   }
 
+  let previewRefreshUnlisten: (() => void) | null = null
+  if ((window as any).__TAURI_INTERNALS__) {
+    listen(
+      'chart-preview-opened-existing',
+      (event) => {
+        const payload = event?.payload as any
+        const targetLabel = String(payload?.targetLabel || '').trim()
+        if (targetLabel && currentWindowLabel && targetLabel !== currentWindowLabel) {
+          return
+        }
+        const nextKey = String(payload?.payloadKey || '').trim()
+        if (!nextKey) return
+
+        currentPayloadKey = nextKey
+        const next = readPayloadByKey(currentPayloadKey)
+        if (!next || !next.option) {
+          setRefreshStatus(t('previewNotFound'))
+          return
+        }
+        applyPayload(next)
+        void requestLatestFromSource()
+      },
+    )
+      .then((unlisten) => {
+        previewRefreshUnlisten = unlisten
+      })
+      .catch(() => {
+        // ignore
+      })
+  }
+
   window.addEventListener('beforeunload', () => {
     if (autoRefreshTimer) {
       window.clearInterval(autoRefreshTimer)
       autoRefreshTimer = null
+    }
+    if (previewRefreshUnlisten) {
+      previewRefreshUnlisten()
+      previewRefreshUnlisten = null
     }
   })
 }
