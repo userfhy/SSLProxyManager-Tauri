@@ -19,6 +19,8 @@ A powerful desktop proxy management application built with **Tauri 2 + Rust**, f
 
 ## Screenshots
 
+https://github.com/user-attachments/assets/b41b3d38-19c5-4124-a439-c4c011c16a5b
+
 <details>
 <summary>Click to view screenshots</summary>
 

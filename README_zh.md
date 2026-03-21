@@ -19,6 +19,8 @@
 
 ## 程序界面
 
+https://github.com/user-attachments/assets/b41b3d38-19c5-4124-a439-c4c011c16a5b
+
 <details>
 <summary>点击展开截图</summary>
 
