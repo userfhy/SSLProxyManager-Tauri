@@ -3,62 +3,24 @@
 **[中文文档 (Chinese)](README_zh.md)**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Rust](https://img.shields.io/badge/Rust-stable-orange.svg)](https://www.rust-lang.org)
+[![Tauri](https://img.shields.io/badge/Tauri-2.0-blue.svg)](https://tauri.app/)
+[![Platforms](https://img.shields.io/badge/Platforms-Windows%20%7C%20Linux%20%7C%20macOS-green.svg)](#)
 
-SSLProxyManager is a desktop proxy management app built with **Tauri 2 + Rust** (frontend: **Vue 3 + Vite + Element Plus**).
-It provides one UI to manage:
+A powerful desktop proxy management application built with **Tauri 2 + Rust**, featuring an intuitive **Vue 3** frontend. Manage HTTP/HTTPS, WebSocket, and Stream proxies with comprehensive access control, rate limiting, observability, and testing tools—all in one unified interface.
 
-- HTTP/HTTPS reverse proxy
-- WebSocket (WS/WSS) reverse proxy
-- Stream (TCP/UDP, Layer 4) proxy
-- Access control, rate limiting, logs, metrics, and test tools
+## Highlights
 
-## Core Features
-
-- HTTP/HTTPS proxy (`rules` / `routes`)
-  - Multiple listen addresses (`listen_addr` + `listen_addrs`)
-  - TLS certificates
-  - Basic Auth (with optional forwarding of `Authorization`)
-  - Route matching by path + optional host/method/header constraints
-  - URL rewrite, request/response body replacement
-  - Static directory serving with SPA fallback
-  - Weighted upstreams (smooth weighted round-robin)
-  - Optional follow-redirects per route
-- WebSocket proxy (`ws_proxy`)
-  - Global switch + per-rule enable
-  - WS/WSS support
-  - Longest-prefix path routing
-- Stream proxy (`stream`)
-  - TCP and UDP proxy
-  - Upstream health/failover support
-  - Hash-based upstream selection (`$remote_addr`) with optional consistent behavior
-- Access control
-  - HTTP / WS / Stream switches
-  - LAN allow mode, whitelist, blacklist
-- Observability
-  - Real-time dashboard metrics
-  - Historical metrics and request logs (SQLite)
-  - System metrics module (Linux/Windows): real-time + historical charts for CPU, memory, swap, network, disk throughput, TCP states, process/file descriptor counts, and uptime
-  - Real-time log panel
-- Utility tools in UI
-  - HTTP request test
-  - Route match test + route test suite
-  - Built-in performance test
-  - Config validator
-  - DNS lookup
-  - SSL cert inspection
-  - Self-signed cert generation
-  - Port scan
-  - Encode/decode tools
-
-## Tech Stack
-
-- Backend: Rust, Tauri 2, Axum, Tokio, SQLx (SQLite)
-- Frontend: Vue 3, Vite, Element Plus, ECharts, Vue I18n
-- TLS: Rustls
+- **Multi-Protocol Support**: HTTP/HTTPS reverse proxy, WebSocket (WS/WSS), and Stream (TCP/UDP Layer 4)
+- **Access Control**: Fine-grained HTTP/WS/Stream switches with LAN allow, whitelist, and blacklist modes
+- **Observability**: Real-time dashboard, historical metrics, request logs (SQLite), and system monitoring
+- **Built-in Testing Tools**: HTTP tester, route matcher, performance tester, DNS lookup, SSL cert inspector, port scanner, and more
+- **Performance Optimized**: LRU caching, connection pooling, zero-copy architecture, and Rustls for TLS
 
 ## Screenshots
 
-https://github.com/user-attachments/assets/b41b3d38-19c5-4124-a439-c4c011c16a5b
+<details>
+<summary>Click to view screenshots</summary>
 
 ![SystemMetrics](./screenshots/SystemMetrics.jpg)
 ![ScreenShot1](./screenshots/1.jpg)
@@ -67,176 +29,247 @@ https://github.com/user-attachments/assets/b41b3d38-19c5-4124-a439-c4c011c16a5b
 ![ScreenShot4](./screenshots/4.jpg)
 ![ScreenShot5](./screenshots/5.jpg)
 
-## Project Layout
+</details>
 
-- `src/`: Rust backend
-- `frontend/`: frontend app
-- `config.toml.example`: config reference
-- `tauri.conf.json`: Tauri build/dev settings
+## Core Features
 
-## Requirements
+### HTTP/HTTPS Proxy (`rules` / `routes`)
+
+- Multiple listen addresses (`listen_addr` + `listen_addrs`)
+- TLS certificates with Rustls
+- Basic Auth with optional `Authorization` header forwarding
+- Route matching by path + optional host/method/header constraints
+- URL rewrite, request/response body replacement
+- Static directory serving with SPA fallback
+- Weighted upstreams (smooth weighted round-robin)
+- Per-route follow-redirects
+
+### WebSocket Proxy (`ws_proxy`)
+
+- Global switch + per-rule enable/disable
+- WS/WSS protocol support
+- Longest-prefix path routing
+
+### Stream Proxy (`stream`)
+
+- TCP and UDP forwarding
+- Upstream health check and failover
+- Hash-based upstream selection (`$remote_addr`) with optional consistent hashing
+
+### Access Control
+
+- Independent switches for HTTP / WS / Stream
+- LAN allow mode, whitelist, and blacklist
+
+### Observability
+
+- Real-time dashboard metrics
+- Historical metrics and request logs (SQLite)
+- System metrics (Linux/Windows): CPU, memory, swap, network, disk throughput, TCP states, process/file descriptor counts, uptime
+- Real-time log panel
+
+### Built-in Testing Tools
+
+- HTTP request tester
+- Route match tester + test suite
+- Performance tester
+- Configuration validator
+- DNS lookup
+- SSL certificate inspector
+- Self-signed certificate generator
+- Port scanner
+- Encode/decode utilities
+
+### Performance Features
+
+- LRU caching for upstream responses
+- Connection pooling with configurable idle timeout
+- HTTP/2 support
+- Gzip and Brotli compression
+- Zero-copy file serving
+- Efficient buffer pool management
+
+## Tech Stack
+
+| Layer | Technologies |
+|-------|-------------|
+| Backend | Rust, Tauri 2, Axum, Tokio, SQLx (SQLite) |
+| Frontend | Vue 3, Vite, Element Plus, ECharts, Vue I18n |
+| TLS | Rustls (memory-safe TLS) |
+| Platform | Windows, Linux, macOS |
+
+## Quick Start
+
+### Prerequisites
 
 - Node.js + npm
 - Rust stable toolchain
 
-## Local Development
-
-Install frontend dependencies:
+### Install & Run
 
 ```bash
-cd frontend
-npm install
-```
+# Install frontend dependencies
+cd frontend && npm install && cd ..
 
-Run in project root:
-
-```bash
+# Development mode
 npm run tauri:dev
-```
 
-Build release package:
-
-```bash
+# Build for release
 npm run tauri:build
 ```
 
-## CI: Manual Single-Platform Build
+## Project Structure
 
-Workflow: `.github/workflows/manual-build-single-platform.yml`
+```
+SSLProxyManager/
+├── src/                    # Rust backend
+│   ├── proxy.rs           # HTTP/HTTPS proxy core
+│   ├── ws_proxy.rs        # WebSocket proxy
+│   ├── stream_proxy.rs    # Stream (TCP/UDP) proxy
+│   ├── access_control.rs  # Access control
+│   ├── config.rs          # Configuration
+│   └── ...
+├── frontend/              # Vue 3 frontend
+│   ├── src/
+│   │   ├── components/    # Vue components
+│   │   ├── i18n/         # Internationalization
+│   │   └── ...
+│   └── ...
+├── config.toml.example    # Configuration template
+└── tauri.conf.json       # Tauri settings
+```
 
-- Trigger: GitHub Actions -> `Manual Build (Single Platform)` -> `Run workflow`
-- Input `platform`:
-  - `windows-x64`
-  - `linux-amd64`
-  - `macos-arm64`
-  - `macos-x64`
-- Input `publish_release`:
-  - `true`: upload installer bundles to GitHub Release and replace same-name assets (`--clobber`)
-  - `false`: build only, keep artifacts in workflow run
-- Input `release_tag`:
-  - Optional. If empty, workflow uses `v<version from Cargo.toml>`
+## Configuration
 
-## Configuration File Location
+### Config File Locations
 
-Runtime config is TOML.
+Runtime config is TOML format.
 
-- Debug mode: if `./config.toml` exists in project root, it is preferred.
-- Linux: `$XDG_CONFIG_HOME/SSLProxyManager/config.toml` or `~/.config/SSLProxyManager/config.toml`
-- Windows:
-  - Prefer `config.toml` next to executable
-  - Fallback `%APPDATA%\SSLProxyManager\config.toml`
-- macOS: `~/Library/Application Support/SSLProxyManager/config.toml`
+| Platform | Location |
+|----------|----------|
+| Debug mode | `./config.toml` in project root (if exists) |
+| Linux | `$XDG_CONFIG_HOME/SSLProxyManager/config.toml` or `~/.config/SSLProxyManager/config.toml` |
+| Windows | Next to executable, or `%APPDATA%\SSLProxyManager\config.toml` |
+| macOS | `~/Library/Application Support/SSLProxyManager/config.toml` |
 
-## Configuration Guide
+### Quick Config Reference
 
 Use `config.toml.example` as the main template.
 
-### HTTP/HTTPS (`[[rules]]`)
+#### HTTP/HTTPS (`[[rules]]`)
 
-- `listen_addr`: legacy single address (for compatibility)
-- `listen_addrs`: preferred multiple addresses; if empty, fallback to `listen_addr`
-- `ssl_enable`, `cert_file`, `key_file`
-- `basic_auth_enable`, `basic_auth_username`, `basic_auth_password`, `basic_auth_forward_header`
-- `rate_limit_*` fields (optional)
+```toml
+listen_addrs = ["0.0.0.0:8080"]
+ssl_enable = true
+cert_file = "/path/to/cert.pem"
+key_file = "/path/to/key.pem"
+basic_auth_enable = true
+basic_auth_username = "admin"
+basic_auth_password = "secret"
 
-`[[rules.routes]]` supports:
+[[rules.routes]]
+path = "/api"
+host = "example.com"  # optional
+methods = ["GET", "POST"]  # optional
+upstream_url = "http://localhost:3000"
+weight = 1
+```
 
-- `path`, `host`, `methods`, `headers`
-- `proxy_pass_path`, `follow_redirects`
-- `url_rewrite_rules`
-- `request_body_replace`, `response_body_replace` (optional `content_types` filter)
-- `set_headers`, `remove_headers`
-- `static_dir` (served before upstream)
-- `[[rules.routes.upstreams]]` with `url` + `weight`
+#### WebSocket (`[[ws_proxy]]`)
 
-### WebSocket (`[[ws_proxy]]`)
+```toml
+ws_proxy_enabled = true
 
-- Global switch: `ws_proxy_enabled`
-- Rule fields: `enabled`, `listen_addr`, `ssl_enable`, `cert_file`, `key_file`
-- Routes: `[[ws_proxy.routes]]` with `path` and `upstream_url`
+[[ws_proxy.rules]]
+enabled = true
+listen_addr = "0.0.0.0:8081"
+ssl_enable = false
 
-Note: WS rule uses `listen_addr` (not `listen_addrs`).
+[[ws_proxy.rules.routes]]
+path = "/ws"
+upstream_url = "ws://localhost:8082"
+```
 
-### Stream (`[stream]`)
+#### Stream (`[stream]`)
 
-- `stream.enabled`
-- `[[stream.upstreams]]`: `name`, `hash_key`, `consistent`
-- `[[stream.upstreams.servers]]`: `addr`, `weight`, `max_fails`, `fail_timeout`
-- `[[stream.servers]]`: `enabled`, `listen_port`, `listen_addr` (optional), `udp`, `proxy_pass`, `proxy_connect_timeout`, `proxy_timeout`
+```toml
+[stream]
+enabled = true
 
-### System Metrics
+[[stream.upstreams]]
+name = "backend"
+hash_key = "$remote_addr"
+consistent = true
 
-- `system_metrics_sample_interval_secs`
-  - Sampling interval in seconds, range `1..300`
-  - Default: `10`
-  - On Windows, effective interval is clamped to at least `3` seconds to reduce collection overhead
-- `system_metrics_persistence_enabled`
-  - Controls whether system metrics points are written into the `system_metrics` table
-  - This switch only affects system metrics persistence, not global metrics persistence settings
-- Runtime behavior:
-  - Chart rendering and realtime push happen when the System Metrics page is opened/subscribed
-  - If both `metrics_storage.enabled = true` and `system_metrics_persistence_enabled = true`, backend continues sampling/persisting even when that page is not open
-  - If global metrics storage is disabled, system metrics persistence is effectively disabled
+[[stream.upstreams.servers]]
+addr = "10.0.0.1:80"
+weight = 1
+max_fails = 3
+fail_timeout = "30s"
 
-### Metrics Storage (`[metrics_storage]`)
+[[stream.servers]]
+enabled = true
+listen_port = 9000
+proxy_pass = "backend"
+```
 
-- `enabled`: global metrics DB switch
-- `db_path`: SQLite database path
+#### System Metrics
 
-### Global Flags (Generated Default Config)
+```toml
+system_metrics_sample_interval_secs = 10  # 1-300 seconds
+system_metrics_persistence_enabled = true
+```
 
-Defaults below are from current backend code (`src/config.rs`) when creating a new config file:
+#### Metrics Storage
 
-- `ws_proxy_enabled = true`
-- `http_access_control_enabled = true`
-- `ws_access_control_enabled = true`
-- `stream_access_control_enabled = true`
-- `allow_all_lan = true`
-- `allow_all_ip = false`
-- `auto_start = false`
-- `show_realtime_logs = true`
-- `realtime_logs_only_errors = false`
-- `stream_proxy = true` (legacy field)
-- `max_body_size = 10485760`
-- `max_response_body_size = 10485760`
-- `upstream_connect_timeout_ms = 3000`
-- `upstream_read_timeout_ms = 30000`
-- `upstream_pool_max_idle = 200`
-- `upstream_pool_idle_timeout_sec = 90`
-- `enable_http2 = true`
-- `compression_enabled = false`
-- `compression_gzip = true`
-- `compression_brotli = true`
-- `compression_min_length = 1024`
-- `compression_gzip_level = 6`
-- `compression_brotli_level = 6`
-- `system_metrics_sample_interval_secs = 10`
-- `system_metrics_persistence_enabled = true`
+```toml
+[metrics_storage]
+enabled = true
+db_path = "./data/metrics.db"
+```
 
-Notes:
+## CI: Manual Build
 
-- `stream_proxy` is legacy and kept for compatibility. Prefer `[stream].enabled`.
-- `metrics_storage` is optional; when missing or `enabled = false`, historical DB writes/queries are unavailable.
-- `config.toml.example` may use sample values different from generated defaults.
+Workflow: `.github/workflows/manual-build-single-platform.yml`
+
+### Trigger
+
+GitHub Actions → `Manual Build (Single Platform)` → `Run workflow`
+
+### Inputs
+
+| Input | Options | Description |
+|-------|---------|-------------|
+| `platform` | `windows-x64`, `linux-amd64`, `macos-arm64`, `macos-x64` | Target platform |
+| `publish_release` | `true`, `false` | Upload to GitHub Release? |
+| `release_tag` | (optional) | Override version tag |
 
 ## FAQ
 
-- Which port is used in dev mode?
-  - `5173` (`tauri.conf.json -> build.devUrl`).
-- How to customize frontend dev/build commands?
-  - Edit `tauri.conf.json` `build.beforeDevCommand` and `build.beforeBuildCommand`.
-- Can the app run in tray mode?
-  - Yes. Closing the window hides to tray instead of exiting.
+**Q: Which port is used in dev mode?**  
+A: `5173` (configured in `tauri.conf.json -> build.devUrl`)
+
+**Q: How to customize frontend dev/build commands?**  
+A: Edit `tauri.conf.json` → `build.beforeDevCommand` and `build.beforeBuildCommand`
+
+**Q: Can the app run in tray mode?**  
+A: Yes. Closing the window hides to tray instead of exiting.
+
+**Q: How to enable metrics persistence?**  
+A: Set `metrics_storage.enabled = true` and `metrics_storage.db_path` in your config.
+
+**Q: Does it support HTTP/2?**  
+A: Yes, HTTP/2 is enabled by default (`enable_http2 = true`).
 
 ## Disclaimer
 
-This project is for learning and legal, compliant network proxy/reverse proxy configuration management scenarios only. Use of this software may involve network access control, certificate management, traffic forwarding, and other operations, with potential risks including but not limited to data leakage, service interruption, configuration errors leading to security risks, etc. You are responsible for evaluating and assuming all risks and responsibilities when using this project.
+This project is for **learning and legal, compliant network proxy/reverse proxy configuration management** scenarios only.
 
-- **Legal Compliance**: Please ensure your use complies with local laws and regulations and relevant network service terms. It is prohibited to use this project for any unauthorized penetration, attacks, bypassing access controls, data theft, spreading malware, infringing on others' privacy, or any other illegal or unauthorized purposes. Any legal liability, administrative penalties, third-party claims, and related consequences arising from your use of this project for illegal, non-compliant, or unauthorized activities shall be borne by you, and the authors and contributors assume no responsibility.
-- **No Warranty**: This project is provided "as is" without any express or implied warranty (including but not limited to fitness, reliability, accuracy, availability, error-free/defect-free, etc.).
-- **Limitation of Liability**: The authors and contributors assume no responsibility for any direct or indirect losses (including but not limited to profit loss, data loss, business interruption, equipment or system damage, etc.) caused by the use or inability to use this project.
+- **Legal Compliance**: Ensure your use complies with local laws. Do not use for unauthorized access, attacks, data theft, or any illegal purposes.
+- **No Warranty**: Provided "as is" without warranties.
+- **Limitation of Liability**: No responsibility for direct or indirect losses.
 
-If you do not agree to the above terms, please do not use, distribute, or develop based on this project.
+If you do not agree, please do not use this project.
 
 ## License
 
