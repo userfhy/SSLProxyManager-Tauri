@@ -383,7 +383,7 @@ pub async fn open_chart_preview_window(
         chrono::Local::now().timestamp_millis()
     );
     let app_url = format!(
-        "chart-preview-interactive.html?key={}",
+        "/index.html?chart_preview=1&key={}",
         urlencoding::encode(&payload_key)
     );
 

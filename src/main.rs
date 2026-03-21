@@ -141,15 +141,19 @@ fn main() {
         })
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                api.prevent_close();
-                // 点击关闭按钮时不退出，改为隐藏到托盘
-                let _ = window.hide();
-                return;
+                // 仅主窗口拦截关闭并隐藏到托盘；其他窗口允许正常关闭
+                if window.label() == "main" {
+                    api.prevent_close();
+                    let _ = window.hide();
+                    return;
+                }
             }
 
-            // 窗口销毁：执行清理（停止后台 metrics 推送任务等）
+            // 仅主窗口销毁时执行清理（停止后台 metrics 推送任务等）
             if let tauri::WindowEvent::Destroyed = event {
-                crate::app::cleanup();
+                if window.label() == "main" {
+                    crate::app::cleanup();
+                }
             }
         })
         .run(tauri::generate_context!())

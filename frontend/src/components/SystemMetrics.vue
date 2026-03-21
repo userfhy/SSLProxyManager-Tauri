@@ -599,7 +599,8 @@ const openPreviewInNewWindow = async () => {
       createdAt: Date.now(),
     }),
   )
-  const previewUrl = new URL('/chart-preview-interactive.html', window.location.origin)
+  const previewUrl = new URL('/index.html', window.location.origin)
+  previewUrl.searchParams.set('chart_preview', '1')
   previewUrl.searchParams.set('key', payloadKey)
 
   try {
