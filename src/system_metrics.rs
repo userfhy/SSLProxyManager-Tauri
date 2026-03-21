@@ -157,6 +157,19 @@ pub struct SystemMetricsPoint {
     pub uptime_seconds: f64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct SystemMetricsSummary {
+    pub points_count: i64,
+    pub cpu_avg_percent: f64,
+    pub cpu_peak_percent: f64,
+    pub mem_avg_percent: f64,
+    pub mem_peak_percent: f64,
+    pub net_rx_peak_bps: f64,
+    pub net_tx_peak_bps: f64,
+    pub disk_read_peak_bps: f64,
+    pub disk_write_peak_bps: f64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SystemMetricsRealtimePayload {
     pub sample_interval_seconds: i64,
@@ -167,6 +180,8 @@ pub struct SystemMetricsRealtimePayload {
     pub latest: Option<SystemMetricsPoint>,
     pub points: Vec<SystemMetricsPoint>,
     pub interfaces: Vec<NetworkInterfaceStats>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub summary: Option<SystemMetricsSummary>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -182,6 +197,8 @@ pub struct QuerySystemMetricsResponse {
     pub supported: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub summary: Option<SystemMetricsSummary>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -433,6 +450,45 @@ fn get_realtime_points(window_seconds: i64) -> Vec<SystemMetricsPoint> {
 
 fn latest_point() -> Option<SystemMetricsPoint> {
     REALTIME_POINTS.read().back().cloned()
+}
+
+fn build_summary(points: &[SystemMetricsPoint]) -> Option<SystemMetricsSummary> {
+    if points.is_empty() {
+        return None;
+    }
+
+    let mut cpu_sum: f64 = 0.0;
+    let mut mem_sum: f64 = 0.0;
+    let mut cpu_peak: f64 = 0.0;
+    let mut mem_peak: f64 = 0.0;
+    let mut net_rx_peak: f64 = 0.0;
+    let mut net_tx_peak: f64 = 0.0;
+    let mut disk_read_peak: f64 = 0.0;
+    let mut disk_write_peak: f64 = 0.0;
+
+    for p in points {
+        cpu_sum += p.cpu_usage_percent;
+        mem_sum += p.mem_used_percent;
+        cpu_peak = cpu_peak.max(p.cpu_usage_percent);
+        mem_peak = mem_peak.max(p.mem_used_percent);
+        net_rx_peak = net_rx_peak.max(p.net_rx_bps);
+        net_tx_peak = net_tx_peak.max(p.net_tx_bps);
+        disk_read_peak = disk_read_peak.max(p.disk_read_bps);
+        disk_write_peak = disk_write_peak.max(p.disk_write_bps);
+    }
+
+    let count = points.len() as f64;
+    Some(SystemMetricsSummary {
+        points_count: points.len() as i64,
+        cpu_avg_percent: cpu_sum / count,
+        cpu_peak_percent: cpu_peak,
+        mem_avg_percent: mem_sum / count,
+        mem_peak_percent: mem_peak,
+        net_rx_peak_bps: net_rx_peak,
+        net_tx_peak_bps: net_tx_peak,
+        disk_read_peak_bps: disk_read_peak,
+        disk_write_peak_bps: disk_write_peak,
+    })
 }
 
 #[cfg(any(target_os = "linux", target_os = "windows"))]
@@ -1400,6 +1456,7 @@ pub fn get_system_metrics(window_seconds: Option<i64>) -> Result<SystemMetricsRe
             latest: None,
             points: vec![],
             interfaces: vec![],
+            summary: None,
         });
     }
 
@@ -1409,14 +1466,17 @@ pub fn get_system_metrics(window_seconds: Option<i64>) -> Result<SystemMetricsRe
             .unwrap_or(24 * 3600)
             .clamp(MIN_SAMPLE_INTERVAL_SECS, MAX_REALTIME_WINDOW_SECS);
 
+        let points = get_realtime_points(win);
+        let summary = build_summary(&points);
         Ok(SystemMetricsRealtimePayload {
             sample_interval_seconds: effective_sample_interval_secs(),
             max_window_seconds: MAX_REALTIME_WINDOW_SECS,
             supported: true,
             message: None,
             latest: latest_point(),
-            points: get_realtime_points(win),
+            points,
             interfaces: LAST_INTERFACES.read().clone(),
+            summary,
         })
     }
 }
@@ -1431,6 +1491,7 @@ pub async fn query_historical_system_metrics(
             points: vec![],
             supported: false,
             message: Some("system metrics historical query is only supported on Linux and Windows".to_string()),
+            summary: None,
         });
     }
 
@@ -1441,6 +1502,7 @@ pub async fn query_historical_system_metrics(
                 points: vec![],
                 supported: true,
                 message: Some("end_time must be greater than start_time".to_string()),
+                summary: None,
             });
         }
 
@@ -1449,6 +1511,7 @@ pub async fn query_historical_system_metrics(
                 points: vec![],
                 supported: true,
                 message: Some("metrics database is not initialized".to_string()),
+                summary: None,
             });
         };
 
@@ -1543,10 +1606,12 @@ pub async fn query_historical_system_metrics(
             })
             .collect::<Vec<_>>();
 
+        let summary = build_summary(&points);
         Ok(QuerySystemMetricsResponse {
             points: downsample_points(points, MAX_CHART_POINTS),
             supported: true,
             message: None,
+            summary,
         })
     }
 }

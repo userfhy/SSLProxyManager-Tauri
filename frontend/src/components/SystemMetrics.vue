@@ -120,7 +120,19 @@
         style="margin-bottom: 12px;"
       />
 
-      <div class="stats-grid">
+      <div class="section-header">
+        <div class="section-title">{{ $t('systemMetrics.metricCards') }}</div>
+        <el-button
+          text
+          size="small"
+          :icon="statsCollapsed ? ArrowDown : ArrowUp"
+          @click="statsCollapsed = !statsCollapsed"
+        >
+          {{ statsCollapsed ? $t('systemMetrics.expandMetrics') : $t('systemMetrics.collapseMetrics') }}
+        </el-button>
+      </div>
+
+      <div v-if="!statsCollapsed" class="stats-grid">
         <el-card class="stat-card" shadow="never">
           <div class="stat-label">{{ $t('systemMetrics.cpuUsage') }}</div>
           <div class="stat-value">{{ formatPercent(currentPoint?.cpu_usage_percent || 0) }}</div>
@@ -190,6 +202,35 @@
         <el-card class="stat-card" shadow="never">
           <div class="stat-label">{{ $t('systemMetrics.fdUsage') }}</div>
           <div class="stat-value">{{ formatPercent(currentPoint?.fd_usage_percent || 0) }}</div>
+        </el-card>
+
+        <el-card class="stat-card" shadow="never">
+          <div class="stat-label">{{ `${$t('systemMetrics.cpuUsage')} (${statAvgPeakLabel})` }}</div>
+          <div class="stat-value">
+            {{ activeSummary ? `${formatPercent(activeSummary.cpu_avg_percent)} / ${formatPercent(activeSummary.cpu_peak_percent)}` : '-' }}
+          </div>
+        </el-card>
+        <el-card class="stat-card" shadow="never">
+          <div class="stat-label">{{ `${$t('systemMetrics.memUsage')} (${statAvgPeakLabel})` }}</div>
+          <div class="stat-value">
+            {{ activeSummary ? `${formatPercent(activeSummary.mem_avg_percent)} / ${formatPercent(activeSummary.mem_peak_percent)}` : '-' }}
+          </div>
+        </el-card>
+        <el-card class="stat-card" shadow="never">
+          <div class="stat-label">{{ `${$t('systemMetrics.inbound')}/${$t('systemMetrics.outbound')} ${statPeakLabel}` }}</div>
+          <div class="stat-value">
+            {{ activeSummary ? `${formatRate(activeSummary.net_rx_peak_bps)} / ${formatRate(activeSummary.net_tx_peak_bps)}` : '-' }}
+          </div>
+        </el-card>
+        <el-card class="stat-card" shadow="never">
+          <div class="stat-label">{{ `${$t('systemMetrics.diskReadRate')}/${$t('systemMetrics.diskWriteRate')} ${statPeakLabel}` }}</div>
+          <div class="stat-value">
+            {{ activeSummary ? `${formatRate(activeSummary.disk_read_peak_bps)} / ${formatRate(activeSummary.disk_write_peak_bps)}` : '-' }}
+          </div>
+        </el-card>
+        <el-card class="stat-card" shadow="never">
+          <div class="stat-label">{{ statSampleCountLabel }}</div>
+          <div class="stat-value">{{ activeSummary?.points_count || 0 }}</div>
         </el-card>
       </div>
 
@@ -300,12 +341,27 @@
         <template #header>
           <div class="panel-title">{{ $t('systemMetrics.interfaces') }}</div>
         </template>
-        <el-table :data="latestInterfaces" size="small" max-height="280">
+        <el-table
+          :data="latestInterfaces"
+          size="small"
+          max-height="280"
+          :default-sort="{ prop: 'rx_bytes', order: 'descending' }"
+        >
           <el-table-column prop="name" :label="$t('systemMetrics.interfaceName')" min-width="140" />
-          <el-table-column :label="$t('systemMetrics.rxBytes')" min-width="160">
+          <el-table-column
+            prop="rx_bytes"
+            :label="$t('systemMetrics.rxBytes')"
+            min-width="160"
+            sortable
+          >
             <template #default="{ row }">{{ formatBytes(row.rx_bytes) }}</template>
           </el-table-column>
-          <el-table-column :label="$t('systemMetrics.txBytes')" min-width="160">
+          <el-table-column
+            prop="tx_bytes"
+            :label="$t('systemMetrics.txBytes')"
+            min-width="160"
+            sortable
+          >
             <template #default="{ row }">{{ formatBytes(row.tx_bytes) }}</template>
           </el-table-column>
         </el-table>
@@ -318,6 +374,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElConfigProvider, ElMessage } from 'element-plus'
+import { ArrowDown, ArrowUp } from '@element-plus/icons-vue'
 import zhCn from 'element-plus/dist/locale/zh-cn.mjs'
 import enUs from 'element-plus/dist/locale/en.mjs'
 import { useI18n } from 'vue-i18n'
@@ -380,6 +437,18 @@ type SystemMetricsPoint = {
   uptime_seconds: number
 }
 
+type SystemMetricsSummary = {
+  points_count: number
+  cpu_avg_percent: number
+  cpu_peak_percent: number
+  mem_avg_percent: number
+  mem_peak_percent: number
+  net_rx_peak_bps: number
+  net_tx_peak_bps: number
+  disk_read_peak_bps: number
+  disk_write_peak_bps: number
+}
+
 type SystemMetricsRealtimePayload = {
   sample_interval_seconds: number
   max_window_seconds: number
@@ -388,12 +457,14 @@ type SystemMetricsRealtimePayload = {
   latest?: SystemMetricsPoint
   points: SystemMetricsPoint[]
   interfaces: NetworkInterfaceStats[]
+  summary?: SystemMetricsSummary
 }
 
 type QuerySystemMetricsResponse = {
   points: SystemMetricsPoint[]
   supported: boolean
   message?: string
+  summary?: SystemMetricsSummary
 }
 
 type SystemMetricsEventPayload = {
@@ -425,12 +496,15 @@ const loadingHistorical = ref(false)
 const unsupported = ref(false)
 const unsupportedMessage = ref('')
 const errorMessage = ref('')
+const statsCollapsed = ref(false)
 
 const dateRange = ref<[number, number] | null>(null)
 const realtimePoints = ref<SystemMetricsPoint[]>([])
 const historicalPoints = ref<SystemMetricsPoint[] | null>(null)
 const latestPoint = ref<SystemMetricsPoint | null>(null)
 const latestInterfaces = ref<NetworkInterfaceStats[]>([])
+const realtimeSummary = ref<SystemMetricsSummary | null>(null)
+const historicalSummary = ref<SystemMetricsSummary | null>(null)
 const previewTitle = ref('')
 const previewChartKey = ref<'resource' | 'network' | 'disk' | 'load' | 'connection' | ''>('')
 
@@ -611,6 +685,42 @@ const formatBytes = (bytes: number) => {
 }
 
 const formatRate = (bps: number) => `${formatBytes(bps)}/s`
+
+const buildSummaryFromPoints = (points: SystemMetricsPoint[] | null | undefined): SystemMetricsSummary | null => {
+  if (!Array.isArray(points) || points.length === 0) return null
+  let cpuSum = 0
+  let memSum = 0
+  let cpuPeak = 0
+  let memPeak = 0
+  let netRxPeak = 0
+  let netTxPeak = 0
+  let diskReadPeak = 0
+  let diskWritePeak = 0
+
+  for (const p of points) {
+    cpuSum += p.cpu_usage_percent || 0
+    memSum += p.mem_used_percent || 0
+    cpuPeak = Math.max(cpuPeak, p.cpu_usage_percent || 0)
+    memPeak = Math.max(memPeak, p.mem_used_percent || 0)
+    netRxPeak = Math.max(netRxPeak, p.net_rx_bps || 0)
+    netTxPeak = Math.max(netTxPeak, p.net_tx_bps || 0)
+    diskReadPeak = Math.max(diskReadPeak, p.disk_read_bps || 0)
+    diskWritePeak = Math.max(diskWritePeak, p.disk_write_bps || 0)
+  }
+
+  const count = points.length
+  return {
+    points_count: count,
+    cpu_avg_percent: cpuSum / count,
+    cpu_peak_percent: cpuPeak,
+    mem_avg_percent: memSum / count,
+    mem_peak_percent: memPeak,
+    net_rx_peak_bps: netRxPeak,
+    net_tx_peak_bps: netTxPeak,
+    disk_read_peak_bps: diskReadPeak,
+    disk_write_peak_bps: diskWritePeak,
+  }
+}
 
 const rateUnitOptions = computed(() => ([
   { value: 'B' as RateUnit, label: t('systemMetrics.unitBps') },
@@ -795,6 +905,17 @@ const currentPoint = computed<SystemMetricsPoint | null>(() => {
     return arr[arr.length - 1]
   }
   return latestPoint.value
+})
+
+const statAvgPeakLabel = computed(() => t('systemMetrics.avgPeak'))
+const statPeakLabel = computed(() => t('systemMetrics.peak'))
+const statSampleCountLabel = computed(() => t('systemMetrics.windowSamples'))
+
+const activeSummary = computed<SystemMetricsSummary | null>(() => {
+  if (historicalPoints.value) {
+    return historicalSummary.value || buildSummaryFromPoints(historicalPoints.value)
+  }
+  return buildSummaryFromPoints(activePoints.value) || realtimeSummary.value
 })
 
 const chartDerived = computed(() => {
@@ -1075,6 +1196,7 @@ const handleRealtimePayload = (res: SystemMetricsRealtimePayload) => {
   realtimePoints.value = Array.isArray(res.points) ? res.points : []
   latestPoint.value = res.latest || (realtimePoints.value.length ? realtimePoints.value[realtimePoints.value.length - 1] : null)
   latestInterfaces.value = Array.isArray(res.interfaces) ? res.interfaces : []
+  realtimeSummary.value = res.summary || null
 }
 
 const loadRealtimeSnapshot = async () => {
@@ -1131,6 +1253,7 @@ const loadHistoricalData = async () => {
     }
 
     historicalPoints.value = Array.isArray(res.points) ? res.points : []
+    historicalSummary.value = res.summary || buildSummaryFromPoints(historicalPoints.value)
     errorMessage.value = ''
     if (historicalPoints.value.length > 0) {
       ElMessage.success(t('systemMetrics.loadHistoricalSuccess', { count: historicalPoints.value.length }))
@@ -1147,6 +1270,7 @@ const loadHistoricalData = async () => {
 
 const clearHistoricalData = () => {
   historicalPoints.value = null
+  historicalSummary.value = null
   ElMessage.info(t('systemMetrics.historicalDataCleared'))
 }
 
@@ -1337,6 +1461,19 @@ onBeforeUnmount(() => {
 .header-actions :deep(.el-form-item__label) {
   padding-right: 6px;
   font-size: 13px;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.section-title {
+  font-size: 14px;
+  color: var(--text-muted);
+  font-weight: 500;
 }
 
 .stats-grid {
