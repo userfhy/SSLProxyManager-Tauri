@@ -507,9 +507,13 @@ const realtimeSummary = ref<SystemMetricsSummary | null>(null)
 const historicalSummary = ref<SystemMetricsSummary | null>(null)
 const previewTitle = ref('')
 const previewChartKey = ref<'resource' | 'network' | 'disk' | 'load' | 'connection' | ''>('')
+const windowVisible = ref<boolean>(typeof document === 'undefined' ? true : !document.hidden)
+const previewSyncActive = ref(false)
+const PREVIEW_SYNC_KEEPALIVE_MS = 120000
 
 let metricsUnlisten: (() => void) | null = null
 let themeObserver: MutationObserver | null = null
+let previewSyncIdleTimer: number | null = null
 
 const openChartPreview = (title: string, key: typeof previewChartKey.value) => {
   previewTitle.value = title
@@ -617,6 +621,15 @@ let previewSyncUnlisten: (() => void) | null = null
 const onPreviewSyncRequest = async (event: any) => {
   const payload = event?.payload as any
   if (!payload || payload.source !== 'systemMetrics') return
+
+  previewSyncActive.value = true
+  if (previewSyncIdleTimer) {
+    clearTimeout(previewSyncIdleTimer)
+  }
+  previewSyncIdleTimer = window.setTimeout(() => {
+    previewSyncActive.value = false
+    previewSyncIdleTimer = null
+  }, PREVIEW_SYNC_KEEPALIVE_MS)
 
   const requestId = String(payload.requestId || '').trim()
   const chartKey = String(payload.chartKey || '').trim() as typeof previewChartKey.value
@@ -1275,6 +1288,9 @@ const clearHistoricalData = () => {
 }
 
 const onSystemMetricsEvent = (payload: SystemMetricsEventPayload) => {
+  if (!(props.isActive && windowVisible.value) && !previewSyncActive.value) {
+    return
+  }
   const point = payload?.point
   if (point) {
     appendRealtimePoint(point)
@@ -1311,10 +1327,18 @@ const stopSubscription = () => {
 }
 
 watch(selectedWindow, () => {
-  if (props.isActive && !isHistoricalMode.value) {
+  if (shouldSubscribeRealtime.value && !isHistoricalMode.value) {
     loadRealtimeSnapshot()
   }
 })
+
+const shouldSubscribeRealtime = computed(
+  () => (props.isActive && windowVisible.value) || previewSyncActive.value,
+)
+
+const syncWindowVisibility = () => {
+  windowVisible.value = !document.hidden
+}
 
 watch(
   () => props.config,
@@ -1353,7 +1377,7 @@ defineExpose({
 })
 
 watch(
-  () => props.isActive,
+  shouldSubscribeRealtime,
   async (active) => {
     if (active) {
       await loadRealtimeSnapshot()
@@ -1366,6 +1390,8 @@ watch(
 )
 
 onMounted(() => {
+  syncWindowVisibility()
+  document.addEventListener('visibilitychange', syncWindowVisibility)
   updateChartColors()
   themeObserver = new MutationObserver(() => {
     updateChartColors()
@@ -1385,6 +1411,11 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   stopSubscription()
+  document.removeEventListener('visibilitychange', syncWindowVisibility)
+  if (previewSyncIdleTimer) {
+    clearTimeout(previewSyncIdleTimer)
+    previewSyncIdleTimer = null
+  }
   if (themeObserver) {
     themeObserver.disconnect()
     themeObserver = null

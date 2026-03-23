@@ -1360,7 +1360,7 @@ fn collect_one_point() -> Result<(SystemMetricsPoint, Vec<NetworkInterfaceStats>
 }
 
 #[cfg(any(target_os = "linux", target_os = "windows"))]
-async fn collect_and_publish_one(app: &AppHandle, persist_enabled: bool) {
+async fn collect_and_publish_one(app: &AppHandle, persist_enabled: bool, emit_to_frontend: bool) {
     let collected = tauri::async_runtime::spawn_blocking(collect_one_point).await;
     if let Ok(Ok((point, interfaces))) = collected {
         *LAST_INTERFACES.write() = interfaces.clone();
@@ -1369,14 +1369,16 @@ async fn collect_and_publish_one(app: &AppHandle, persist_enabled: bool) {
             try_enqueue_system_metrics(point.clone());
         }
 
-        if let Some(window) = app.get_webview_window("main") {
-            let _ = window.emit(
-                "system-metrics",
-                SystemMetricsEventPayload {
-                    point,
-                    interfaces,
-                },
-            );
+        if emit_to_frontend {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.emit(
+                    "system-metrics",
+                    SystemMetricsEventPayload {
+                        point,
+                        interfaces,
+                    },
+                );
+            }
         }
     }
 }
@@ -1407,7 +1409,7 @@ pub fn start_system_sampler(app: AppHandle) {
                 let cfg = crate::config::get_config();
                 let wants_persistence = is_system_metrics_persistence_enabled(&cfg);
                 if has_subscriber || wants_persistence {
-                    collect_and_publish_one(&app, wants_persistence).await;
+                    collect_and_publish_one(&app, wants_persistence, has_subscriber).await;
                 }
 
                 let wait_secs = if has_subscriber || wants_persistence {

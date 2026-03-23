@@ -311,6 +311,9 @@ use([
 ])
 
 const props = defineProps<{ isActive: boolean }>()
+const windowVisible = ref<boolean>(typeof document === 'undefined' ? true : !document.hidden)
+const previewSyncActive = ref(false)
+const PREVIEW_SYNC_KEEPALIVE_MS = 120000
 
 type KV = { key: string; value: number }
 
@@ -494,10 +497,20 @@ const openPreviewInNewWindow = async () => {
 }
 
 let previewSyncUnlisten: (() => void) | null = null
+let previewSyncIdleTimer: number | null = null
 
 const onPreviewSyncRequest = async (event: any) => {
   const payload = event?.payload as any
   if (!payload || payload.source !== 'dashboard') return
+
+  previewSyncActive.value = true
+  if (previewSyncIdleTimer) {
+    clearTimeout(previewSyncIdleTimer)
+  }
+  previewSyncIdleTimer = window.setTimeout(() => {
+    previewSyncActive.value = false
+    previewSyncIdleTimer = null
+  }, PREVIEW_SYNC_KEEPALIVE_MS)
 
   const requestId = String(payload.requestId || '').trim()
   const chartKey = String(payload.chartKey || '').trim() as typeof previewChartKey.value
@@ -926,7 +939,7 @@ const commonAxis = computed(() => ({
 
 // 获取对齐后的视图数据（历史数据优先，如果有历史数据则不显示实时数据）
 const alignedView = computed(() => {
-  if (!props.isActive) return null
+  if (!shouldRunRealtime.value) return null
   
   // 如果有历史数据，只显示历史数据
   if (historicalData.value) {
@@ -1402,8 +1415,16 @@ let eventEverReceived = false
 const POLLING_INTERVAL = 3000 // 轮询兜底间隔
 const EVENT_TIMEOUT = 6000 // 6 秒收不到事件则启动轮询兜底
 
+const shouldRunRealtime = computed(
+  () => (props.isActive && windowVisible.value) || previewSyncActive.value,
+)
+
+const syncWindowVisibility = () => {
+  windowVisible.value = !document.hidden
+}
+
 const processMetricsPayload = (payload: MetricsPayload) => {
-  if (!props.isActive) return
+  if (!shouldRunRealtime.value) return
   latest.value = payload
   lastEventTime = Date.now()
   eventEverReceived = true
@@ -1468,7 +1489,7 @@ const startPolling = () => {
   pollingEnabled = true
   
   const poll = async () => {
-    if (!props.isActive || !pollingEnabled) {
+    if (!shouldRunRealtime.value || !pollingEnabled) {
       stopPolling()
       return
     }
@@ -1482,7 +1503,7 @@ const startPolling = () => {
       console.error('轮询获取 metrics 失败:', err)
     }
 
-    if (!pollingEnabled || !props.isActive) {
+    if (!pollingEnabled || !shouldRunRealtime.value) {
       return
     }
     pollingTimer = window.setTimeout(poll, POLLING_INTERVAL)
@@ -1501,7 +1522,7 @@ const stopPolling = () => {
 
 const startHeartbeat = () => {
   const heartbeatInterval = setInterval(() => {
-    if (!props.isActive) return
+    if (!shouldRunRealtime.value) return
     
     const now = Date.now()
 
@@ -1567,7 +1588,7 @@ const stopSubscription = () => {
       }
 
 watch(selectedListen, () => {
-  if (!props.isActive) return
+  if (!shouldRunRealtime.value) return
   if (lastValidView && lastValidView.listen !== selectedListen.value) {
     lastValidView = null
   }
@@ -1579,13 +1600,13 @@ watch(selectedListen, () => {
 })
 
 watch(selectedWindow, () => {
-  if (!props.isActive) return
+  if (!shouldRunRealtime.value) return
   if (lastValidView && lastValidView.window !== selectedWindow.value) {
     lastValidView = null
   }
 })
 
-watch(() => props.isActive, (active) => {
+watch(shouldRunRealtime, (active) => {
   if (active) {
     refreshListenAddrs()
     startSubscription()
@@ -1612,6 +1633,8 @@ watch(() => props.isActive, (active) => {
 let themeObserver: MutationObserver | null = null;
 
 onMounted(() => {
+  syncWindowVisibility()
+  document.addEventListener('visibilitychange', syncWindowVisibility)
   updateChartColors();
 
   themeObserver = new MutationObserver((mutations) => {
@@ -1640,10 +1663,15 @@ onMounted(() => {
 onBeforeUnmount(() => {
   stopPolling()
   stopSubscription()
+  document.removeEventListener('visibilitychange', syncWindowVisibility)
   
   if (heartbeatCleanup) {
     heartbeatCleanup()
     heartbeatCleanup = null
+  }
+  if (previewSyncIdleTimer) {
+    clearTimeout(previewSyncIdleTimer)
+    previewSyncIdleTimer = null
   }
   if (themeObserver) {
     themeObserver.disconnect();
