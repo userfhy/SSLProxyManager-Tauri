@@ -3,13 +3,14 @@ pub use crate::proxy_helpers::{cached_content_types, cached_regex};
 pub use crate::proxy_listen::parse_listen_addr;
 pub use crate::proxy_logging::{clear_logs, get_logs, send_log_with_app};
 pub use crate::proxy_runtime::{is_effectively_running, is_running, start_server, stop_server};
-use crate::proxy_auth::{is_basic_auth_ok, unauthorized_response};
+use crate::proxy_auth::is_basic_auth_ok;
 use crate::proxy_context::{enqueue_request_log, format_access_log, format_headers_for_log, RequestContext};
+use crate::proxy_early::{handle_access_control, handle_basic_auth_failure, handle_missing_route, handle_rate_limit};
 use crate::proxy_helpers::{cached_index_html, cached_serve_dir, check_etag_match, content_type_allowed, expand_proxy_header_value, get_or_create_etag, is_asset_path, is_hop_header_fast};
 use crate::proxy_logging::{push_log_lazy, SKIP_HEADERS};
 use crate::proxy_matching::match_route;
 use crate::proxy_upstream::pick_upstream_smooth;
-use crate::{access_control, cache_optimizer, config, metrics, rate_limit};
+use crate::{cache_optimizer, config};
 use anyhow::{anyhow, Result};
 use axum::body::Bytes;
 use axum::{
@@ -20,7 +21,6 @@ use axum::{
 };
 use std::{net::SocketAddr, sync::Arc};
 use tower::util::ServiceExt;
-use tracing::info;
 
 #[allow(dead_code)]
 async fn resolve_hostname_with_cache(hostname: &str) -> Result<Vec<std::net::IpAddr>> {
@@ -98,134 +98,27 @@ pub(crate) async fn proxy_handler(
         req.headers()
     );
 
-    // 0. 访问控制
-    if state.http_access_control_enabled {
-        if metrics::is_ip_blacklisted(&ctx.client_ip) {
-            let status = StatusCode::FORBIDDEN;
-            push_log_lazy(&state.app, || format_access_log(node, &ctx, status));
-
-            let inbound_headers_line = format_headers_for_log(req.headers());
-
-            send_log_with_app(&state.app, format!(
-                "Reverse proxy error (IN): {} {} -> [IP Blacklist] status={} | inbound_headers=[{}]",
-                ctx.method.as_str(),
-                ctx.uri,
-                status.as_u16(),
-                inbound_headers_line
-            ));
-
-            enqueue_request_log(node, &ctx, &remote, status, "", &matched_route_id);
-
-            return (status, "IP Forbidden").into_response();
-        }
-
-        let allowed = access_control::is_allowed_remote_ip(
-            &remote,
-            state.allow_all_lan,
-            state.allow_all_ip,
-            &state.whitelist,
-        );
-        
-        if !allowed {
-            let status = StatusCode::FORBIDDEN;
-            let debug_msg = format!(
-                "Access denied: client_ip={}, remote_ip={}, allow_all_lan={}, whitelist_len={}",
-                ctx.client_ip,
-                remote.ip(),
-                state.allow_all_lan,
-                state.whitelist.len()
-            );
-            info!("{}", debug_msg);
-            push_log_lazy(&state.app, || format_access_log(node, &ctx, status));
-
-            let inbound_headers_line = format_headers_for_log(req.headers());
-
-            send_log_with_app(&state.app, format!(
-                "Reverse proxy error (IN): {} {} -> [Access Control Denied] status={} | inbound_headers=[{}] | client_ip={}, remote_ip={}, allow_all_lan={}, allow_all_ip={}, whitelist_len={}",
-                ctx.method.as_str(),
-                ctx.uri,
-                status.as_u16(),
-                inbound_headers_line,
-                ctx.client_ip,
-                remote.ip(),
-                state.allow_all_lan,
-                state.allow_all_ip,
-                state.whitelist.len()
-            ));
-
-            enqueue_request_log(node, &ctx, &remote, status, "", &matched_route_id);
-
-            return (status, "Forbidden").into_response();
-        }
+    if let Some(resp) = handle_access_control(&state, &ctx, &remote, req.headers(), &matched_route_id) {
+        return resp;
     }
 
-    // 0.5. 速率限制检查（如果在该规则中启用）
-    if state.rule.rate_limit_enabled.unwrap_or(false) {
-        if let Some(limiter) = rate_limit::RATE_LIMITERS.get(node) {
-            let (allowed, should_ban) = limiter.read().check(&ctx.client_ip);
-            
-            if !allowed {
-                // 如果需要封禁，添加到黑名单
-                if should_ban {
-                    let ban_seconds = state.rule.rate_limit_ban_seconds.unwrap_or(0) as i32;
-                    if ban_seconds > 0 {
-                        let ip_str: String = ctx.client_ip.as_ref().into();
-                        let app_clone = state.app.clone();
-                        // 异步添加到黑名单，不阻塞请求处理
-                        tokio::spawn(async move {
-                            if let Err(e) = metrics::add_blacklist_entry(
-                                ip_str.clone(),
-                                format!("Rate limit exceeded, auto-ban for {} seconds", ban_seconds),
-                                ban_seconds,
-                            ).await {
-                                tracing::warn!("Failed to add IP to blacklist: {} - {}", ip_str, e);
-                            } else {
-                                send_log_with_app(&app_clone, format!(
-                                    "[Rate Limit] IP {} was banned for {} seconds due to rate limit exceeded",
-                                    ip_str, ban_seconds
-                                ));
-                            }
-                        });
-                    }
-                }
-                
-                let status = StatusCode::TOO_MANY_REQUESTS;
-                push_log_lazy(&state.app, || format_access_log(node, &ctx, status));
-
-                enqueue_request_log(node, &ctx, &remote, status, "", &matched_route_id);
-
-                return (status, "Rate limit exceeded").into_response();
-            }
-        }
+    if let Some(resp) = handle_rate_limit(&state, &ctx, &remote, &matched_route_id) {
+        return resp;
     }
 
-    // 1. 检查 Basic Auth
-    if !is_basic_auth_ok(&state.rule, route, req.headers()) {
-        let status = StatusCode::UNAUTHORIZED;
-        push_log_lazy(&state.app, || format_access_log(node, &ctx, status));
-
-        let inbound_headers_line = format_headers_for_log(req.headers());
-
-        send_log_with_app(&state.app, format!(
-            "Reverse proxy error (IN): {} {} -> [Basic Auth Failed] status={} | inbound_headers=[{}]",
-            ctx.method.as_str(),
-            ctx.uri,
-            status.as_u16(),
-            inbound_headers_line
-        ));
-
-        enqueue_request_log(node, &ctx, &remote, status, "", &matched_route_id);
-
-        return unauthorized_response();
+    if let Some(resp) = handle_basic_auth_failure(
+        &state,
+        &ctx,
+        req.headers(),
+        &remote,
+        &matched_route_id,
+        is_basic_auth_ok(&state.rule, route, req.headers()),
+    ) {
+        return resp;
     }
 
     let Some(route) = route else {
-        let status = StatusCode::NOT_FOUND;
-        push_log_lazy(&state.app, || format_access_log(node, &ctx, status));
-
-        enqueue_request_log(node, &ctx, &remote, status, "", &matched_route_id);
-
-        return (status, "No route").into_response();
+        return handle_missing_route(&state, &ctx, &remote, &matched_route_id);
     };
 
     // 2. 优先处理静态资源
