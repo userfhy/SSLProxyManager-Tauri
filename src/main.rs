@@ -9,19 +9,6 @@ mod app;
 mod commands;
 mod config;
 mod metrics;
-mod proxy_matching;
-mod proxy_logging;
-mod proxy_helpers;
-mod proxy_upstream;
-mod proxy_context;
-mod proxy_listen;
-mod proxy_lifecycle;
-mod proxy_server;
-mod proxy_runtime;
-mod proxy_auth;
-mod proxy_early;
-mod proxy_static;
-mod proxy_request;
 mod proxy;
 mod ws_proxy;
 mod stream_proxy;
@@ -78,14 +65,10 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_autostart::init(
-            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
-            None,
-        ))
         .invoke_handler(tauri::generate_handler![
+            commands::get_version,
             commands::get_config,
             commands::save_config,
-            commands::get_version,
             commands::check_update,
             commands::start_server,
             commands::stop_server,
@@ -98,6 +81,7 @@ fn main() {
             commands::query_historical_system_metrics,
             commands::get_listen_addrs,
             commands::query_historical_metrics,
+            commands::get_dashboard_stats,
             commands::query_request_logs,
             commands::add_blacklist_entry,
             commands::remove_blacklist_entry,
@@ -114,18 +98,14 @@ fn main() {
             commands::save_config_toml_as,
             commands::save_chart_png_with_dialog,
             commands::export_current_config_toml,
-            commands::hide_to_tray,
-            commands::open_chart_preview_window,
-            commands::quit_app,
-            commands::get_dashboard_stats,
-            commands::set_tray_proxy_state,
             commands::set_route_enabled,
             commands::set_listen_rule_enabled,
+            commands::hide_to_tray,
+            commands::quit_app,
+            commands::open_chart_preview_window,
             commands::set_locale,
             commands::get_locale,
-            commands::get_buffer_pool_stats,
-            commands::get_cache_stats,
-            commands::clear_all_caches,
+            commands::set_tray_proxy_state,
             commands::send_http_test,
             commands::test_route_match,
             commands::run_route_test_suite,
@@ -136,36 +116,29 @@ fn main() {
             commands::generate_self_signed_cert,
             commands::scan_ports,
             commands::encode_decode,
+            commands::get_buffer_pool_stats,
+            commands::get_cache_stats,
+            commands::clear_all_caches,
         ])
         .setup(|app| {
-            // 初始化应用
             app::init(app.handle())?;
-
-            // 托盘初始化延后执行，避免阻塞首屏显示
-            let app_handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                tokio::time::sleep(std::time::Duration::from_millis(120)).await;
-                if let Err(e) = tray::init_tray(&app_handle) {
-                    eprintln!("Tray init failed: {e}");
-                }
-            });
-
+            tray::init_tray(app.handle()).map_err(|e| anyhow::anyhow!(e.to_string()))?;
             Ok(())
         })
         .on_window_event(|window, event| {
-            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                // 仅主窗口拦截关闭并隐藏到托盘；其他窗口允许正常关闭
-                if window.label() == "main" {
-                    api.prevent_close();
-                    let _ = window.hide();
-                    return;
-                }
-            }
-
-            // 仅主窗口销毁时执行清理（停止后台 metrics 推送任务等）
-            if let tauri::WindowEvent::Destroyed = event {
-                if window.label() == "main" {
-                    crate::app::cleanup();
+            if window.label() == "main" {
+                match event {
+                    tauri::WindowEvent::CloseRequested { api, .. } => {
+                        api.prevent_close();
+                        if let Some(main_window) = window.app_handle().get_webview_window("main") {
+                            let _ = main_window.hide();
+                        }
+                    }
+                    tauri::WindowEvent::Destroyed => {
+                        app::cleanup();
+                        let _ = proxy::stop_server(window.app_handle().clone());
+                    }
+                    _ => {}
                 }
             }
         })
