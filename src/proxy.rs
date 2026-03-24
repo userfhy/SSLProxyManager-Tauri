@@ -1,7 +1,9 @@
 pub use crate::proxy_helpers::{cached_content_types, cached_regex};
+pub use crate::proxy_listen::parse_listen_addr;
 pub use crate::proxy_logging::{clear_logs, get_logs, send_log, send_log_with_app};
 use crate::proxy_context::{enqueue_request_log, format_access_log, format_headers_for_log, RequestContext};
 use crate::proxy_helpers::{cached_index_html, cached_serve_dir, check_etag_match, content_type_allowed, expand_proxy_header_value, get_or_create_etag, is_asset_path, is_hop_header_fast};
+use crate::proxy_listen::precheck_rule;
 use crate::proxy_logging::{init_log_task, push_log_lazy, LOG_TX, SKIP_HEADERS};
 use crate::proxy_matching::match_route;
 use crate::proxy_upstream::pick_upstream_smooth;
@@ -372,27 +374,6 @@ pub fn is_effectively_running() -> bool {
     matches!(PROXY_STATE.lock().phase, Phase::Starting | Phase::Running)
 }
 
-async fn precheck_rule(rule: &config::ListenRule, listen_addr: &str) -> Result<()> {
-    let (addr, _need_dual_stack) = parse_listen_addr(listen_addr)?;
-
-    if rule.ssl_enable {
-        let _ = axum_server::tls_rustls::RustlsConfig::from_pem_file(
-            rule.cert_file.clone(),
-            rule.key_file.clone(),
-        )
-        .await
-        .with_context(|| "Failed to load TLS certificate/private key")?;
-
-        let listener = tokio::net::TcpListener::bind(addr).await?;
-        drop(listener);
-    } else {
-        let listener = tokio::net::TcpListener::bind(addr).await?;
-        drop(listener);
-    }
-
-    Ok(())
-}
-
 async fn start_rule_server(
     app: tauri::AppHandle,
     rule: config::ListenRule,
@@ -597,34 +578,7 @@ async fn start_rule_server(
 }
 
 /// 解析监听地址，返回主地址和是否需要同时绑定 IPv4/IPv6
-pub(crate) fn parse_listen_addr(s: &str) -> Result<(SocketAddr, bool)> {
-    let trimmed = s.trim();
-    let (normalized, need_dual_stack) = if trimmed.starts_with(':') {
-        // :port 格式：同时监听 IPv4 和 IPv6
-        let port = trimmed;
-        let ipv6_format = format!("[::]{}", port);
-        let ipv4_format = format!("0.0.0.0{}", port);
-        
-        // 优先使用 IPv6，因为它通常可以同时监听 IPv4（dual-stack）
-        if let Ok(addr) = ipv6_format.parse::<SocketAddr>() {
-            (addr, true) // 标记需要同时绑定
-        } else if let Ok(addr) = ipv4_format.parse::<SocketAddr>() {
-            (addr, true) // 即使 IPv6 失败，也标记需要同时绑定
-        } else {
-            return Err(anyhow::anyhow!("Failed to parse listen_addr: {s}"));
-        }
-    } else {
-        // 完整地址格式：直接解析
-        let addr = trimmed
-            .parse::<SocketAddr>()
-            .with_context(|| format!("Failed to parse listen_addr: {s}"))?;
-        (addr, false)
-    };
-
-    Ok((normalized, need_dual_stack))
-}
-
-async fn healthz() -> impl IntoResponse {
+pub(crate) async fn healthz() -> impl IntoResponse {
     (StatusCode::OK, "OK")
 }
 
