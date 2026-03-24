@@ -1,15 +1,13 @@
 pub use crate::proxy_helpers::{cached_content_types, cached_regex};
 pub use crate::proxy_listen::parse_listen_addr;
-pub use crate::proxy_logging::{clear_logs, get_logs, send_log, send_log_with_app};
-pub use crate::proxy_server::start_rule_server;
+pub use crate::proxy_logging::{clear_logs, get_logs, send_log_with_app};
+pub use crate::proxy_runtime::{is_effectively_running, is_running, start_server, stop_server};
 use crate::proxy_context::{enqueue_request_log, format_access_log, format_headers_for_log, RequestContext};
 use crate::proxy_helpers::{cached_index_html, cached_serve_dir, check_etag_match, content_type_allowed, expand_proxy_header_value, get_or_create_etag, is_asset_path, is_hop_header_fast};
-use crate::proxy_lifecycle::{Phase, ServerHandle, PROXY_STATE};
-use crate::proxy_listen::precheck_rule;
-use crate::proxy_logging::{init_log_task, push_log_lazy, LOG_TX, SKIP_HEADERS};
+use crate::proxy_logging::{push_log_lazy, SKIP_HEADERS};
 use crate::proxy_matching::match_route;
 use crate::proxy_upstream::pick_upstream_smooth;
-use crate::{access_control, cache_optimizer, config, metrics, rate_limit, stream_proxy, ws_proxy};
+use crate::{access_control, cache_optimizer, config, metrics, rate_limit};
 use anyhow::{anyhow, Result};
 use axum::body::Bytes;
 use axum::{
@@ -19,9 +17,8 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use std::{net::SocketAddr, sync::Arc};
-use tauri::Emitter;
 use tower::util::ServiceExt;
-use tracing::{error, info};
+use tracing::info;
 
 #[allow(dead_code)]
 async fn resolve_hostname_with_cache(hostname: &str) -> Result<Vec<std::net::IpAddr>> {
@@ -79,251 +76,6 @@ pub struct RuleStartErrorPayload {
 
 // 请求上下文：统一管理请求相关数据，减少参数传递
 // 使用 Arc<str> 优化频繁 clone 的字段，避免不必要的内存分配
-pub fn start_server(app: tauri::AppHandle) -> Result<()> {
-    init_log_task(app.clone());
-
-    let cfg = config::get_config();
-
-    send_log("[WS] Listener startup");
-    if !cfg.ws_proxy_enabled {
-        send_log("[WS] Disabled");
-    } else if let Err(e) = ws_proxy::start_ws_servers(app.clone()) {
-        send_log(format!("[WS] Failed to start listener: {e}"));
-    }
-
-    {
-        send_log("[STREAM] Listener startup");
-
-        let stream_cfg = cfg.stream.clone();
-        let app2 = app.clone();
-        if !stream_cfg.enabled {
-            send_log("[STREAM] Disabled");
-        } else {
-            tauri::async_runtime::spawn(async move {
-                if let Err(e) = stream_proxy::start_stream_servers(app2.clone(), &stream_cfg).await {
-                    send_log_with_app(&app2, format!("[STREAM] Failed to start listener: {e}"));
-                }
-            });
-        }
-    }
-
-    send_log("[HTTP] Listener startup");
-
-    let rules: Vec<_> = cfg.rules.into_iter().filter(|r| r.enabled).collect();
-
-    // 计算总监听节点数：每个规则的 listen_addrs 数量（为空则按 1 计算）
-    let expected: usize = rules
-        .iter()
-        .map(|r| {
-            let n = r
-                .listen_addrs
-                .iter()
-                .map(|s| s.trim())
-                .filter(|s| !s.is_empty())
-                .count();
-            if n == 0 { 1 } else { n }
-        })
-        .sum();
-
-    // ── 原子状态转换 ──────────────────────────────────────────────────────────
-    // 在单次加锁内完成"检查当前阶段 → 转换到 Starting"，
-    // 消除原来 read-lock / release / write-lock 之间的双重启动竞态。
-    let generation = {
-        let mut state = PROXY_STATE.lock();
-        if matches!(state.phase, Phase::Starting | Phase::Running) {
-            return Ok(());
-        }
-        if expected == 0 {
-            state.phase = Phase::Stopped;
-            drop(state);
-            let _ = app.emit("status", "stopped");
-            send_log("No listen rules configured; service remains stopped");
-            return Ok(());
-        }
-        state.phase = Phase::Starting;
-        state.expected = expected;
-        state.started = 0;
-        state.generation = state.generation.wrapping_add(1);
-        state.generation
-    };
-
-    let _ = app.emit("status", "stopped");
-
-    let mut handles = Vec::new();
-
-    for rule in rules {
-        // 为每个规则展开出多个监听地址；如果没有配置 listen_addrs，则退化为单个 listen_addr
-        let addrs: Vec<String> = {
-            let mut v: Vec<String> = rule
-                .listen_addrs
-                .iter()
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty())
-                .collect();
-            if v.is_empty() {
-                v.push(rule.listen_addr.clone());
-            }
-            v
-        };
-
-        for listen_addr in addrs {
-            let app_handle = app.clone();
-            let rule_clone = rule.clone();
-            let listen_addr_clone = listen_addr.clone();
-            let gen = generation; // 捕获当前 generation，用于检测过时更新
-            let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
-
-            let handle = tauri::async_runtime::spawn(async move {
-                if let Err(e) = precheck_rule(&rule_clone, &listen_addr_clone).await {
-                    error!("Failed to start listener({listen_addr_clone}): {e}");
-                    send_log(format!("Failed to start listener({listen_addr_clone}): {e}"));
-
-                    let payload = RuleStartErrorPayload {
-                        listen_addr: listen_addr_clone.clone(),
-                        error: e.to_string(),
-                    };
-                    let _ = app_handle.emit("server-start-error", payload);
-
-                    // 原子更新：仅在 generation 未被 stop/restart 超越时才修改状态
-                    {
-                        let mut state = PROXY_STATE.lock();
-                        if state.generation == gen {
-                            state.phase = Phase::Failed;
-                        }
-                    }
-                    let _ = app_handle.emit("status", "stopped");
-                    return;
-                }
-
-                // 原子地递增已就绪计数并判断是否全部完成：
-                // 单次加锁完成 increment + 条件检查 + 状态转换，
-                // 消除原来跨多个 RwLock 读写之间的竞态。
-                let transition_to_running = {
-                    let mut state = PROXY_STATE.lock();
-                    if state.generation != gen {
-                        return; // 此次启动已被 stop/restart 超越，静默退出
-                    }
-                    state.started += 1;
-                    // 仅在没有其他任务失败（phase 仍为 Starting）且全部就绪时转换
-                    if matches!(state.phase, Phase::Starting) && state.started == state.expected {
-                        state.phase = Phase::Running;
-                        true
-                    } else {
-                        false
-                    }
-                };
-
-                if transition_to_running {
-                    let _ = app_handle.emit("status", "running");
-                }
-
-                match start_rule_server(
-                    app_handle.clone(),
-                    rule_clone,
-                    listen_addr_clone.clone(),
-                    shutdown_rx,
-                )
-                .await
-                {
-                    Ok(()) => {}
-                    Err(e) => {
-                        error!("Failed to start listener({listen_addr_clone}): {e}");
-                        send_log(format!("Failed to start listener({listen_addr_clone}): {e}"));
-
-                        let payload = RuleStartErrorPayload {
-                            listen_addr: listen_addr_clone.clone(),
-                            error: e.to_string(),
-                        };
-                        let _ = app_handle.emit("server-start-error", payload);
-
-                        {
-                            let mut state = PROXY_STATE.lock();
-                            if state.generation == gen {
-                                state.phase = Phase::Failed;
-                            }
-                        }
-                        let _ = app_handle.emit("status", "stopped");
-                    }
-                }
-            });
-            handles.push(ServerHandle { handle, shutdown_tx });
-        }
-    }
-
-    // 原子存储 handles；若在 spawn 期间被 stop_server 超越，则中止新建的 handles
-    {
-        let mut state = PROXY_STATE.lock();
-        if state.generation == generation {
-            state.handles = handles;
-        } else {
-            for h in handles {
-                h.abort();
-            }
-        }
-    }
-
-    send_log("Proxy server starting...");
-    Ok(())
-}
-
-pub fn stop_server(app: tauri::AppHandle) -> Result<()> {
-    ws_proxy::stop_ws_servers();
-    *LOG_TX.write() = None;
-
-    tauri::async_runtime::spawn(async {
-        stream_proxy::stop_stream_servers().await;
-    });
-
-    // 单次加锁完成所有状态重置 + 取出 handles，
-    // 消除原来 5 次独立写锁之间的竞态窗口。
-    // generation 递增后，所有仍在运行的启动任务检测到不匹配时会静默退出，
-    // 不再回写 IS_RUNNING = true。
-    let handles = {
-        let mut state = PROXY_STATE.lock();
-        state.phase = Phase::Stopped;
-        state.generation = state.generation.wrapping_add(1);
-        state.expected = 0;
-        state.started = 0;
-        std::mem::take(&mut state.handles)
-    };
-
-    for handle in handles {
-        handle.abort();
-    }
-
-    let _ = app.emit("status", "stopped");
-
-    let cfg = config::get_config();
-    for r in &cfg.rules {
-        let addrs: Vec<String> = {
-            let mut v: Vec<String> = r
-                .listen_addrs
-                .iter()
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty())
-                .collect();
-            if v.is_empty() {
-                v.push(r.listen_addr.clone());
-            }
-            v
-        };
-        for addr in addrs {
-            send_log_with_app(&app, format!("[HTTP NODE {}] Server stopped", addr));
-        }
-    }
-
-    info!("Proxy server stopped");
-    Ok(())
-}
-
-pub fn is_running() -> bool {
-    matches!(PROXY_STATE.lock().phase, Phase::Running)
-}
-
-pub fn is_effectively_running() -> bool {
-    matches!(PROXY_STATE.lock().phase, Phase::Starting | Phase::Running)
-}
-
 /// 解析监听地址，返回主地址和是否需要同时绑定 IPv4/IPv6
 pub(crate) async fn healthz() -> impl IntoResponse {
     (StatusCode::OK, "OK")
