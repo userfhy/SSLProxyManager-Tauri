@@ -173,6 +173,7 @@ import { ElMessage, ElMessageBox, ElNotification } from 'element-plus'
 import { GetConfig, SaveConfig } from './api'
 import { GetTermsAccepted } from './api'
 import { useI18n } from 'vue-i18n'
+import { useAppShellPreferences } from './composables/useAppShellPreferences'
 
 const Dashboard = defineAsyncComponent(() => import('./components/Dashboard.vue'))
 const SystemMetrics = defineAsyncComponent(() => import('./components/SystemMetrics.vue'))
@@ -181,6 +182,25 @@ const TestTools = defineAsyncComponent(() => import('./components/TestTools.vue'
 const LogViewer = defineAsyncComponent(() => import('./components/LogViewer.vue'))
 
 const { t, locale } = useI18n()
+const {
+  isDark,
+  autoThemeEnabled,
+  isCollapsed,
+  fontSizeOptions,
+  fontSizeSetting,
+  fontSizeButtonText,
+  loadFontSize,
+  handleFontSizeCommand,
+  loadTheme,
+  toggleTheme,
+  startAutoTheme,
+  stopAutoTheme,
+  toggleSidebar,
+  loadSidebarState,
+  shouldUseDarkMode,
+  getSeparator,
+  formatTimeUnit,
+} = useAppShellPreferences(t, locale)
 
 const activeTab = ref<'base' | 'config' | 'ws' | 'stream' | 'logs' | 'dashboard' | 'systemMetrics' | 'access' | 'storage' | 'requestLogs' | 'about' | 'testTools'>('config')
 const status = ref('stopped')
@@ -235,17 +255,6 @@ const runTime = computed(() => {
   const minutes = Math.floor((elapsed % 3600) / 60)
   const seconds = elapsed % 60
   
-  const formatTimeUnit = (value: number, unitKey: string, pluralKey?: string) => {
-    if (locale.value === 'en-US') {
-      // 英文：使用空格，处理复数
-      const unit = (pluralKey && value !== 1) ? pluralKey : unitKey
-      return `${value} ${t(`app.timeUnit.${unit}`)}`
-    } else {
-      // 中文：直接连接，无空格
-      return `${value}${t(`app.timeUnit.${unitKey}`)}`
-    }
-  }
-  
   const parts: string[] = []
   if (days > 0) {
     parts.push(formatTimeUnit(days, 'day', 'days'))
@@ -258,8 +267,7 @@ const runTime = computed(() => {
   }
   parts.push(formatTimeUnit(seconds, 'second', 'seconds'))
   
-  // 中文直接连接，英文用空格连接
-  const separator = locale.value === 'en-US' ? ' ' : ''
+  const separator = getSeparator()
   return parts.join(separator)
 })
 
@@ -280,210 +288,6 @@ const stopRuntimeTimer = () => {
   if (runtimeTimer) {
     clearInterval(runtimeTimer)
     runtimeTimer = null
-  }
-}
-
-// 全局主题状态
-const isDark = ref(true)
-
-// 自动切换主题开关
-const autoThemeEnabled = ref(true)
-
-const FONT_SIZE_STORAGE_KEY = 'globalFontSizeSetting'
-const fontSizeOptions = [9, 10, 11, 12, 13, 14, 16, 17,18, 19, 20, 21, 22, 23, 24] as const
-const fontSizeSetting = ref<string>('default')
-
-const fontSizeButtonText = computed(() => {
-  if (fontSizeSetting.value === 'default') {
-    return t('app.fontSizeDefault')
-  }
-  return t('app.fontSizeButton', { size: fontSizeSetting.value })
-})
-
-const applyGlobalFontSize = (value: string) => {
-  const rootStyle = document.documentElement.style
-  const keys = [
-    '--spm-font-size-base',
-    '--el-font-size-extra-large',
-    '--el-font-size-large',
-    '--el-font-size-medium',
-    '--el-font-size-base',
-    '--el-font-size-small',
-    '--el-font-size-extra-small',
-  ]
-
-  if (value === 'default') {
-    keys.forEach((k) => rootStyle.removeProperty(k))
-    return
-  }
-
-  const size = Number(value)
-  if (!Number.isFinite(size)) {
-    keys.forEach((k) => rootStyle.removeProperty(k))
-    return
-  }
-
-  rootStyle.setProperty('--spm-font-size-base', `${size}px`)
-  rootStyle.setProperty('--el-font-size-extra-large', `${size + 4}px`)
-  rootStyle.setProperty('--el-font-size-large', `${size + 2}px`)
-  rootStyle.setProperty('--el-font-size-medium', `${size + 1}px`)
-  rootStyle.setProperty('--el-font-size-base', `${size}px`)
-  rootStyle.setProperty('--el-font-size-small', `${Math.max(size - 1, 10)}px`)
-  rootStyle.setProperty('--el-font-size-extra-small', `${Math.max(size - 2, 9)}px`)
-}
-
-const loadFontSize = () => {
-  const saved = localStorage.getItem(FONT_SIZE_STORAGE_KEY)
-  const isAllowed = saved !== null && fontSizeOptions.includes(Number(saved) as (typeof fontSizeOptions)[number])
-  fontSizeSetting.value = isAllowed ? String(saved) : 'default'
-  applyGlobalFontSize(fontSizeSetting.value)
-}
-
-const handleFontSizeCommand = (command: string | number) => {
-  const value = String(command)
-  const isAllowed = value === 'default' || fontSizeOptions.includes(Number(value) as (typeof fontSizeOptions)[number])
-  if (!isAllowed) return
-
-  fontSizeSetting.value = value
-  if (value === 'default') {
-    localStorage.removeItem(FONT_SIZE_STORAGE_KEY)
-  } else {
-    localStorage.setItem(FONT_SIZE_STORAGE_KEY, value)
-  }
-  applyGlobalFontSize(value)
-}
-
-
-// 自动切换主题的定时器
-let autoThemeTimer: number | null = null
-
-// 根据时间判断是否应该使用夜间模式
-const shouldUseDarkMode = (): boolean => {
-  const hour = new Date().getHours()
-  // 18:00 (晚上6点) 到 6:00 (早上6点) 使用夜间模式
-  return hour >= 18 || hour < 6
-}
-
-// 检查并自动切换主题
-const checkAndAutoSwitchTheme = () => {
-  // 只有在自动切换开启时才自动切换
-  if (autoThemeEnabled.value) {
-    const shouldDark = shouldUseDarkMode()
-    if (isDark.value !== shouldDark) {
-      isDark.value = shouldDark
-      applyTheme()
-      console.log(`自动切换主题: ${shouldDark ? '夜间模式' : '日间模式'}`)
-    }
-  }
-}
-
-// 启动自动主题切换
-const startAutoTheme = () => {
-  // 清除旧的定时器
-  if (autoThemeTimer) {
-    clearInterval(autoThemeTimer)
-  }
-  
-  // 如果自动切换已启用，才启动定时器
-  if (autoThemeEnabled.value) {
-    // 立即检查一次
-    checkAndAutoSwitchTheme()
-    
-    // 每60秒检查一次（更频繁的检查，确保及时切换）
-    autoThemeTimer = window.setInterval(() => {
-      checkAndAutoSwitchTheme()
-    }, 60000) // 60秒检查一次
-  }
-}
-
-// 停止自动主题切换
-const stopAutoTheme = () => {
-  if (autoThemeTimer) {
-    clearInterval(autoThemeTimer)
-    autoThemeTimer = null
-  }
-}
-
-// 侧边栏折叠状态
-const isCollapsed = ref(false)
-
-// 切换侧边栏折叠状态
-const toggleSidebar = () => {
-  isCollapsed.value = !isCollapsed.value
-  // 保存到 localStorage
-  localStorage.setItem('sidebarCollapsed', String(isCollapsed.value))
-}
-
-// 加载侧边栏折叠状态
-const loadSidebarState = () => {
-  const saved = localStorage.getItem('sidebarCollapsed')
-  if (saved !== null) {
-    isCollapsed.value = saved === 'true'
-  }
-}
-
-// 读取并应用主题
-const loadTheme = () => {
-  // 加载自动切换开关状态
-  const savedAutoTheme = localStorage.getItem('autoThemeEnabled')
-  if (savedAutoTheme !== null) {
-    autoThemeEnabled.value = savedAutoTheme === 'true'
-  }
-  
-  // 如果自动切换开启，根据时间判断
-  if (autoThemeEnabled.value) {
-    isDark.value = shouldUseDarkMode()
-  } else {
-    // 手动模式：使用保存的主题
-    const savedTheme = localStorage.getItem('theme')
-    if (savedTheme) {
-      isDark.value = savedTheme === 'dark'
-    } else {
-      // 默认使用夜间模式
-      isDark.value = true
-    }
-  }
-  applyTheme()
-}
-
-// 应用主题
-const applyTheme = () => {
-  document.documentElement.classList.toggle('light-mode', !isDark.value)
-}
-
-// 切换主题
-const toggleTheme = () => {
-  // 如果自动切换开启，关闭自动切换并切换到手动模式
-  if (autoThemeEnabled.value) {
-    autoThemeEnabled.value = false
-    localStorage.setItem('autoThemeEnabled', 'false')
-    stopAutoTheme()
-  }
-  
-  isDark.value = !isDark.value
-  // 保存当前主题
-  localStorage.setItem('theme', isDark.value ? 'dark' : 'light')
-  applyTheme()
-}
-
-// 处理自动切换开关变化
-const handleAutoThemeChange = (enabled: boolean | string | number) => {
-  const isEnabled = enabled === true || enabled === 'true' || enabled === 1
-  localStorage.setItem('autoThemeEnabled', String(isEnabled))
-  
-  if (isEnabled) {
-    // 开启自动切换：根据时间设置主题
-    isDark.value = shouldUseDarkMode()
-    localStorage.setItem('theme', 'auto')
-    applyTheme()
-    startAutoTheme()
-    ElMessage.success(t('app.autoThemeEnabled'))
-  } else {
-    // 关闭自动切换：停止定时器，保持当前主题
-    stopAutoTheme()
-    // 保存当前主题为手动模式
-    localStorage.setItem('theme', isDark.value ? 'dark' : 'light')
-    ElMessage.info(t('app.autoThemeDisabled'))
   }
 }
 
