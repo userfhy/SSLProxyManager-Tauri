@@ -9,6 +9,7 @@ mod app;
 mod commands;
 mod config;
 mod metrics;
+mod proxy_matching;
 mod proxy;
 mod ws_proxy;
 mod stream_proxy;
