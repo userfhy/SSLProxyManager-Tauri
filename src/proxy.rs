@@ -919,7 +919,7 @@ async fn start_rule_server(
 }
 
 /// 解析监听地址，返回主地址和是否需要同时绑定 IPv4/IPv6
-fn parse_listen_addr(s: &str) -> Result<(SocketAddr, bool)> {
+pub(crate) fn parse_listen_addr(s: &str) -> Result<(SocketAddr, bool)> {
     let trimmed = s.trim();
     let (normalized, need_dual_stack) = if trimmed.starts_with(':') {
         // :port 格式：同时监听 IPv4 和 IPv6

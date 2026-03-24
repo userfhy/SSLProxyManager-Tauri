@@ -170,11 +170,11 @@ async fn start_tcp_server(
     proxy_timeout: Duration,
     servers: &mut Vec<StreamServerHandle>,
 ) -> Result<()> {
-    // 如果指定了 listen_addr，使用它；否则使用默认的 0.0.0.0:port
+    // 如果指定了 listen_addr，使用它；否则默认仅监听本机回环地址，避免意外暴露到局域网/公网
     let listen_addr = if let Some(addr) = &server.listen_addr {
         addr.clone()
     } else {
-        format!("0.0.0.0:{}", server.listen_port)
+        format!("127.0.0.1:{}", server.listen_port)
     };
     let listener = TcpListener::bind(&listen_addr)
         .await
@@ -363,11 +363,11 @@ async fn start_udp_server(
     let allow_all_ip = cfg.allow_all_ip;
     let whitelist: Arc<[config::WhitelistEntry]> = Arc::from(cfg.whitelist);
 
-    // 如果指定了 listen_addr，使用它；否则使用默认的 0.0.0.0:port
+    // 如果指定了 listen_addr，使用它；否则默认仅监听本机回环地址，避免意外暴露到局域网/公网
     let listen_addr = if let Some(addr) = &server.listen_addr {
         addr.clone()
     } else {
-        format!("0.0.0.0:{}", server.listen_port)
+        format!("127.0.0.1:{}", server.listen_port)
     };
     let listen_sock = UdpSocket::bind(&listen_addr)
         .await
