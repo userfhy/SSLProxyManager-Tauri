@@ -65,7 +65,6 @@ pub(crate) async fn proxy_handler(
     ConnectInfo(remote): ConnectInfo<SocketAddr>,
     req: Request<Body>,
 ) -> Response {
-    let node = &*state.listen_addr;
     let method = req.method().clone();
     let uri = req.uri().clone();
 
