@@ -18,6 +18,7 @@ mod proxy_listen;
 mod proxy_lifecycle;
 mod proxy_server;
 mod proxy_runtime;
+mod proxy_auth;
 mod proxy;
 mod ws_proxy;
 mod stream_proxy;

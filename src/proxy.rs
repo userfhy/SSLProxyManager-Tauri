@@ -1,7 +1,9 @@
+pub use crate::proxy_auth::healthz;
 pub use crate::proxy_helpers::{cached_content_types, cached_regex};
 pub use crate::proxy_listen::parse_listen_addr;
 pub use crate::proxy_logging::{clear_logs, get_logs, send_log_with_app};
 pub use crate::proxy_runtime::{is_effectively_running, is_running, start_server, stop_server};
+use crate::proxy_auth::{is_basic_auth_ok, unauthorized_response};
 use crate::proxy_context::{enqueue_request_log, format_access_log, format_headers_for_log, RequestContext};
 use crate::proxy_helpers::{cached_index_html, cached_serve_dir, check_etag_match, content_type_allowed, expand_proxy_header_value, get_or_create_etag, is_asset_path, is_hop_header_fast};
 use crate::proxy_logging::{push_log_lazy, SKIP_HEADERS};
@@ -77,48 +79,6 @@ pub struct RuleStartErrorPayload {
 // 请求上下文：统一管理请求相关数据，减少参数传递
 // 使用 Arc<str> 优化频繁 clone 的字段，避免不必要的内存分配
 /// 解析监听地址，返回主地址和是否需要同时绑定 IPv4/IPv6
-pub(crate) async fn healthz() -> impl IntoResponse {
-    (StatusCode::OK, "OK")
-}
-
-#[inline]
-fn is_basic_auth_ok(
-    rule: &config::ListenRule,
-    route: Option<&config::Route>,
-    headers: &HeaderMap,
-) -> bool {
-    if let Some(r) = route {
-        if r.exclude_basic_auth.unwrap_or(false) {
-            return true;
-        }
-    }
-
-    if !rule.basic_auth_enable {
-        return true;
-    }
-
-    let Some(auth) = headers.get(axum::http::header::AUTHORIZATION) else {
-        return false;
-    };
-    let Ok(auth) = auth.to_str() else {
-        return false;
-    };
-    let Some(b64) = auth.strip_prefix("Basic ") else {
-        return false;
-    };
-
-    let Ok(decoded) = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, b64) else {
-        return false;
-    };
-    let Ok(s) = String::from_utf8(decoded) else {
-        return false;
-    };
-
-    let expected = format!("{}:{}", rule.basic_auth_username, rule.basic_auth_password);
-    s == expected
-}
-
-
 #[inline]
 pub(crate) async fn proxy_handler(
     ConnectInfo(remote): ConnectInfo<SocketAddr>,
@@ -256,13 +216,7 @@ pub(crate) async fn proxy_handler(
 
         enqueue_request_log(node, &ctx, &remote, status, "", &matched_route_id);
 
-        let mut resp = Response::new(Body::from("Unauthorized"));
-        *resp.status_mut() = status;
-        resp.headers_mut().insert(
-            axum::http::header::WWW_AUTHENTICATE,
-            HeaderValue::from_static("Basic realm=\"SSLProxyManager\""),
-        );
-        return resp;
+        return unauthorized_response();
     }
 
     let Some(route) = route else {
