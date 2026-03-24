@@ -104,7 +104,6 @@ pub(crate) async fn proxy_handler(
     ).await
 }
 
-#[inline]
 #[cfg(test)]
 mod tests {
     use super::upstream::build_upstream_url;
