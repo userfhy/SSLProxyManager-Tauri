@@ -560,8 +560,54 @@ const applyPreviewZoom = (option: EChartsOption): EChartsOption => {
   }
 }
 
+const formatAxisDateTime = (tsSec: number) => {
+  const d = new Date(tsSec * 1000)
+  const yyyy = d.getFullYear()
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mi = String(d.getMinutes()).padStart(2, '0')
+  const ss = String(d.getSeconds()).padStart(2, '0')
+  return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}`
+}
+
+const applyPreviewDateLabels = (option: EChartsOption, labels: string[]): EChartsOption => {
+  if (!labels.length) return option
+  const base = (option || {}) as any
+  const xAxis = base.xAxis
+  if (!xAxis) return base
+
+  const patchAxis = (axis: any) => {
+    if (!axis || typeof axis !== 'object') return axis
+    if (axis.type && axis.type !== 'category') return axis
+    if (Array.isArray(axis.data) && axis.data.length > 0 && axis.data.length !== labels.length) {
+      return axis
+    }
+    return {
+      ...axis,
+      data: labels,
+    }
+  }
+
+  if (Array.isArray(xAxis)) {
+    return {
+      ...base,
+      xAxis: xAxis.map((axis: any, idx: number) => (idx === 0 ? patchAxis(axis) : axis)),
+    }
+  }
+
+  return {
+    ...base,
+    xAxis: patchAxis(xAxis),
+  }
+}
+
 const getPreviewOptionPayloadByKey = (key: typeof previewChartKey.value): any | null => {
-  const option = applyPreviewZoom(getPreviewOptionByKey(key)) as any
+  const previewDateLabels = chartPoints.value.map((p) => formatAxisDateTime(p.timestamp))
+  const option = applyPreviewDateLabels(
+    applyPreviewZoom(getPreviewOptionByKey(key)),
+    previewDateLabels,
+  ) as any
   if (!option || typeof option !== 'object') {
     return null
   }
