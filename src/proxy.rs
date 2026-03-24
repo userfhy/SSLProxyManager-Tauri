@@ -3,6 +3,7 @@ pub use crate::proxy_listen::parse_listen_addr;
 pub use crate::proxy_logging::{clear_logs, get_logs, send_log, send_log_with_app};
 use crate::proxy_context::{enqueue_request_log, format_access_log, format_headers_for_log, RequestContext};
 use crate::proxy_helpers::{cached_index_html, cached_serve_dir, check_etag_match, content_type_allowed, expand_proxy_header_value, get_or_create_etag, is_asset_path, is_hop_header_fast};
+use crate::proxy_lifecycle::{Phase, ServerHandle, PROXY_STATE};
 use crate::proxy_listen::precheck_rule;
 use crate::proxy_logging::{init_log_task, push_log_lazy, LOG_TX, SKIP_HEADERS};
 use crate::proxy_matching::match_route;
@@ -24,54 +25,6 @@ use tauri::Emitter;
 use tower::util::ServiceExt;
 use tower_http::compression::{CompressionLayer, CompressionLevel};
 use tracing::{error, info};
-
-struct ServerHandle {
-    handle: tauri::async_runtime::JoinHandle<()>,
-    shutdown_tx: tokio::sync::oneshot::Sender<()>,
-}
-
-impl ServerHandle {
-    fn abort(self) {
-        let _ = self.shutdown_tx.send(());
-        self.handle.abort();
-    }
-}
-
-/// 服务器生命周期阶段
-#[derive(Debug, Clone, Copy, PartialEq)]
-enum Phase {
-    Stopped,
-    Starting,
-    Running,
-    Failed,
-}
-
-/// 所有启动/停止相关状态集中在单一 Mutex 内，
-/// 确保状态转换的原子性，消除多个独立 RwLock 之间的竞态窗口。
-struct ProxyState {
-    phase: Phase,
-    /// 每次 stop/start 时递增；异步任务对比自身捕获的 generation
-    /// 与当前值，不匹配则说明已被新的 stop/start 超越，直接退出。
-    generation: u64,
-    expected: usize,
-    started: usize,
-    handles: Vec<ServerHandle>,
-}
-
-impl ProxyState {
-    const fn new() -> Self {
-        Self {
-            phase: Phase::Stopped,
-            generation: 0,
-            expected: 0,
-            started: 0,
-            handles: Vec::new(),
-        }
-    }
-}
-
-static PROXY_STATE: parking_lot::Mutex<ProxyState> =
-    parking_lot::Mutex::new(ProxyState::new());
 
 #[allow(dead_code)]
 async fn resolve_hostname_with_cache(hostname: &str) -> Result<Vec<std::net::IpAddr>> {

@@ -15,6 +15,7 @@ mod proxy_helpers;
 mod proxy_upstream;
 mod proxy_context;
 mod proxy_listen;
+mod proxy_lifecycle;
 mod proxy;
 mod ws_proxy;
 mod stream_proxy;
