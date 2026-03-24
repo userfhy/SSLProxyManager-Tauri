@@ -1,6 +1,7 @@
 pub use crate::proxy_helpers::{cached_content_types, cached_regex};
 pub use crate::proxy_listen::parse_listen_addr;
 pub use crate::proxy_logging::{clear_logs, get_logs, send_log, send_log_with_app};
+pub use crate::proxy_server::start_rule_server;
 use crate::proxy_context::{enqueue_request_log, format_access_log, format_headers_for_log, RequestContext};
 use crate::proxy_helpers::{cached_index_html, cached_serve_dir, check_etag_match, content_type_allowed, expand_proxy_header_value, get_or_create_etag, is_asset_path, is_hop_header_fast};
 use crate::proxy_lifecycle::{Phase, ServerHandle, PROXY_STATE};
@@ -56,22 +57,22 @@ async fn resolve_hostname_with_cache(hostname: &str) -> Result<Vec<std::net::IpA
 
 // 优化后的 AppState：缓存常用配置，减少热路径上的配置克隆
 #[derive(Clone)]
-struct AppState {
-    rule: config::ListenRule,
-    client_follow: reqwest::Client,
-    client_nofollow: reqwest::Client,
-    app: tauri::AppHandle,
+pub(crate) struct AppState {
+    pub(crate) rule: config::ListenRule,
+    pub(crate) client_follow: reqwest::Client,
+    pub(crate) client_nofollow: reqwest::Client,
+    pub(crate) app: tauri::AppHandle,
     // 缓存配置字段，避免每次请求都克隆整个 Config
-    listen_addr: Arc<str>,
-    server_port: u16,
-    stream_proxy: bool,
-    max_body_size: usize,
-    max_response_body_size: usize,
-    http_access_control_enabled: bool,
+    pub(crate) listen_addr: Arc<str>,
+    pub(crate) server_port: u16,
+    pub(crate) stream_proxy: bool,
+    pub(crate) max_body_size: usize,
+    pub(crate) max_response_body_size: usize,
+    pub(crate) http_access_control_enabled: bool,
     // 访问控制所需配置快照：避免每请求 get_config() clone 整个 Config
-    allow_all_lan: bool,
-    allow_all_ip: bool,
-    whitelist: Arc<[config::WhitelistEntry]>,
+    pub(crate) allow_all_lan: bool,
+    pub(crate) allow_all_ip: bool,
+    pub(crate) whitelist: Arc<[config::WhitelistEntry]>,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -327,209 +328,6 @@ pub fn is_effectively_running() -> bool {
     matches!(PROXY_STATE.lock().phase, Phase::Starting | Phase::Running)
 }
 
-async fn start_rule_server(
-    app: tauri::AppHandle,
-    rule: config::ListenRule,
-    listen_addr: String,
-    shutdown_rx: tokio::sync::oneshot::Receiver<()>,
-) -> Result<()> {
-    let (addr, need_dual_stack) = parse_listen_addr(&listen_addr)?;
-    let server_port = addr.port();
-
-    let cfg = crate::config::get_config();
-
-    let client_builder = || {
-        let mut builder = reqwest::Client::builder()
-            .redirect(Policy::limited(10))
-            .danger_accept_invalid_certs(true)
-            .pool_max_idle_per_host(cfg.upstream_pool_max_idle)
-            .pool_idle_timeout(Duration::from_secs(cfg.upstream_pool_idle_timeout_sec))
-            .tcp_keepalive(Duration::from_secs(60))
-            .tcp_nodelay(true)
-            .connect_timeout(Duration::from_millis(cfg.upstream_connect_timeout_ms))
-            .timeout(Duration::from_millis(cfg.upstream_read_timeout_ms));
-
-        // HTTP/2 优化配置（仅在启用 HTTP/2 时应用）
-        if cfg.enable_http2 {
-            builder = builder
-                .http2_keep_alive_interval(Duration::from_secs(10))      // HTTP/2 保活间隔
-                .http2_keep_alive_timeout(Duration::from_secs(20))       // HTTP/2 保活超时
-                .http2_adaptive_window(true)                             // HTTP/2 自适应窗口
-                .http2_max_frame_size(Some(16384 * 4));                 // 增大 HTTP/2 帧大小（64KB）
-        } else {
-            builder = builder.http1_only();
-        }
-
-        builder = builder.connection_verbose(false);                     // 禁用详细连接日志
-
-        builder
-    };
-
-    let follow_builder = client_builder();
-    let nofollow_builder = client_builder().redirect(Policy::none());
-
-    let client_follow = follow_builder
-        .build()
-        .context("Failed to create upstream HTTP client")?;
-
-    let client_nofollow = nofollow_builder
-        .build()
-        .context("Failed to create upstream HTTP client")?;
-
-    // 缓存常用配置到 AppState
-    let state = AppState {
-        rule: rule.clone(),
-        client_follow,
-        client_nofollow,
-        app: app.clone(),
-        listen_addr: Arc::from(listen_addr.clone()),
-        server_port,
-        stream_proxy: cfg.stream_proxy,
-        max_body_size: cfg.max_body_size,
-        max_response_body_size: cfg.max_response_body_size,
-        http_access_control_enabled: cfg.http_access_control_enabled,
-        allow_all_lan: cfg.allow_all_lan,
-        allow_all_ip: cfg.allow_all_ip,
-        whitelist: Arc::from(cfg.whitelist),
-    };
-
-    // 初始化速率限制器（如果在该规则中启用）
-    if let Some(enabled) = rule.rate_limit_enabled {
-        if enabled {
-            let rate_limit_config = rate_limit::RateLimitConfig {
-                enabled: true,
-                requests_per_second: rule.rate_limit_requests_per_second.unwrap_or(10),
-                burst_size: rule.rate_limit_burst_size.unwrap_or(20),
-                ban_seconds: rule.rate_limit_ban_seconds.unwrap_or(0),
-            };
-            rate_limit::get_rate_limiter(&listen_addr, rate_limit_config);
-        }
-    }
-
-    let router = Router::new().route("/healthz", any(healthz));
-    let mut app = router.fallback(any(proxy_handler)).with_state(state);
-    
-    // 应用压缩中间件（如果启用）
-    if cfg.compression_enabled {
-        // CompressionLayer 会根据客户端的 Accept-Encoding 自动选择最佳压缩算法
-        // 如果同时启用了 gzip 和 brotli，brotli 会优先（如果客户端支持）
-        let mut compression_layer = CompressionLayer::new();
-        
-        if cfg.compression_gzip {
-            // Gzip 压缩等级范围：1-9，默认 6
-            let gzip_level = cfg.compression_gzip_level.clamp(1, 9) as i32;
-            compression_layer = compression_layer.gzip(true).quality(CompressionLevel::Precise(gzip_level));
-        }
-        
-        if cfg.compression_brotli {
-            // Brotli 压缩等级范围：0-11，默认 6
-            let brotli_level = cfg.compression_brotli_level.clamp(0, 11) as i32;
-            compression_layer = compression_layer.br(true).quality(CompressionLevel::Precise(brotli_level));
-        }
-        
-        app = app.layer(compression_layer);
-    }
-    
-    let app = app.into_make_service_with_connect_info::<SocketAddr>();
-
-    let routes_summary = rule
-        .routes
-        .iter()
-        .map(|rt| {
-            format!(
-                "{} -> {} upstreams",
-                rt.path.as_deref().unwrap_or("/"),
-                rt.upstreams.len()
-            )
-        })
-        .collect::<Vec<_>>()
-        .join(", ");
-
-    send_log(format!("[HTTP] Listening address: {} -> {}", listen_addr, addr));
-    info!("[HTTP] Listening address: {} -> {}", listen_addr, addr);
-
-    if rule.ssl_enable {
-        let tls_cfg = axum_server::tls_rustls::RustlsConfig::from_pem_file(
-            rule.cert_file.clone(),
-            rule.key_file.clone(),
-        )
-        .await
-        .with_context(|| "Failed to load TLS certificate/private key")?;
-
-        send_log(format!("[HTTP] HTTPS enabled: {}", addr));
-
-        if need_dual_stack && addr.is_ipv6() {
-            send_log(format!(
-                "[HTTP] Listening on IPv6 (dual-stack): {} (supports both IPv4 and IPv6)",
-                addr
-            ));
-            info!(
-                "[HTTP] Listening on IPv6 (dual-stack): {} (supports both IPv4 and IPv6)",
-                addr
-            );
-        }
-
-        send_log(format!(
-            "[HTTP NODE {}] Server started | SSL: {} | Routes: [{}] | Allow all LAN: {}",
-            listen_addr, rule.ssl_enable, routes_summary, cfg.allow_all_lan
-        ));
-
-        // 使用 axum_server::Handle 实现优雅关闭：收到信号后立即停止接受新连接，
-        // 并对所有已有的 keep-alive 连接发送 Connection: close，等待它们自然结束，
-        // 避免旧端口在服务停止后仍可被访问。
-        let ax_handle = axum_server::Handle::new();
-        let ax_shutdown_handle = ax_handle.clone();
-        tauri::async_runtime::spawn(async move {
-            let _ = shutdown_rx.await;
-            info!("Shutdown signal received, HTTPS service {} is stopping", addr);
-            ax_shutdown_handle.graceful_shutdown(Some(Duration::from_secs(5)));
-        });
-
-        axum_server::bind_rustls(addr, tls_cfg)
-            .handle(ax_handle)
-            .serve(app)
-            .await
-            .map_err(|e| anyhow!("HTTPS service failed: {e}"))?;
-    } else {
-        send_log(format!("[HTTP] HTTP enabled: {}", addr));
-
-        if need_dual_stack && addr.is_ipv6() {
-            send_log(format!(
-                "[HTTP] Listening on IPv6 (dual-stack): {} (supports both IPv4 and IPv6)",
-                addr
-            ));
-            info!(
-                "[HTTP] Listening on IPv6 (dual-stack): {} (supports both IPv4 and IPv6)",
-                addr
-            );
-        }
-
-        send_log(format!(
-            "[HTTP NODE {}] Server started | SSL: {} | Routes: [{}] | Allow all LAN: {}",
-            listen_addr, rule.ssl_enable, routes_summary, cfg.allow_all_lan
-        ));
-
-        // with_graceful_shutdown：收到信号后立即停止接受新连接，
-        // 并对所有已有的 keep-alive 连接发送 Connection: close，等待它们自然结束，
-        // 避免旧端口在服务停止后仍可被访问。
-
-        // 使用优化的 TCP 监听器
-        use crate::network_optimizer::TcpOptimizer;
-        let optimizer = TcpOptimizer::default();
-        let listener = optimizer.optimize_listener(addr).await?;
-
-        axum::serve(listener, app)
-            .with_graceful_shutdown(async move {
-                let _ = shutdown_rx.await;
-                info!("Shutdown signal received, HTTP service {} is stopping", addr);
-            })
-            .await
-            .map_err(|e| anyhow!("HTTP service failed: {e}"))?;
-    }
-
-    Ok(())
-}
-
 /// 解析监听地址，返回主地址和是否需要同时绑定 IPv4/IPv6
 pub(crate) async fn healthz() -> impl IntoResponse {
     (StatusCode::OK, "OK")
@@ -574,7 +372,7 @@ fn is_basic_auth_ok(
 
 
 #[inline]
-async fn proxy_handler(
+pub(crate) async fn proxy_handler(
     ConnectInfo(remote): ConnectInfo<SocketAddr>,
     State(state): State<AppState>,
     req: Request<Body>,
