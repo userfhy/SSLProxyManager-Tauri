@@ -10,21 +10,17 @@ use crate::proxy_logging::{init_log_task, push_log_lazy, LOG_TX, SKIP_HEADERS};
 use crate::proxy_matching::match_route;
 use crate::proxy_upstream::pick_upstream_smooth;
 use crate::{access_control, cache_optimizer, config, metrics, rate_limit, stream_proxy, ws_proxy};
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Result};
 use axum::body::Bytes;
 use axum::{
     body::Body,
     extract::{connect_info::ConnectInfo, State},
     http::{HeaderMap, HeaderName, HeaderValue, Method, Request, StatusCode, Uri},
     response::{IntoResponse, Response},
-    routing::any,
-    Router,
 };
-use reqwest::redirect::Policy;
-use std::{net::SocketAddr, sync::Arc, time::Duration};
+use std::{net::SocketAddr, sync::Arc};
 use tauri::Emitter;
 use tower::util::ServiceExt;
-use tower_http::compression::{CompressionLayer, CompressionLevel};
 use tracing::{error, info};
 
 #[allow(dead_code)]

@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Context, Result};
-use axum::{extract::connect_info::ConnectInfo, response::IntoResponse, routing::any, Router};
+use axum::{routing::any, Router};
 use reqwest::redirect::Policy;
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 use tower_http::compression::{CompressionLayer, CompressionLevel};
