@@ -3,6 +3,7 @@ pub use crate::proxy_logging::{clear_logs, get_logs, send_log, send_log_with_app
 use crate::proxy_helpers::{cached_index_html, cached_serve_dir, check_etag_match, content_type_allowed, expand_proxy_header_value, get_or_create_etag, is_asset_path, is_hop_header_fast};
 use crate::proxy_logging::{init_log_task, push_log_lazy, LOG_TX, SKIP_HEADERS};
 use crate::proxy_matching::match_route;
+use crate::proxy_upstream::pick_upstream_smooth;
 use crate::{access_control, config, metrics, ws_proxy, stream_proxy, rate_limit, cache_optimizer};
 use regex::Regex;
 use anyhow::{anyhow, Context, Result};
@@ -78,26 +79,6 @@ impl ProxyState {
 
 static PROXY_STATE: parking_lot::Mutex<ProxyState> =
     parking_lot::Mutex::new(ProxyState::new());
-
-#[derive(Debug, Clone)]
-struct SmoothUpstream {
-    url: String,
-    weight: i32,
-    current: i32,
-}
-
-#[derive(Debug, Clone)]
-struct SmoothLbState {
-    signature: String,
-    total_weight: i32,
-    upstreams: Vec<SmoothUpstream>,
-}
-
-// 使用 DashMap 避免全局读锁；内部用 Mutex 而非 RwLock，
-// 因为 SWRR 算法每次选择都需要修改 current 权重（写操作为主），
-// Mutex 在写多读少场景下比 RwLock 开销更低。
-static UPSTREAM_LB: once_cell::sync::Lazy<DashMap<String, Arc<parking_lot::Mutex<SmoothLbState>>>> =
-    once_cell::sync::Lazy::new(DashMap::new);
 
 async fn resolve_hostname_with_cache(hostname: &str) -> Result<Vec<std::net::IpAddr>> {
     use std::net::IpAddr;
@@ -719,92 +700,6 @@ pub(crate) fn parse_listen_addr(s: &str) -> Result<(SocketAddr, bool)> {
 
 async fn healthz() -> impl IntoResponse {
     (StatusCode::OK, "OK")
-}
-
-#[inline]
-fn upstream_signature(route: &config::Route) -> String {
-    // 使用缓冲池优化字符串拼接
-    use std::fmt::Write;
-    let mut buf = crate::buffer_pool::acquire_buffer();
-
-    let mut parts: Vec<String> = route
-        .upstreams
-        .iter()
-        .map(|u| format!("{}#{}", u.url, u.weight))
-        .collect();
-    parts.sort_unstable(); // 使用 sort_unstable 更快
-
-    for (i, part) in parts.iter().enumerate() {
-        if i > 0 {
-            let _ = write!(buf, "|");
-        }
-        let _ = write!(buf, "{}", part);
-    }
-
-    std::str::from_utf8(&buf).unwrap_or("").to_string()
-}
-
-#[inline]
-fn pick_upstream_smooth(route: &config::Route) -> Option<String> {
-    // 快速路径：单个 upstream 直接返回引用克隆
-    match route.upstreams.len() {
-        0 => return None,
-        1 => return Some(route.upstreams[0].url.clone()),
-        _ => {}
-    }
-
-    let route_id = route.id.as_deref().unwrap_or("").trim();
-    if route_id.is_empty() {
-        return Some(route.upstreams[0].url.clone());
-    }
-
-    let sig = upstream_signature(route);
-
-    // 使用 DashMap：无需全局读锁，性能更好
-    let state_lock = UPSTREAM_LB
-        .entry(route_id.to_string())
-        .or_insert_with(|| {
-            Arc::new(parking_lot::Mutex::new(SmoothLbState {
-                signature: String::new(),
-                total_weight: 0,
-                upstreams: Vec::new(),
-            }))
-        })
-        .clone();
-
-    let mut entry = state_lock.lock();
-
-    if entry.signature != sig || entry.upstreams.len() != route.upstreams.len() {
-        let ups: Vec<SmoothUpstream> = route
-            .upstreams
-            .iter()
-            .map(|u| SmoothUpstream {
-                url: u.url.clone(),
-                weight: std::cmp::max(1, u.weight),
-                current: 0,
-            })
-            .collect();
-        let total = ups.iter().map(|u| u.weight).sum::<i32>();
-
-        entry.signature = sig;
-        entry.total_weight = std::cmp::max(1, total);
-        entry.upstreams = ups;
-    }
-
-    let mut best_idx = 0usize;
-    for i in 0..entry.upstreams.len() {
-        let w = entry.upstreams[i].weight;
-        entry.upstreams[i].current = entry.upstreams[i].current.saturating_add(w);
-        if entry.upstreams[i].current > entry.upstreams[best_idx].current {
-            best_idx = i;
-        }
-    }
-
-    entry.upstreams[best_idx].current = entry.upstreams[best_idx]
-        .current
-        .saturating_sub(entry.total_weight);
-
-    Some(entry.upstreams[best_idx].url.clone())
 }
 
 #[inline]
