@@ -6,9 +6,10 @@ pub use crate::proxy_runtime::{is_effectively_running, is_running, start_server,
 use crate::proxy_auth::is_basic_auth_ok;
 use crate::proxy_context::{enqueue_request_log, format_access_log, format_headers_for_log, RequestContext};
 use crate::proxy_early::{handle_access_control, handle_basic_auth_failure, handle_missing_route, handle_rate_limit};
-use crate::proxy_helpers::{cached_index_html, cached_serve_dir, check_etag_match, content_type_allowed, expand_proxy_header_value, get_or_create_etag, is_asset_path, is_hop_header_fast};
+use crate::proxy_helpers::{content_type_allowed, expand_proxy_header_value, is_hop_header_fast};
 use crate::proxy_logging::{push_log_lazy, SKIP_HEADERS};
 use crate::proxy_matching::match_route;
+use crate::proxy_static::serve_static_owned;
 use crate::proxy_upstream::pick_upstream_smooth;
 use crate::{cache_optimizer, config};
 use anyhow::{anyhow, Result};
@@ -16,11 +17,10 @@ use axum::body::Bytes;
 use axum::{
     body::Body,
     extract::{connect_info::ConnectInfo, State},
-    http::{HeaderMap, HeaderName, HeaderValue, Method, Request, StatusCode, Uri},
+    http::{HeaderMap, HeaderName, HeaderValue, Request, StatusCode, Uri},
     response::{IntoResponse, Response},
 };
 use std::{net::SocketAddr, sync::Arc};
-use tower::util::ServiceExt;
 
 #[allow(dead_code)]
 async fn resolve_hostname_with_cache(hostname: &str) -> Result<Vec<std::net::IpAddr>> {
@@ -121,84 +121,10 @@ pub(crate) async fn proxy_handler(
         return handle_missing_route(&state, &ctx, &remote, &matched_route_id);
     };
 
-    // 2. 优先处理静态资源
     if let Some(dir) = route.static_dir.as_ref() {
-        let serve_dir = cached_serve_dir(dir);
-        // 先提取 If-None-Match header 并转换为 owned String，避免 req 被 move 后无法访问
-        let request_etag: Option<String> = req.headers()
-            .get("if-none-match")
-            .and_then(|v| v.to_str().ok())
-            .map(|s| s.to_string());
-        
-        let response = match serve_dir.oneshot(req).await {
-            Ok(r) => r,
-            Err(never) => match never {},
-        };
-        let status = response.status();
-        let response = response.map(Body::new);
-
-        if status.is_success() || status.is_redirection() {
-            // 获取文件路径以生成 ETag
-            let full_path = std::path::Path::new(dir);
-            if let Some(etag) = get_or_create_etag(full_path) {
-                // 检查是否命中缓存（304 Not Modified）
-                if check_etag_match(request_etag.as_deref(), &etag) {
-                    push_log_lazy(&state.app, || format_access_log(node, &ctx, StatusCode::NOT_MODIFIED));
-                    enqueue_request_log(node, &ctx, &remote, StatusCode::NOT_MODIFIED, "", &matched_route_id);
-                    return (StatusCode::NOT_MODIFIED).into_response();
-                }
-                
-                // 添加 ETag 头
-                let mut resp = response.into_response();
-                resp.headers_mut().insert(
-                    axum::http::header::ETAG,
-                    HeaderValue::from_str(&etag).unwrap_or_else(|_| HeaderValue::from_static("")),
-                );
-                
-                push_log_lazy(&state.app, || format_access_log(node, &ctx, status));
-                enqueue_request_log(node, &ctx, &remote, status, "", &matched_route_id);
-                return resp;
-            }
-            
-            push_log_lazy(&state.app, || format_access_log(node, &ctx, status));
-            enqueue_request_log(node, &ctx, &remote, status, "", &matched_route_id);
-            return response;
+        if !state.stream_proxy {
+            return serve_static_owned(&state, &ctx, &remote, &matched_route_id, dir, req).await;
         }
-
-        // SPA 回退
-        if status == StatusCode::NOT_FOUND
-            && (ctx.method == Method::GET || ctx.method == Method::HEAD)
-            && !is_asset_path(&ctx.path)
-        {
-            if let Some(bytes) = cached_index_html(dir).await {
-                let mut resp = Response::new(Body::from(bytes.clone()));
-                resp.headers_mut().insert(
-                    axum::http::header::CONTENT_TYPE,
-                    HeaderValue::from_static("text/html; charset=utf-8"),
-                );
-                
-                // SPA 也要支持 ETag
-                let etag = format!("\"spa-{:x}\"", bytes.len());
-                if check_etag_match(request_etag.as_deref(), &etag) {
-                    let status = StatusCode::NOT_MODIFIED;
-                    push_log_lazy(&state.app, || format_access_log(node, &ctx, status));
-                    enqueue_request_log(node, &ctx, &remote, status, "", &matched_route_id);
-                    return (status).into_response();
-                }
-                resp.headers_mut().insert(
-                    axum::http::header::ETAG,
-                    HeaderValue::from_str(&etag).unwrap_or_else(|_| HeaderValue::from_static("")),
-                );
-
-                let status = StatusCode::OK;
-                push_log_lazy(&state.app, || format_access_log(node, &ctx, status));
-                enqueue_request_log(node, &ctx, &remote, status, "", &matched_route_id);
-
-                return resp;
-            }
-        }
-
-        return response;
     }
 
     // 3. 处理反代逻辑

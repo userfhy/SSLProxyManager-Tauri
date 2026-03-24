@@ -20,6 +20,7 @@ mod proxy_server;
 mod proxy_runtime;
 mod proxy_auth;
 mod proxy_early;
+mod proxy_static;
 mod proxy;
 mod ws_proxy;
 mod stream_proxy;
