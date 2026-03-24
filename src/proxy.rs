@@ -4,9 +4,8 @@ use crate::proxy_helpers::{cached_index_html, cached_serve_dir, check_etag_match
 use crate::proxy_logging::{init_log_task, push_log_lazy, LOG_TX, SKIP_HEADERS};
 use crate::proxy_matching::match_route;
 use crate::proxy_upstream::pick_upstream_smooth;
-use crate::{access_control, config, metrics, ws_proxy, stream_proxy, rate_limit, cache_optimizer};
-use regex::Regex;
-use anyhow::{anyhow, Context, Result};
+use crate::{access_control, config, metrics, rate_limit, stream_proxy, ws_proxy};
+use anyhow::{Context, Result};
 use axum::body::Bytes;
 use axum::{
     body::Body,
@@ -16,19 +15,10 @@ use axum::{
     routing::any,
     Router,
 };
-use parking_lot::RwLock;
 use reqwest::redirect::Policy;
-use std::{
-    collections::{HashSet, VecDeque},
-    net::SocketAddr,
-    sync::Arc,
-    time::{Duration, Instant},
-};
-use dashmap::DashMap;
-
+use std::{net::SocketAddr, sync::Arc, time::Duration};
 use tauri::Emitter;
 use tower::util::ServiceExt;
-use tower_http::services::ServeDir;
 use tower_http::compression::{CompressionLayer, CompressionLevel};
 use tracing::{error, info};
 
@@ -80,6 +70,7 @@ impl ProxyState {
 static PROXY_STATE: parking_lot::Mutex<ProxyState> =
     parking_lot::Mutex::new(ProxyState::new());
 
+#[allow(dead_code)]
 async fn resolve_hostname_with_cache(hostname: &str) -> Result<Vec<std::net::IpAddr>> {
     use std::net::IpAddr;
 
