@@ -6,9 +6,9 @@ use tower_http::compression::{CompressionLayer, CompressionLevel};
 use tracing::info;
 
 use crate::{config, rate_limit};
-use crate::proxy::{healthz, proxy_handler, AppState};
-use crate::proxy::listen::parse_listen_addr;
-use crate::proxy::logging::send_log;
+use super::listen::parse_listen_addr;
+use super::logging::send_log;
+use super::{healthz, proxy_handler, AppState};
 
 fn build_upstream_clients(cfg: &config::Config) -> Result<(reqwest::Client, reqwest::Client)> {
     let client_builder = || {

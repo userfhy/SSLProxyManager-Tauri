@@ -2,10 +2,10 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use std::net::SocketAddr;
 
-use crate::proxy::AppState;
-use crate::proxy::auth::unauthorized_response;
-use crate::proxy::context::{enqueue_request_log, format_access_log, format_headers_for_log, RequestContext};
-use crate::proxy::logging::{push_log_lazy, send_log_with_app};
+use super::AppState;
+use super::auth::unauthorized_response;
+use super::context::{enqueue_request_log, format_access_log, format_headers_for_log, RequestContext};
+use super::logging::{push_log_lazy, send_log_with_app};
 use crate::{access_control, metrics, rate_limit};
 
 pub fn handle_access_control(

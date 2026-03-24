@@ -4,10 +4,10 @@ use axum::response::{IntoResponse, Response};
 use std::net::SocketAddr;
 use tower::util::ServiceExt;
 
-use crate::proxy::AppState;
-use crate::proxy::context::{enqueue_request_log, format_access_log, RequestContext};
-use crate::proxy::helpers::{cached_index_html, cached_serve_dir, check_etag_match, get_or_create_etag, is_asset_path};
-use crate::proxy::logging::push_log_lazy;
+use super::AppState;
+use super::context::{enqueue_request_log, format_access_log, RequestContext};
+use super::helpers::{cached_index_html, cached_serve_dir, check_etag_match, get_or_create_etag, is_asset_path};
+use super::logging::push_log_lazy;
 
 pub async fn serve_static_owned(
     state: &AppState,

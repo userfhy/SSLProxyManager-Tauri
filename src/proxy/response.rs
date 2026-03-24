@@ -1,8 +1,8 @@
-use super::{cached_regex, send_log_with_app, AppState};
 use crate::config;
-use crate::proxy::context::{enqueue_request_log, format_access_log, format_headers_for_log, RequestContext};
-use crate::proxy::helpers::{content_type_allowed, is_hop_header_fast};
-use crate::proxy::logging::push_log_lazy;
+use super::{cached_regex, send_log_with_app, AppState};
+use super::context::{enqueue_request_log, format_access_log, format_headers_for_log, RequestContext};
+use super::helpers::{content_type_allowed, is_hop_header_fast};
+use super::logging::push_log_lazy;
 use axum::body::Bytes;
 use axum::{
     body::Body,
@@ -52,8 +52,8 @@ pub async fn handle_upstream_response(
     }
 
     if let Some(headers_to_remove) = route.remove_headers.as_ref() {
-        for header_name in headers_to_remove {
-            let trimmed = header_name.trim();
+        for header_name in headers_to_remove.iter() {
+            let trimmed: &str = header_name.trim();
             if trimmed.is_empty() {
                 continue;
             }
@@ -139,7 +139,7 @@ fn apply_response_body_replace(
                     continue;
                 }
 
-                if let Some(ref content_types) = rule.content_types {
+                if let Some(content_types) = rule.content_types.as_ref() {
                     if !content_type_allowed(response_headers, content_types) {
                         continue;
                     }

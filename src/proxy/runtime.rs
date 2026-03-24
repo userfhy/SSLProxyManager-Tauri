@@ -3,10 +3,10 @@ use tauri::Emitter;
 use tracing::{error, info};
 
 use crate::{config, stream_proxy, ws_proxy};
-use crate::proxy::lifecycle::{Phase, PROXY_STATE, ServerHandle};
-use crate::proxy::listen::precheck_rule;
-use crate::proxy::logging::{init_log_task, send_log, send_log_with_app, LOG_TX};
-use crate::proxy::server::start_rule_server;
+use super::lifecycle::{Phase, PROXY_STATE, ServerHandle};
+use super::listen::precheck_rule;
+use super::logging::{init_log_task, send_log, send_log_with_app, LOG_TX};
+use super::server::start_rule_server;
 
 pub fn start_server(app: tauri::AppHandle) -> Result<()> {
     init_log_task(app.clone());
@@ -102,7 +102,7 @@ pub fn start_server(app: tauri::AppHandle) -> Result<()> {
                     error!("Failed to start listener({listen_addr_clone}): {e}");
                     send_log(format!("Failed to start listener({listen_addr_clone}): {e}"));
 
-                    let payload = crate::proxy::RuleStartErrorPayload {
+                    let payload = super::RuleStartErrorPayload {
                         listen_addr: listen_addr_clone.clone(),
                         error: e.to_string(),
                     };

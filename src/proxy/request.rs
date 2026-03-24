@@ -5,10 +5,10 @@ use axum::response::{IntoResponse, Response};
 use regex::Regex;
 use std::net::SocketAddr;
 
-use crate::proxy::{upstream::build_upstream_url, AppState};
-use crate::proxy::context::{enqueue_request_log, format_access_log, RequestContext};
-use crate::proxy::helpers::{cached_regex, content_type_allowed, expand_proxy_header_value, is_hop_header_fast};
-use crate::proxy::logging::{push_log_lazy, SKIP_HEADERS};
+use super::{upstream::build_upstream_url, AppState};
+use super::context::{enqueue_request_log, format_access_log, RequestContext};
+use super::helpers::{cached_regex, content_type_allowed, expand_proxy_header_value, is_hop_header_fast};
+use super::logging::{push_log_lazy, SKIP_HEADERS};
 
 pub struct PreparedProxyRequest {
     pub target: String,
@@ -62,7 +62,7 @@ pub async fn prepare_proxy_request(
         .map(|rules| rules.iter().any(|r| r.enabled))
         .unwrap_or(false);
 
-    let mut upstream_url = crate::proxy::upstream::pick_upstream_smooth(route)
+    let mut upstream_url = super::upstream::pick_upstream_smooth(route)
         .ok_or_else(|| (StatusCode::NOT_FOUND, "No static directory or upstream configured").into_response())?;
 
     let final_uri = rewrite_uri(route, &ctx.uri);

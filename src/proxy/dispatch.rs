@@ -2,13 +2,13 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use std::net::SocketAddr;
 
-use crate::proxy::AppState;
-use crate::proxy::auth::is_basic_auth_ok;
-use crate::proxy::context::RequestContext;
-use crate::proxy::early::{
+use super::AppState;
+use super::auth::is_basic_auth_ok;
+use super::context::RequestContext;
+use super::early::{
     handle_access_control, handle_basic_auth_failure, handle_missing_route, handle_rate_limit,
 };
-use crate::proxy::matching::match_route;
+use super::matching::match_route;
 
 pub struct GuardOutcome<'a> {
     pub route: &'a crate::config::Route,
