@@ -552,6 +552,8 @@ onMounted(async () => {
 // 处理条款接受后的逻辑
 const handleTermsAccepted = async () => {
   showTermsDialog.value = false
+  // 继续初始化应用（但保留已加载的配置，避免覆盖用户设置）
+  await initializeAppWithoutReloadConfig()
 }
 
 const handleQuit = () => {
@@ -701,6 +703,11 @@ const initializeApp = async () => {
 }
 
 // 初始化应用（不重新加载配置，保留已有配置状态）
+const initializeAppWithoutReloadConfig = async () => {
+  await initializeAppCore()
+  // 不重新加载配置，保留用户已设置的配置状态（如数据库持久化开关）
+}
+
 // 组件卸载时清理定时器
 onBeforeUnmount(() => {
   stopAutoTheme()
