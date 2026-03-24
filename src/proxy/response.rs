@@ -11,7 +11,7 @@ use axum::{
 };
 use std::net::SocketAddr;
 
-pub struct ProxyResponseMeta<'a> {
+pub(crate) struct ProxyResponseMeta<'a> {
     pub target: &'a str,
     pub req_body_size: Option<usize>,
     pub outbound_headers_snapshot: &'a HeaderMap,

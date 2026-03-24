@@ -10,7 +10,7 @@ use super::context::{enqueue_request_log, format_access_log, RequestContext};
 use super::helpers::{cached_regex, content_type_allowed, expand_proxy_header_value, is_hop_header_fast};
 use super::logging::{push_log_lazy, SKIP_HEADERS};
 
-pub struct PreparedProxyRequest {
+pub(crate) struct PreparedProxyRequest {
     pub target: String,
     pub req_body_size: Option<usize>,
     pub outbound_headers_snapshot: HeaderMap,

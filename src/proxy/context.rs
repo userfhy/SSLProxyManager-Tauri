@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use crate::{access_control, metrics};
 
-pub struct RequestContext {
+pub(crate) struct RequestContext {
     pub client_ip: Arc<str>,
     started_at: std::time::Instant,
     pub client_ip_header: Arc<str>,

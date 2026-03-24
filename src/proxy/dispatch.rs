@@ -10,7 +10,7 @@ use super::early::{
 };
 use super::matching::match_route;
 
-pub struct GuardOutcome<'a> {
+pub(crate) struct GuardOutcome<'a> {
     pub route: &'a crate::config::Route,
     pub matched_route_id: String,
 }
