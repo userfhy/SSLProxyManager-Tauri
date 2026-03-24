@@ -11,6 +11,7 @@ pub mod response;
 pub mod runtime;
 pub mod server;
 pub mod static_files;
+pub mod types;
 pub mod upstream;
 
 pub use auth::healthz;
@@ -18,6 +19,8 @@ pub use helpers::{cached_content_types, cached_regex};
 pub use listen::parse_listen_addr;
 pub use logging::{clear_logs, get_logs, send_log_with_app};
 pub use runtime::{is_effectively_running, is_running, start_server, stop_server};
+pub use types::RuleStartErrorPayload;
+use types::AppState;
 
 use auth::is_basic_auth_ok;
 use context::RequestContext;
@@ -26,37 +29,13 @@ use matching::match_route;
 use request::prepare_proxy_request;
 use response::{handle_upstream_response, ProxyResponseMeta};
 use static_files::serve_static_owned;
-use crate::config;
 use axum::{
     body::Body,
     extract::{connect_info::ConnectInfo, State},
     http::{Request, StatusCode},
     response::{IntoResponse, Response},
 };
-use std::{net::SocketAddr, sync::Arc};
-
-#[derive(Clone)]
-pub(crate) struct AppState {
-    pub(crate) rule: config::ListenRule,
-    pub(crate) client_follow: reqwest::Client,
-    pub(crate) client_nofollow: reqwest::Client,
-    pub(crate) app: tauri::AppHandle,
-    pub(crate) listen_addr: Arc<str>,
-    pub(crate) server_port: u16,
-    pub(crate) stream_proxy: bool,
-    pub(crate) max_body_size: usize,
-    pub(crate) max_response_body_size: usize,
-    pub(crate) http_access_control_enabled: bool,
-    pub(crate) allow_all_lan: bool,
-    pub(crate) allow_all_ip: bool,
-    pub(crate) whitelist: Arc<[config::WhitelistEntry]>,
-}
-
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct RuleStartErrorPayload {
-    pub listen_addr: String,
-    pub error: String,
-}
+use std::net::SocketAddr;
 
 #[inline]
 pub(crate) async fn proxy_handler(
