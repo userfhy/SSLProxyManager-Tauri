@@ -27,11 +27,10 @@ use request::prepare_proxy_request;
 use response::{handle_upstream_response, ProxyResponseMeta};
 use static_files::serve_static_owned;
 use crate::config;
-use anyhow::Result;
 use axum::{
     body::Body,
     extract::{connect_info::ConnectInfo, State},
-    http::{Request, StatusCode, Uri},
+    http::{Request, StatusCode},
     response::{IntoResponse, Response},
 };
 use std::{net::SocketAddr, sync::Arc};
