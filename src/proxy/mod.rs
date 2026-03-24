@@ -1,5 +1,6 @@
 pub mod auth;
 pub mod context;
+pub mod dispatch;
 pub mod early;
 pub mod helpers;
 pub mod lifecycle;
@@ -22,10 +23,8 @@ pub use runtime::{is_effectively_running, is_running, start_server, stop_server}
 pub use types::RuleStartErrorPayload;
 use types::AppState;
 
-use auth::is_basic_auth_ok;
 use context::RequestContext;
-use early::{handle_access_control, handle_basic_auth_failure, handle_missing_route, handle_rate_limit};
-use matching::match_route;
+use dispatch::{resolve_route_and_run_guards, GuardOutcome};
 use request::prepare_proxy_request;
 use response::{handle_upstream_response, ProxyResponseMeta};
 use static_files::serve_static_owned;
@@ -47,40 +46,18 @@ pub(crate) async fn proxy_handler(
     let uri = req.uri().clone();
 
     let ctx = RequestContext::new(remote, req.headers(), &method, &uri);
-    let host = ctx.host_header.as_ref();
-    let (route, matched_route_id) = match_route(&state.rule.routes, host, &ctx.path, &method, req.headers());
-
-    if let Some(resp) = handle_access_control(&state, &ctx, &remote, req.headers(), &matched_route_id) {
-        return resp;
-    }
-
-    if let Some(resp) = handle_rate_limit(&state, &ctx, &remote, &matched_route_id) {
-        return resp;
-    }
-
-    if let Some(resp) = handle_basic_auth_failure(
-        &state,
-        &ctx,
-        req.headers(),
-        &remote,
-        &matched_route_id,
-        is_basic_auth_ok(&state.rule, route, req.headers()),
-    ) {
-        return resp;
-    }
-
-    let Some(route) = route else {
-        return handle_missing_route(&state, &ctx, &remote, &matched_route_id);
+    let GuardOutcome {
+        route,
+        matched_route_id,
+    } = match resolve_route_and_run_guards(&state, &ctx, &remote, &method, req.headers()) {
+        Ok(v) => v,
+        Err(resp) => return resp,
     };
 
     if let Some(dir) = route.static_dir.as_ref() {
         if !state.stream_proxy {
             return serve_static_owned(&state, &ctx, &remote, &matched_route_id, dir, req).await;
         }
-    }
-
-    if route.upstreams.is_empty() {
-        return (StatusCode::NOT_FOUND, "No static directory or upstream configured").into_response();
     }
 
     let inbound_headers = req.headers().clone();
