@@ -106,8 +106,11 @@ pub(crate) async fn proxy_handler(
 
 #[cfg(test)]
 mod tests {
+    use super::request::rewrite_uri;
     use super::upstream::build_upstream_url;
+    use crate::config::{Route, Upstream, UrlRewriteRule};
     use crate::proxy::matching::{host_matches, normalize_host};
+    use axum::http::Uri;
 
     #[test]
     fn normalize_host_handles_port_and_ipv6() {
@@ -127,5 +130,116 @@ mod tests {
     fn wildcard_host_does_not_partial_match() {
         assert!(!host_matches("*.example.com", "evil-example.com"));
         assert!(!host_matches("*.example.com", "example.com.evil"));
+    }
+
+    #[test]
+    fn build_upstream_url_rewrites_prefix_and_keeps_query() {
+        let uri: Uri = "/api/users?id=42".parse().unwrap();
+        let out = build_upstream_url(
+            "http://backend:8080/",
+            Some("/api"),
+            Some("/v1/"),
+            &uri,
+        )
+        .unwrap();
+
+        assert_eq!(out, "http://backend:8080/v1/users?id=42");
+    }
+
+    #[test]
+    fn build_upstream_url_preserves_original_path_without_proxy_pass_path() {
+        let uri: Uri = "/assets/app.js".parse().unwrap();
+        let out = build_upstream_url("http://cdn.local", Some("/assets"), None, &uri).unwrap();
+
+        assert_eq!(out, "http://cdn.local/assets/app.js");
+    }
+
+    #[test]
+    fn rewrite_uri_applies_enabled_rules_only() {
+        let route = Route {
+            id: Some("rewrite-test".into()),
+            enabled: true,
+            host: None,
+            path: Some("/".into()),
+            proxy_pass_path: None,
+            set_headers: None,
+            static_dir: None,
+            exclude_basic_auth: None,
+            basic_auth_enable: None,
+            basic_auth_username: None,
+            basic_auth_password: None,
+            basic_auth_forward_header: None,
+            follow_redirects: false,
+            compression_enabled: None,
+            compression_gzip: None,
+            compression_brotli: None,
+            compression_min_length: None,
+            url_rewrite_rules: Some(vec![
+                UrlRewriteRule {
+                    pattern: "/old/(.*)".into(),
+                    replacement: "/new/$1".into(),
+                    enabled: true,
+                },
+                UrlRewriteRule {
+                    pattern: "new".into(),
+                    replacement: "ignored".into(),
+                    enabled: false,
+                },
+            ]),
+            request_body_replace: None,
+            response_body_replace: None,
+            remove_headers: None,
+            methods: None,
+            headers: None,
+            upstreams: vec![Upstream {
+                url: "http://backend".into(),
+                weight: 1,
+            }],
+        };
+
+        let uri: Uri = "/old/path?q=1".parse().unwrap();
+        let out = rewrite_uri(&route, &uri);
+        assert_eq!(out.to_string(), "/new/path?q=1");
+    }
+
+    #[test]
+    fn rewrite_uri_ignores_invalid_rewrite_result() {
+        let route = Route {
+            id: Some("rewrite-invalid".into()),
+            enabled: true,
+            host: None,
+            path: Some("/".into()),
+            proxy_pass_path: None,
+            set_headers: None,
+            static_dir: None,
+            exclude_basic_auth: None,
+            basic_auth_enable: None,
+            basic_auth_username: None,
+            basic_auth_password: None,
+            basic_auth_forward_header: None,
+            follow_redirects: false,
+            compression_enabled: None,
+            compression_gzip: None,
+            compression_brotli: None,
+            compression_min_length: None,
+            url_rewrite_rules: Some(vec![UrlRewriteRule {
+                pattern: "^/ok$".into(),
+                replacement: "http://bad uri".into(),
+                enabled: true,
+            }]),
+            request_body_replace: None,
+            response_body_replace: None,
+            remove_headers: None,
+            methods: None,
+            headers: None,
+            upstreams: vec![Upstream {
+                url: "http://backend".into(),
+                weight: 1,
+            }],
+        };
+
+        let uri: Uri = "/ok".parse().unwrap();
+        let out = rewrite_uri(&route, &uri);
+        assert_eq!(out, uri);
     }
 }
