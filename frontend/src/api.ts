@@ -2,186 +2,216 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { openUrl } from '@tauri-apps/plugin-opener';
-import { exit, relaunch } from '@tauri-apps/plugin-process';
+import { relaunch } from '@tauri-apps/plugin-process';
 
-// 配置相关
-export async function GetConfig() {
-  return await invoke('get_config');
+export type AppStatus = 'running' | 'stopped'
+
+export interface MetricsDBStatus {
+  enabled?: boolean
+  connected?: boolean
+  dbPath?: string
+  error?: string | null
+  [key: string]: unknown
 }
 
-export async function SaveConfig(config: any) {
-  return await invoke('save_config', { cfg: config });
+export interface SaveDialogResult extends String {}
+
+export interface QueryMetricsRequest {
+  start_time: number
+  end_time: number
+  listen_addr?: string | null
 }
 
-// 版本相关
-export async function GetVersion() {
-  return await invoke('get_version');
+export interface QueryRequestLogsRequest {
+  start_time: number
+  end_time: number
+  listen_addr?: string | null
+  upstream?: string | null
+  request_path?: string | null
+  client_ip?: string | null
+  status_code?: number | null
+  page: number
+  page_size: number
+  matched_route_id?: string | null
+  sort_by?: string | null
+  sort_order?: string | null
 }
 
-// 更新检查
-export async function CheckUpdate() {
-  return await invoke('check_update');
+export interface DashboardStatsRequest {
+  start_time: number
+  end_time: number
+  listen_addr?: string | null
+  granularity_secs: number
 }
 
-// 打开 URL (使用 Tauri 2 官方 opener 插件)
-export async function OpenURL(url: string) {
+export interface EventUnlisten {
+  (): void
+}
+
+export async function GetConfig<T = unknown>(): Promise<T> {
+  return await invoke<T>('get_config');
+}
+
+export async function SaveConfig<TConfig = unknown, TResult = TConfig>(config: TConfig): Promise<TResult> {
+  return await invoke<TResult>('save_config', { cfg: config });
+}
+
+export async function GetVersion(): Promise<string> {
+  return await invoke<string>('get_version');
+}
+
+export async function CheckUpdate<T = unknown>(): Promise<T> {
+  return await invoke<T>('check_update');
+}
+
+export async function OpenURL(url: string): Promise<void> {
   await openUrl(url);
 }
 
-// 服务器控制
-export async function StartServer() {
-  return await invoke('start_server');
+export async function StartServer(): Promise<void> {
+  return await invoke<void>('start_server');
 }
 
-export async function StopServer() {
-  return await invoke('stop_server');
+export async function StopServer(): Promise<void> {
+  return await invoke<void>('stop_server');
 }
 
-export async function GetStatus() {
-  return await invoke('get_status');
+export async function GetStatus(): Promise<AppStatus> {
+  return await invoke<AppStatus>('get_status');
 }
 
-export async function SetTrayProxyState(running: boolean) {
-  return await invoke('set_tray_proxy_state', { running });
+export async function SetTrayProxyState(running: boolean): Promise<void> {
+  return await invoke<void>('set_tray_proxy_state', { running });
 }
 
-// 日志相关
-export async function GetLogs() {
-  return await invoke('get_logs');
+export async function GetLogs(): Promise<string[]> {
+  return await invoke<string[]>('get_logs');
 }
 
-export async function ClearLogs() {
-  return await invoke('clear_logs');
+export async function ClearLogs(): Promise<void> {
+  return await invoke<void>('clear_logs');
 }
 
-// 指标相关
-export async function GetMetrics() {
-  return await invoke('get_metrics');
+export async function GetMetrics<T = unknown>(): Promise<T> {
+  return await invoke<T>('get_metrics');
 }
 
-export async function GetSystemMetrics(windowSeconds?: number) {
-  return await invoke('get_system_metrics', { windowSeconds });
+export async function GetSystemMetrics<T = unknown>(windowSeconds?: number): Promise<T> {
+  return await invoke<T>('get_system_metrics', { windowSeconds });
 }
 
-export async function SetSystemMetricsSubscription(active: boolean) {
-  return await invoke('set_system_metrics_subscription', { active });
+export async function SetSystemMetricsSubscription(active: boolean): Promise<void> {
+  return await invoke<void>('set_system_metrics_subscription', { active });
 }
 
-export async function QueryHistoricalSystemMetrics(req: any) {
-  return await invoke('query_historical_system_metrics', { req });
+export async function QueryHistoricalSystemMetrics<T = unknown>(req: T): Promise<T> {
+  return await invoke<T>('query_historical_system_metrics', { req });
 }
 
-export async function GetListenAddrs() {
-  return await invoke('get_listen_addrs');
+export async function GetListenAddrs(): Promise<string[]> {
+  return await invoke<string[]>('get_listen_addrs');
 }
 
-export async function QueryHistoricalMetrics(req: any) {
-  return await invoke('query_historical_metrics', { req });
+export async function QueryHistoricalMetrics<T = unknown>(req: QueryMetricsRequest): Promise<T> {
+  return await invoke<T>('query_historical_metrics', { req });
 }
 
-export async function QueryRequestLogs(req: any) {
-  return await invoke('query_request_logs', { req });
+export async function QueryRequestLogs<T = unknown>(req: QueryRequestLogsRequest): Promise<T> {
+  return await invoke<T>('query_request_logs', { req });
 }
 
-export async function GetDashboardStats(req: any) {
-  return await invoke('get_dashboard_stats', { req });
+export async function GetDashboardStats<T = unknown>(req: DashboardStatsRequest): Promise<T> {
+  return await invoke<T>('get_dashboard_stats', { req });
 }
 
-// 黑名单相关
-export async function AddBlacklistEntry(ip: string, reason: string, durationSeconds: number) {
-  return await invoke('add_blacklist_entry', { ip, reason, durationSeconds });
+export async function AddBlacklistEntry<T = unknown>(ip: string, reason: string, durationSeconds: number): Promise<T> {
+  return await invoke<T>('add_blacklist_entry', { ip, reason, durationSeconds });
 }
 
-export async function RemoveBlacklistEntry(ip: string) {
-  return await invoke('remove_blacklist_entry', { ip });
+export async function RemoveBlacklistEntry(ip: string): Promise<void> {
+  return await invoke<void>('remove_blacklist_entry', { ip });
 }
 
-export async function GetBlacklistEntries() {
-  return await invoke('get_blacklist_entries');
+export async function GetBlacklistEntries<T = unknown>(): Promise<T> {
+  return await invoke<T>('get_blacklist_entries');
 }
 
-export async function RefreshBlacklistCache() {
-  return await invoke('refresh_blacklist_cache');
+export async function RefreshBlacklistCache(): Promise<void> {
+  return await invoke<void>('refresh_blacklist_cache');
 }
 
-// 数据库相关
-export async function GetMetricsDBStatus() {
-  return await invoke('get_metrics_db_status');
+export async function GetMetricsDBStatus(): Promise<MetricsDBStatus> {
+  return await invoke<MetricsDBStatus>('get_metrics_db_status');
 }
 
-export async function GetMetricsDBStatusDetail() {
-  return await invoke('get_metrics_db_status_detail');
+export async function GetMetricsDBStatusDetail(): Promise<MetricsDBStatus> {
+  return await invoke<MetricsDBStatus>('get_metrics_db_status_detail');
 }
 
-export async function TestMetricsDBConnection(dbPath: string) {
-  return await invoke('test_metrics_db_connection', { dbPath });
+export async function TestMetricsDBConnection(dbPath: string): Promise<[boolean, string]> {
+  return await invoke<[boolean, string]>('test_metrics_db_connection', { dbPath });
 }
 
-// 文件对话框
-export async function OpenCertFileDialog() {
-  return await invoke('open_cert_file_dialog');
+export async function OpenCertFileDialog(): Promise<string | null> {
+  return await invoke<string | null>('open_cert_file_dialog');
 }
 
-export async function OpenKeyFileDialog() {
-  return await invoke('open_key_file_dialog');
+export async function OpenKeyFileDialog(): Promise<string | null> {
+  return await invoke<string | null>('open_key_file_dialog');
 }
 
-export async function OpenDirectoryDialog() {
-  return await invoke('open_directory_dialog');
+export async function OpenDirectoryDialog(): Promise<string | null> {
+  return await invoke<string | null>('open_directory_dialog');
 }
 
-export async function OpenDbFileDialog() {
-  return await invoke('open_db_file_dialog');
+export async function OpenDbFileDialog(): Promise<string | null> {
+  return await invoke<string | null>('open_db_file_dialog');
 }
 
-export async function OpenExistingDbFileDialog() {
-  return await invoke('open_existing_db_file_dialog');
+export async function OpenExistingDbFileDialog(): Promise<string | null> {
+  return await invoke<string | null>('open_existing_db_file_dialog');
 }
 
-export async function SaveConfigTomlAs(content: string) {
-  return await invoke('save_config_toml_as', { content });
+export async function SaveConfigTomlAs(content: string): Promise<string | null> {
+  return await invoke<string | null>('save_config_toml_as', { content });
 }
 
-export async function ExportCurrentConfigToml() {
-  return await invoke('export_current_config_toml');
+export async function ExportCurrentConfigToml(): Promise<string | null> {
+  return await invoke<string | null>('export_current_config_toml');
 }
 
-export async function SaveChartPngWithDialog(defaultFileName: string, pngDataUrl: string) {
-  return await invoke('save_chart_png_with_dialog', { defaultFileName, pngDataUrl });
+export async function SaveChartPngWithDialog(defaultFileName: string, pngDataUrl: string): Promise<string | null> {
+  return await invoke<string | null>('save_chart_png_with_dialog', { defaultFileName, pngDataUrl });
 }
 
-// 规则/路由启用开关
-export async function SetListenRuleEnabled(listenRuleId: string, enabled: boolean) {
-  return await invoke('set_listen_rule_enabled', { args: { listenRuleId, enabled } });
+export async function SetListenRuleEnabled<T = unknown>(listenRuleId: string, enabled: boolean): Promise<T> {
+  return await invoke<T>('set_listen_rule_enabled', { args: { listenRuleId, enabled } });
 }
 
-export async function SetRouteEnabled(listenRuleId: string, routeId: string, enabled: boolean) {
-  return await invoke('set_route_enabled', { args: { listenRuleId, routeId, enabled } });
+export async function SetRouteEnabled<T = unknown>(listenRuleId: string, routeId: string, enabled: boolean): Promise<T> {
+  return await invoke<T>('set_route_enabled', { args: { listenRuleId, routeId, enabled } });
 }
 
-// 应用控制
-export async function HideToTray() {
-  return await invoke('hide_to_tray');
+export async function HideToTray(): Promise<void> {
+  return await invoke<void>('hide_to_tray');
 }
 
-export async function QuitApp() {
-  return await invoke('quit_app');
+export async function QuitApp(): Promise<void> {
+  return await invoke<void>('quit_app');
 }
 
-export async function OpenChartPreviewWindow(title: string, payloadKey: string, windowKey?: string) {
-  return await invoke('open_chart_preview_window', { title, payloadKey, windowKey });
+export async function OpenChartPreviewWindow(title: string, payloadKey: string, windowKey?: string): Promise<void> {
+  return await invoke<void>('open_chart_preview_window', { title, payloadKey, windowKey });
 }
 
-// 语言设置
-export async function SetLocale(locale: string) {
-  return await invoke('set_locale', { locale });
+export async function SetLocale(locale: string): Promise<void> {
+  return await invoke<void>('set_locale', { locale });
 }
 
-export async function GetLocale() {
-  return await invoke('get_locale');
+export async function GetLocale(): Promise<string> {
+  return await invoke<string>('get_locale');
 }
 
-// 条款接受状态（使用 localStorage）
 const TERMS_ACCEPTED_KEY = 'ssl_proxy_manager_terms_accepted'
 
 export function GetTermsAccepted(): boolean {
@@ -218,17 +248,14 @@ export async function ResetTermsAccepted(): Promise<void> {
   }
 }
 
-// 事件监听
-export async function EventsOn(event: string, callback: (data: any) => void) {
+export async function EventsOn<T = unknown>(event: string, callback: (data: T) => void): Promise<EventUnlisten> {
   const unlisten = await listen(event, (event) => {
-    callback(event.payload);
+    callback(event.payload as T);
   });
-  // 返回取消监听的函数
   return unlisten;
 }
 
-// 事件取消监听（Tauri 中通过返回的 unlisten 函数实现）
-export function EventsOff(unlisten: (() => void) | null) {
+export function EventsOff(unlisten: EventUnlisten | null) {
   if (unlisten) {
     unlisten();
   }
