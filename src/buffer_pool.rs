@@ -47,6 +47,7 @@ impl BufferPool {
         PooledBuffer {
             buffer: Some(buffer),
             pool: Arc::clone(&self.pool),
+            max_size: self.max_size,
         }
     }
 
@@ -84,6 +85,7 @@ impl BufferPool {
 pub struct PooledBuffer {
     buffer: Option<BytesMut>,
     pool: Arc<Mutex<Vec<BytesMut>>>,
+    max_size: usize,
 }
 
 impl PooledBuffer {
@@ -120,7 +122,7 @@ impl Drop for PooledBuffer {
         if let Some(buffer) = self.buffer.take() {
             // 归还到池中
             let mut pool = self.pool.lock();
-            if buffer.capacity() <= MAX_BUFFER_CAPACITY && pool.len() < MAX_POOL_SIZE {
+            if buffer.capacity() <= MAX_BUFFER_CAPACITY && pool.len() < self.max_size {
                 let mut buf = buffer;
                 buf.clear();
                 pool.push(buf);
