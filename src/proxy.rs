@@ -4,8 +4,8 @@ use crate::proxy_helpers::{cached_index_html, cached_serve_dir, check_etag_match
 use crate::proxy_logging::{init_log_task, push_log_lazy, LOG_TX, SKIP_HEADERS};
 use crate::proxy_matching::match_route;
 use crate::proxy_upstream::pick_upstream_smooth;
-use crate::{access_control, config, metrics, rate_limit, stream_proxy, ws_proxy};
-use anyhow::{Context, Result};
+use crate::{access_control, cache_optimizer, config, metrics, rate_limit, stream_proxy, ws_proxy};
+use anyhow::{anyhow, Context, Result};
 use axum::body::Bytes;
 use axum::{
     body::Body,
