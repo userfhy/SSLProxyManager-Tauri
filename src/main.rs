@@ -11,6 +11,7 @@ mod config;
 mod metrics;
 mod proxy_matching;
 mod proxy_logging;
+mod proxy_helpers;
 mod proxy;
 mod ws_proxy;
 mod stream_proxy;
