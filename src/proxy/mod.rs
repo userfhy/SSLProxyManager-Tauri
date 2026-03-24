@@ -149,63 +149,10 @@ pub(crate) async fn proxy_handler(
     ).await
 }
 
-pub fn build_upstream_url(
-    upstream_base: &str,
-    route_path: Option<&str>,
-    proxy_pass_path: Option<&str>,
-    uri: &Uri,
-) -> Result<String> {
-    let mut base = upstream_base.trim_end_matches('/').to_string();
-
-    let orig_path = uri.path();
-    let route_path = route_path.unwrap_or("/");
-
-    let mut new_path = orig_path.to_string();
-    if let Some(pp) = proxy_pass_path {
-        let from = if route_path.is_empty() { "/" } else { route_path };
-        let to = if pp.trim().is_empty() { "/" } else { pp };
-
-        if new_path.starts_with(from) {
-            let suffix = &new_path[from.len()..];
-
-            let mut out_path = to.to_string();
-            if out_path.is_empty() {
-                out_path = "/".to_string();
-            }
-
-            let suffix = suffix.strip_prefix('/').unwrap_or(suffix);
-            if out_path.ends_with('/') {
-                new_path = if suffix.is_empty() {
-                    out_path
-                } else {
-                    format!("{}{}", out_path, suffix)
-                };
-            } else {
-                new_path = if suffix.is_empty() {
-                    out_path
-                } else {
-                    format!("{}/{}", out_path, suffix)
-                };
-            }
-        }
-
-        if !new_path.starts_with('/') {
-            new_path = format!("/{}", new_path);
-        }
-    }
-
-    base.push_str(&new_path);
-    if let Some(q) = uri.query() {
-        base.push('?');
-        base.push_str(q);
-    }
-    Ok(base)
-}
-
 #[inline]
 #[cfg(test)]
 mod tests {
-    use super::build_upstream_url;
+    use super::upstream::build_upstream_url;
     use crate::proxy::matching::{host_matches, normalize_host};
 
     #[test]

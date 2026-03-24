@@ -5,7 +5,7 @@ use axum::response::{IntoResponse, Response};
 use regex::Regex;
 use std::net::SocketAddr;
 
-use crate::proxy::{build_upstream_url, AppState};
+use crate::proxy::{upstream::build_upstream_url, AppState};
 use crate::proxy::context::{enqueue_request_log, format_access_log, RequestContext};
 use crate::proxy::helpers::{cached_regex, content_type_allowed, expand_proxy_header_value, is_hop_header_fast};
 use crate::proxy::logging::{push_log_lazy, SKIP_HEADERS};
