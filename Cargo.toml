@@ -1,6 +1,6 @@
 [package]
 name = "SSLProxyManager"
-version = "1.0.20"
+version = "1.0.21"
 description = "SSL 代理管理工具"
 repository = "https://github.com/userfhy/SSLProxyManager-Tauri"
 authors = ["fhy"]
@@ -88,7 +88,7 @@ incremental = false     # 禁用增量编译以获得更好的优化
 opt-level = 3
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61.2", features = [
+windows-sys = { version = "^0.61.2", features = [
   "Win32_Foundation",
   "Win32_NetworkManagement_IpHelper",
   "Win32_NetworkManagement_Ndis",
