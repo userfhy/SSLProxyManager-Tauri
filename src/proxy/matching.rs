@@ -1,7 +1,6 @@
 use axum::http::{HeaderMap, Method};
 
 use crate::config;
-use crate::proxy;
 
 #[inline]
 pub fn normalize_host(host: &str) -> &str {
@@ -76,6 +75,32 @@ pub fn host_matches(route_host: &str, request_host: &str) -> bool {
 }
 
 #[inline]
+fn wildcard_match_ignore_ascii_case(pattern: &str, value: &str) -> bool {
+    let pattern = pattern.trim();
+    if pattern.is_empty() {
+        return value.is_empty();
+    }
+
+    if !pattern.contains('*') {
+        return value.eq_ignore_ascii_case(pattern);
+    }
+
+    let lower_value = value.to_ascii_lowercase();
+    let mut from = 0usize;
+
+    for part in pattern.split('*').filter(|p| !p.is_empty()) {
+        let part = part.to_ascii_lowercase();
+        if let Some(idx) = lower_value[from..].find(&part) {
+            from += idx + part.len();
+        } else {
+            return false;
+        }
+    }
+
+    true
+}
+
+#[inline]
 pub fn match_route<'a>(
     routes: &'a [config::Route],
     request_host: &str,
@@ -121,18 +146,8 @@ pub fn match_route<'a>(
                     .get(key)
                     .and_then(|v| v.to_str().ok())
                     .unwrap_or("");
-                if expected.contains('*') {
-                    let pattern = expected.replace('*', ".*");
-                    if let Some(re) = proxy::cached_regex(&pattern) {
-                        if !re.is_match(actual) {
-                            headers_ok = false;
-                            break;
-                        }
-                    } else if !actual.contains(expected.replace('*', "").as_str()) {
-                        headers_ok = false;
-                        break;
-                    }
-                } else if !actual.eq_ignore_ascii_case(expected.trim()) {
+
+                if !wildcard_match_ignore_ascii_case(expected, actual) {
                     headers_ok = false;
                     break;
                 }
@@ -161,5 +176,21 @@ pub fn match_route<'a>(
         (Some(r), r.id.as_deref().unwrap_or("").to_string())
     } else {
         (None, String::new())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::wildcard_match_ignore_ascii_case;
+
+    #[test]
+    fn wildcard_match_handles_simple_patterns() {
+        assert!(wildcard_match_ignore_ascii_case("*", "anything"));
+        assert!(wildcard_match_ignore_ascii_case("bearer *", "Bearer token-123"));
+        assert!(wildcard_match_ignore_ascii_case("*json*", "application/json; charset=utf-8"));
+        assert!(wildcard_match_ignore_ascii_case("abc*xyz", "xxAbC---XyZyy"));
+
+        assert!(!wildcard_match_ignore_ascii_case("abc*xyz", "abxcyz"));
+        assert!(!wildcard_match_ignore_ascii_case("token", "token-1"));
     }
 }
