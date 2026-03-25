@@ -1,6 +1,9 @@
+mod helpers;
+mod models;
+
 use anyhow::{anyhow, Context, Result};
-use crate::metrics_helpers::{normalize_request_path_for_top, normalize_upstream_for_top};
-pub use crate::metrics_models::{
+use self::helpers::{normalize_request_path_for_top, normalize_upstream_for_top};
+pub use self::models::{
     BlacklistEntry, DashboardStatsPoint, DashboardStatsRequest, DashboardStatsResponse, KeyValue,
     MetricsPayload, MetricsSeries, QueryMetricsRequest, QueryMetricsResponse,
     QueryRequestLogsRequest, QueryRequestLogsResponse, RequestLog, RequestLogInsert, TopListItem,
