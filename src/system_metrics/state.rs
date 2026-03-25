@@ -1,3 +1,4 @@
+use super::prelude::*;
 use super::*;
 
 pub(super) const DEFAULT_SAMPLE_INTERVAL_SECS: i64 = 10;
@@ -7,13 +8,15 @@ pub(super) const IDLE_PAUSE_INTERVAL_SECS: i64 = 60;
 #[cfg(target_os = "windows")]
 pub(super) const WINDOWS_MIN_EFFECTIVE_SAMPLE_INTERVAL_SECS: i64 = 3;
 pub(super) const MAX_REALTIME_WINDOW_SECS: i64 = 2 * 24 * 3600; // 2 天
-pub(super) const MAX_REALTIME_POINTS: usize = (MAX_REALTIME_WINDOW_SECS / MIN_SAMPLE_INTERVAL_SECS + 8) as usize;
+pub(super) const MAX_REALTIME_POINTS: usize =
+    (MAX_REALTIME_WINDOW_SECS / MIN_SAMPLE_INTERVAL_SECS + 8) as usize;
 pub(super) const MAX_CHART_POINTS: usize = 1200;
 
 pub(super) const DB_FLUSH_BATCH_SIZE: usize = 800;
 pub(super) const DB_FLUSH_INTERVAL: Duration = Duration::from_secs(5);
 pub(super) const SYSTEM_METRICS_RETENTION_DAYS: i64 = 360;
-pub(super) const SYSTEM_METRICS_RETENTION_CHECK_INTERVAL: Duration = Duration::from_secs(12 * 60 * 60);
+pub(super) const SYSTEM_METRICS_RETENTION_CHECK_INTERVAL: Duration =
+    Duration::from_secs(12 * 60 * 60);
 
 pub(super) static SAMPLER_RUNNING: AtomicBool = AtomicBool::new(false);
 pub(super) static SAMPLER_HANDLE: Lazy<RwLock<Option<tauri::async_runtime::JoinHandle<()>>>> =
@@ -22,20 +25,24 @@ pub(super) static SAMPLER_WAKE: Lazy<tokio::sync::Notify> = Lazy::new(tokio::syn
 pub(super) static SAMPLE_INTERVAL_SECS: AtomicI64 = AtomicI64::new(DEFAULT_SAMPLE_INTERVAL_SECS);
 pub(super) static HAS_ACTIVE_SUBSCRIBER: AtomicBool = AtomicBool::new(false);
 
-pub(super) static SYSTEM_METRICS_TX: Lazy<RwLock<Option<tokio::sync::mpsc::Sender<SystemMetricsPoint>>>> =
-    Lazy::new(|| RwLock::new(None));
+pub(super) static SYSTEM_METRICS_TX: Lazy<
+    RwLock<Option<tokio::sync::mpsc::Sender<SystemMetricsPoint>>>,
+> = Lazy::new(|| RwLock::new(None));
 
 pub(super) static LAST_RAW: Lazy<RwLock<Option<RawSnapshot>>> = Lazy::new(|| RwLock::new(None));
-pub(super) static LAST_INTERFACES: Lazy<RwLock<Vec<NetworkInterfaceStats>>> = Lazy::new(|| RwLock::new(Vec::new()));
+pub(super) static LAST_INTERFACES: Lazy<RwLock<Vec<NetworkInterfaceStats>>> =
+    Lazy::new(|| RwLock::new(Vec::new()));
 pub(super) static REALTIME_POINTS: Lazy<RwLock<VecDeque<SystemMetricsPoint>>> =
     Lazy::new(|| RwLock::new(VecDeque::with_capacity(MAX_REALTIME_POINTS)));
 #[cfg(target_os = "windows")]
-pub(super) static WINDOWS_DISK_ACCUM: Lazy<RwLock<(u64, u64, i64)>> = Lazy::new(|| RwLock::new((0, 0, 0)));
+pub(super) static WINDOWS_DISK_ACCUM: Lazy<RwLock<(u64, u64, i64)>> =
+    Lazy::new(|| RwLock::new((0, 0, 0)));
 #[cfg(target_os = "windows")]
 pub(super) static WINDOWS_LOAD_AVG: Lazy<RwLock<WindowsLoadAvgState>> =
     Lazy::new(|| RwLock::new(WindowsLoadAvgState::default()));
 #[cfg(target_os = "windows")]
-pub(super) static WINDOWS_PDH: Lazy<RwLock<Option<WindowsPdhState>>> = Lazy::new(|| RwLock::new(None));
+pub(super) static WINDOWS_PDH: Lazy<RwLock<Option<WindowsPdhState>>> =
+    Lazy::new(|| RwLock::new(None));
 
 #[cfg(target_os = "windows")]
 #[derive(Debug, Default)]
@@ -133,4 +140,3 @@ pub(super) fn choose_granularity(span: i64, requested: Option<i64>) -> i64 {
         900
     }
 }
-
