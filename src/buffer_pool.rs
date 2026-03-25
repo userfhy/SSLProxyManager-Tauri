@@ -5,8 +5,8 @@
 
 use bytes::BytesMut;
 use once_cell::sync::Lazy;
-use std::sync::Arc;
 use parking_lot::Mutex;
+use std::sync::Arc;
 
 /// 缓冲区默认容量（64KB）
 const DEFAULT_BUFFER_CAPACITY: usize = 64 * 1024;
@@ -41,11 +41,13 @@ impl BufferPool {
     pub fn acquire(&self) -> PooledBuffer {
         let buffer = {
             let mut pool = self.pool.lock();
-            pool.pop().unwrap_or_else(|| BytesMut::with_capacity(DEFAULT_BUFFER_CAPACITY))
+            pool.pop()
+                .unwrap_or_else(|| BytesMut::with_capacity(DEFAULT_BUFFER_CAPACITY))
         };
 
         PooledBuffer {
-            buffer: Some(buffer),
+            buffer,
+            detached: false,
             pool: Arc::clone(&self.pool),
             max_size: self.max_size,
         }
@@ -83,7 +85,8 @@ impl BufferPool {
 
 /// 池化的缓冲区 - 实现 RAII 模式，自动归还到池中
 pub struct PooledBuffer {
-    buffer: Option<BytesMut>,
+    buffer: BytesMut,
+    detached: bool,
     pool: Arc<Mutex<Vec<BytesMut>>>,
     max_size: usize,
 }
@@ -92,41 +95,43 @@ impl PooledBuffer {
     /// 获取内部缓冲区的可变引用
     #[inline]
     pub fn get_mut(&mut self) -> &mut BytesMut {
-        self.buffer.as_mut().expect("buffer already taken")
+        &mut self.buffer
     }
 
     /// 获取内部缓冲区的不可变引用
     #[inline]
     pub fn get(&self) -> &BytesMut {
-        self.buffer.as_ref().expect("buffer already taken")
+        &self.buffer
     }
 
     /// 取出内部缓冲区（不归还到池中）
     #[allow(dead_code)]
     #[inline]
     pub fn take(mut self) -> BytesMut {
-        self.buffer.take().expect("buffer already taken")
+        self.detached = true;
+        std::mem::take(&mut self.buffer)
     }
 
     /// 转换为 Bytes（冻结缓冲区）
     #[allow(dead_code)]
     #[inline]
     pub fn freeze(mut self) -> bytes::Bytes {
-        let buffer = self.buffer.take().expect("buffer already taken");
-        buffer.freeze()
+        self.detached = true;
+        std::mem::take(&mut self.buffer).freeze()
     }
 }
 
 impl Drop for PooledBuffer {
     fn drop(&mut self) {
-        if let Some(buffer) = self.buffer.take() {
-            // 归还到池中
-            let mut pool = self.pool.lock();
-            if buffer.capacity() <= MAX_BUFFER_CAPACITY && pool.len() < self.max_size {
-                let mut buf = buffer;
-                buf.clear();
-                pool.push(buf);
-            }
+        if self.detached {
+            return;
+        }
+
+        // 归还到池中
+        let mut pool = self.pool.lock();
+        if self.buffer.capacity() <= MAX_BUFFER_CAPACITY && pool.len() < self.max_size {
+            self.buffer.clear();
+            pool.push(std::mem::take(&mut self.buffer));
         }
     }
 }
