@@ -1,7 +1,9 @@
 use anyhow::{Context, Result};
 use once_cell::sync::Lazy;
 use parking_lot::RwLock;
+use regex::Regex;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 use crate::ws_proxy;
 
@@ -279,6 +281,9 @@ pub struct BodyReplaceRule {
     /// （可选）仅对指定的 Content-Type 生效；支持逗号分隔的多值，例如 "text/html,application/json"
     #[serde(skip_serializing_if = "Option::is_none")]
     pub content_types: Option<String>,
+    /// 预编译正则（运行时字段，不参与配置序列化）
+    #[serde(skip)]
+    pub compiled_regex: Option<Arc<Regex>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -663,16 +668,16 @@ pub fn load_config() -> Result<()> {
     ensure_config_ids(&mut config);
 
     // 预编译所有正则表达式以提升运行时性能
-    precompile_regexes(&config);
+    precompile_regexes(&mut config);
 
     *CONFIG.write() = config;
     Ok(())
 }
 
 /// 预编译配置中的所有正则表达式，提升运行时性能
-fn precompile_regexes(config: &Config) {
-    for rule in &config.rules {
-        for route in &rule.routes {
+fn precompile_regexes(config: &mut Config) {
+    for rule in &mut config.rules {
+        for route in &mut rule.routes {
             // 预编译 URL 重写规则
             if let Some(rewrite_rules) = &route.url_rewrite_rules {
                 for rule in rewrite_rules {
@@ -681,43 +686,40 @@ fn precompile_regexes(config: &Config) {
             }
 
             // 预编译请求体替换规则
-            if let Some(replace_rules) = &route.request_body_replace {
+            if let Some(replace_rules) = route.request_body_replace.as_mut() {
                 for rule in replace_rules {
                     if rule.enabled {
                         if let Some(content_types) = rule.content_types.as_deref() {
                             let _ = crate::proxy::cached_content_types(content_types);
                         }
                     }
-                    if rule.use_regex && rule.enabled {
-                        let _ = crate::proxy::cached_regex(&rule.find);
-                    }
+
+                    rule.compiled_regex = if rule.use_regex && rule.enabled {
+                        crate::proxy::cached_regex(&rule.find)
+                    } else {
+                        None
+                    };
                 }
             }
 
             // 预编译响应体替换规则
-            if let Some(replace_rules) = &route.response_body_replace {
+            if let Some(replace_rules) = route.response_body_replace.as_mut() {
                 for rule in replace_rules {
                     if rule.enabled {
                         if let Some(content_types) = rule.content_types.as_deref() {
                             let _ = crate::proxy::cached_content_types(content_types);
                         }
                     }
-                    if rule.use_regex && rule.enabled {
-                        let _ = crate::proxy::cached_regex(&rule.find);
-                    }
+
+                    rule.compiled_regex = if rule.use_regex && rule.enabled {
+                        crate::proxy::cached_regex(&rule.find)
+                    } else {
+                        None
+                    };
                 }
             }
 
-            // 预编译 header 匹配规则（如果使用了通配符）
-            if let Some(headers) = &route.headers {
-                for expected in headers.values() {
-                    if expected.contains('*') {
-                        // 与 proxy::match_route 的运行时规则保持一致，确保命中同一缓存键
-                        let pattern = expected.replace('*', ".*");
-                        let _ = crate::proxy::cached_regex(&pattern);
-                    }
-                }
-            }
+            // header 通配匹配改为轻量通配逻辑，无需预编译 regex
         }
     }
 }

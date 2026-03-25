@@ -146,7 +146,7 @@ fn apply_response_body_replace(
                 }
 
                 if rule.use_regex {
-                    if let Some(re) = cached_regex(&rule.find) {
+                    if let Some(re) = rule.compiled_regex.as_ref().cloned().or_else(|| cached_regex(&rule.find)) {
                         modified_body = re.replace_all(&modified_body, &rule.replace).to_string();
                     }
                 } else {
