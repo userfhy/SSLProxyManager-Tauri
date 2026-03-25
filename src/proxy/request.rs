@@ -111,7 +111,8 @@ pub async fn prepare_proxy_request(
         let final_bytes = if let Some(rules) = route.request_body_replace.as_ref() {
             match std::str::from_utf8(&bytes) {
                 Ok(body_str) => {
-                    let mut modified_body = body_str.to_string();
+                    let mut modified_body: Option<String> = None;
+
                     for rule in rules {
                         if !rule.enabled {
                             continue;
@@ -121,16 +122,32 @@ pub async fn prepare_proxy_request(
                                 continue;
                             }
                         }
+
+                        let source = modified_body.as_deref().unwrap_or(body_str);
+
                         if rule.use_regex {
-                            if let Some(re) = rule.compiled_regex.as_ref().cloned().or_else(|| cached_regex(&rule.find)) {
-                                let re: &Regex = &re;
-                                modified_body = re.replace_all(&modified_body, &rule.replace).to_string();
+                            if let Some(re) = rule
+                                .compiled_regex
+                                .as_ref()
+                                .cloned()
+                                .or_else(|| cached_regex(&rule.find))
+                            {
+                                if let std::borrow::Cow::Owned(new_body) =
+                                    re.replace_all(source, &rule.replace)
+                                {
+                                    modified_body = Some(new_body);
+                                }
                             }
-                        } else {
-                            modified_body = modified_body.replace(&rule.find, &rule.replace);
+                        } else if source.contains(&rule.find) {
+                            modified_body = Some(source.replace(&rule.find, &rule.replace));
                         }
                     }
-                    Bytes::from(modified_body.into_bytes())
+
+                    if let Some(body) = modified_body {
+                        Bytes::from(body.into_bytes())
+                    } else {
+                        bytes
+                    }
                 }
                 Err(_) => bytes,
             }
