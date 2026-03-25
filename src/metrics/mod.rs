@@ -7,8 +7,9 @@ mod writer;
 use self::helpers::{normalize_request_path_for_top, normalize_upstream_for_top};
 pub use self::models::{
     BlacklistEntry, DashboardStatsPoint, DashboardStatsRequest, DashboardStatsResponse, KeyValue,
-    MetricsPayload, MetricsSeries, QueryMetricsRequest, QueryMetricsResponse,
-    QueryRequestLogsRequest, QueryRequestLogsResponse, RequestLog, RequestLogInsert, TopListItem,
+    MetricsPayload, MetricsSeries, PhaseMetricStats, PhaseTimingStats, QueryMetricsRequest,
+    QueryMetricsResponse, QueryRequestLogsRequest, QueryRequestLogsResponse, RequestLog,
+    RequestLogInsert, TopListItem,
 };
 use anyhow::{anyhow, Context, Result};
 use once_cell::sync::Lazy;

@@ -1,5 +1,31 @@
 use super::*;
 
+#[inline]
+fn percentile_index(len: usize, p: f64) -> usize {
+    if len == 0 {
+        return 0;
+    }
+    let idx = ((len - 1) as f64 * p).round() as usize;
+    idx.min(len - 1)
+}
+
+fn phase_stat_from_sorted(values: &[f64]) -> PhaseMetricStats {
+    if values.is_empty() {
+        return PhaseMetricStats::default();
+    }
+
+    let sum: f64 = values.iter().copied().sum();
+    let avg = sum / values.len() as f64;
+    let p95 = values[percentile_index(values.len(), 0.95)];
+    let p99 = values[percentile_index(values.len(), 0.99)];
+
+    PhaseMetricStats {
+        avg_ms: ((avg * 10000.0).round()) / 10000.0,
+        p95_ms: ((p95 * 10000.0).round()) / 10000.0,
+        p99_ms: ((p99 * 10000.0).round()) / 10000.0,
+    }
+}
+
 pub async fn query_request_logs(req: QueryRequestLogsRequest) -> Result<QueryRequestLogsResponse> {
     let Some(pool) = db_pool() else {
         return Ok(QueryRequestLogsResponse {
@@ -637,6 +663,40 @@ pub async fn get_dashboard_stats(req: DashboardStatsRequest) -> Result<Dashboard
         0.0
     };
 
+    // phase timing (avg/p95/p99)
+    let mut phase_qb = QueryBuilder::new(
+        "SELECT guard_ms, prepare_ms, upstream_ms FROM request_logs WHERE timestamp >= ",
+    );
+    phase_qb
+        .push_bind(req.start_time)
+        .push(" AND timestamp <= ")
+        .push_bind(req.end_time);
+    if let Some(v) = listen_addr {
+        phase_qb.push(" AND listen_addr = ").push_bind(v);
+    }
+
+    let phase_rows: Vec<(f64, f64, f64)> = phase_qb.build_query_as().fetch_all(&*pool).await?;
+
+    let mut guard_vals = Vec::with_capacity(phase_rows.len());
+    let mut prepare_vals = Vec::with_capacity(phase_rows.len());
+    let mut upstream_vals = Vec::with_capacity(phase_rows.len());
+
+    for (g, p, u) in phase_rows {
+        guard_vals.push(g.max(0.0));
+        prepare_vals.push(p.max(0.0));
+        upstream_vals.push(u.max(0.0));
+    }
+
+    guard_vals.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    prepare_vals.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    upstream_vals.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+
+    let phase_timing = Some(PhaseTimingStats {
+        guard: phase_stat_from_sorted(&guard_vals),
+        prepare: phase_stat_from_sorted(&prepare_vals),
+        upstream: phase_stat_from_sorted(&upstream_vals),
+    });
+
     Ok(DashboardStatsResponse {
         time_series,
         top_paths,
@@ -647,5 +707,6 @@ pub async fn get_dashboard_stats(req: DashboardStatsRequest) -> Result<Dashboard
         total_requests,
         success_rate,
         avg_latency_ms: avg_latency.unwrap_or(0.0),
+        phase_timing,
     })
 }

@@ -97,6 +97,20 @@ pub struct TopListItem {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct PhaseMetricStats {
+    pub avg_ms: f64,
+    pub p95_ms: f64,
+    pub p99_ms: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct PhaseTimingStats {
+    pub guard: PhaseMetricStats,
+    pub prepare: PhaseMetricStats,
+    pub upstream: PhaseMetricStats,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct DashboardStatsResponse {
     pub time_series: Vec<DashboardStatsPoint>,
     pub top_paths: Vec<TopListItem>,
@@ -108,6 +122,8 @@ pub struct DashboardStatsResponse {
     pub total_requests: i64,
     pub success_rate: f64,
     pub avg_latency_ms: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub phase_timing: Option<PhaseTimingStats>,
 }
 
 #[derive(Debug, Clone)]
