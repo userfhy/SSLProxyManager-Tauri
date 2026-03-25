@@ -1,3 +1,6 @@
+use super::*;
+use super::db::REQUEST_LOG_TX;
+
 pub async fn init_request_log_writer() {
     if REQUEST_LOG_TX.read().is_some() {
         return;
@@ -32,16 +35,16 @@ pub async fn init_request_log_writer() {
             // 在后台线程做黑名单清理
             if last_cleanup.elapsed().as_secs() > 10 {
                 // 修复点：先获取 Option<Arc>，不要持有 ReadLockGuard 过 await
-                let pool_opt = DB_POOL.read().clone();
+                let pool_opt = db_pool();
                 if let Some(pool) = pool_opt {
-                    let _ = refresh_blacklist_cache_internal(&pool).await;
+                    let _ = super::db::refresh_blacklist_cache_internal(&pool).await;
                 }
                 last_cleanup = Instant::now();
             }
 
             // request_logs 日志保留：每天检查一次
             if last_retention_check.elapsed() >= REQUEST_LOG_RETENTION_CHECK_INTERVAL {
-                let pool_opt = DB_POOL.read().clone();
+                let pool_opt = db_pool();
                 if let Some(pool) = pool_opt {
                     let cutoff = chrono::Utc::now().timestamp() - REQUEST_LOG_RETENTION_DAYS * 24 * 60 * 60;
                     let deleted_rows = sqlx::query("DELETE FROM request_logs WHERE timestamp < ?")
@@ -84,7 +87,7 @@ pub fn try_enqueue_request_log(log: RequestLogInsert) {
 }
 
 async fn flush_request_logs(buf: &mut Vec<RequestLogInsert>) {
-    let Some(pool) = pool() else {
+    let Some(pool) = db_pool() else {
         buf.clear();
         return;
     };

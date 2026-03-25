@@ -1,5 +1,8 @@
+mod db;
 mod helpers;
 mod models;
+mod query;
+mod writer;
 
 use anyhow::{anyhow, Context, Result};
 use self::helpers::{normalize_request_path_for_top, normalize_upstream_for_top};
@@ -507,6 +510,14 @@ impl RealtimeAgg {
 
 // --- DB Utils ---
 
-include!("db.rs");
-include!("writer.rs");
-include!("query.rs");
+pub(crate) use db::{db_pool, reclaim_db_space_after_delete};
+pub use db::{
+    add_blacklist_entry, deinit_db, get_blacklist_entries, get_metrics_db_status,
+    get_metrics_db_status_detail, init_db, is_ip_blacklisted, refresh_blacklist_cache,
+    remove_blacklist_entry, test_metrics_db_connection, MetricsDBStatus,
+};
+pub use query::{
+    get_dashboard_stats, get_distinct_listen_addrs, get_metrics, query_historical_metrics,
+    query_request_logs,
+};
+pub use writer::{init_request_log_writer, try_enqueue_request_log};

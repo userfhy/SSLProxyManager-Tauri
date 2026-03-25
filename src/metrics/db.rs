@@ -1,3 +1,5 @@
+use super::*;
+
 fn default_db_path() -> Result<PathBuf> {
     let exe = std::env::current_exe().with_context(|| "无法获取可执行文件路径")?;
     let dir = exe
@@ -568,7 +570,7 @@ pub async fn refresh_blacklist_cache() -> Result<()> {
     refresh_blacklist_cache_internal(&pool).await
 }
 
-async fn refresh_blacklist_cache_internal(pool: &SqlitePool) -> Result<()> {
+pub(super) async fn refresh_blacklist_cache_internal(pool: &SqlitePool) -> Result<()> {
     let now = chrono::Utc::now().timestamp();
     let rows = sqlx::query_as::<_, (String, i64)>(
         "SELECT ip, expires_at FROM blacklist WHERE expires_at=0 OR expires_at>?",
@@ -643,5 +645,5 @@ pub async fn get_blacklist_entries() -> Result<Vec<BlacklistEntry>> {
 }
 
 // 请求日志写入队列
-static REQUEST_LOG_TX: Lazy<RwLock<Option<tokio::sync::mpsc::Sender<RequestLogInsert>>>> =
+pub(super) static REQUEST_LOG_TX: Lazy<RwLock<Option<tokio::sync::mpsc::Sender<RequestLogInsert>>>> =
     Lazy::new(|| RwLock::new(None));

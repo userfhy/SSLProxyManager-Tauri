@@ -1,5 +1,7 @@
+use super::*;
+
 pub async fn query_request_logs(req: QueryRequestLogsRequest) -> Result<QueryRequestLogsResponse> {
-    let Some(pool) = pool() else {
+    let Some(pool) = db_pool() else {
         return Ok(QueryRequestLogsResponse { logs: vec![], total: 0, total_page: 0 });
     };
 
@@ -117,7 +119,7 @@ pub fn get_metrics() -> MetricsPayload {
 }
 
 pub async fn get_distinct_listen_addrs() -> Result<Vec<String>> {
-    let Some(pool) = pool() else { return Ok(vec![]) };
+    let Some(pool) = db_pool() else { return Ok(vec![]) };
 
     let rows = sqlx::query_as::<_, (String,)>(
         "SELECT DISTINCT listen_addr FROM request_logs WHERE trim(listen_addr) != '' ORDER BY listen_addr ASC",
@@ -130,7 +132,7 @@ pub async fn get_distinct_listen_addrs() -> Result<Vec<String>> {
 }
 
 pub async fn query_historical_metrics(req: QueryMetricsRequest) -> Result<QueryMetricsResponse> {
-    let Some(pool) = pool() else {
+    let Some(pool) = db_pool() else {
         return Ok(QueryMetricsResponse {
             series: MetricsSeries {
                 timestamps: vec![], counts: vec![], s2xx: vec![], s3xx: vec![], s4xx: vec![], s5xx: vec![], s0: vec![],
@@ -322,7 +324,7 @@ pub async fn query_historical_metrics(req: QueryMetricsRequest) -> Result<QueryM
 }
 
 pub async fn get_dashboard_stats(req: DashboardStatsRequest) -> Result<DashboardStatsResponse> {
-    let Some(pool) = pool() else { return Ok(DashboardStatsResponse::default()) };
+    let Some(pool) = db_pool() else { return Ok(DashboardStatsResponse::default()) };
 
     let gran = req.granularity_secs.max(1);
     let listen_addr = req.listen_addr.as_deref().map(str::trim).filter(|s| !s.is_empty());
