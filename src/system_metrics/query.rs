@@ -1,3 +1,4 @@
+use super::realtime::{build_summary, downsample_points};
 use super::*;
 
 #[cfg(any(target_os = "linux", target_os = "windows"))]
