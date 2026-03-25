@@ -58,6 +58,12 @@ pub struct RequestLog {
     pub status_code: i32,
     pub upstream: String,
     pub latency_ms: f64,
+    #[sqlx(default)]
+    pub guard_ms: f64,
+    #[sqlx(default)]
+    pub prepare_ms: f64,
+    #[sqlx(default)]
+    pub upstream_ms: f64,
     pub user_agent: String,
     pub referer: String,
     #[sqlx(default)]
@@ -116,6 +122,9 @@ pub struct RequestLogInsert {
     pub status_code: i32,
     pub upstream: String,
     pub latency_ms: f64,
+    pub guard_ms: f64,
+    pub prepare_ms: f64,
+    pub upstream_ms: f64,
     pub user_agent: String,
     pub referer: String,
     pub matched_route_id: String,
@@ -164,7 +173,10 @@ pub struct MetricsPayload {
     pub listen_addrs: Vec<String>,
     #[serde(rename = "byListenAddr")]
     pub by_listen_addr: HashMap<String, MetricsSeries>,
-    #[serde(skip_serializing_if = "Option::is_none", rename = "minuteWindowSeconds")]
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        rename = "minuteWindowSeconds"
+    )]
     pub minute_window_seconds: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none", rename = "byListenMinute")]
     pub by_listen_minute: Option<HashMap<String, MetricsSeries>>,

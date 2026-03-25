@@ -43,7 +43,7 @@ fn normalize_ip_key(ip: &str) -> String {
 pub fn is_ip_blacklisted(ip: &str) -> bool {
     let key = normalize_ip_key(ip);
     let now = chrono::Utc::now().timestamp();
-    
+
     // 优化：仅使用读锁
     let cache = BLACKLIST_CACHE.read();
     match cache.get(&key) {
@@ -97,7 +97,9 @@ async fn maybe_vacuum_metrics_db(pool: &SqlitePool, deleted_rows: u64) {
         0.0
     };
 
-    if freelist_count >= DB_SPACE_RECLAIM_MIN_FREELIST_PAGES && free_ratio >= DB_SPACE_RECLAIM_MIN_FREELIST_RATIO {
+    if freelist_count >= DB_SPACE_RECLAIM_MIN_FREELIST_PAGES
+        && free_ratio >= DB_SPACE_RECLAIM_MIN_FREELIST_RATIO
+    {
         if sqlx::query("VACUUM").execute(pool).await.is_ok() {
             *DB_LAST_VACUUM_AT.write() = Some(Instant::now());
         }
@@ -183,6 +185,9 @@ pub async fn init_db(db_path: String) -> Result<()> {
               status_code INTEGER NOT NULL,
               upstream TEXT NOT NULL,
               latency_ms REAL NOT NULL,
+              guard_ms REAL NOT NULL DEFAULT 0,
+              prepare_ms REAL NOT NULL DEFAULT 0,
+              upstream_ms REAL NOT NULL DEFAULT 0,
               user_agent TEXT NOT NULL,
               referer TEXT NOT NULL,
               matched_route_id TEXT NOT NULL DEFAULT ''
@@ -201,7 +206,9 @@ pub async fn init_db(db_path: String) -> Result<()> {
                 .fetch_all(&pool)
                 .await
                 .context("读取 request_logs 表结构失败")?;
-        let has_matched_route_id = cols.iter().any(|(_, name, _, _, _, _)| name == "matched_route_id");
+        let has_matched_route_id = cols
+            .iter()
+            .any(|(_, name, _, _, _, _)| name == "matched_route_id");
         if !has_matched_route_id {
             sqlx::query(
                 "ALTER TABLE request_logs ADD COLUMN matched_route_id TEXT NOT NULL DEFAULT ''",
@@ -209,6 +216,40 @@ pub async fn init_db(db_path: String) -> Result<()> {
             .execute(&pool)
             .await
             .context("迁移 request_logs.matched_route_id 失败")?;
+        }
+
+        let has_guard_ms = cols.iter().any(|(_, name, _, _, _, _)| name == "guard_ms");
+        if !has_guard_ms {
+            sqlx::query(
+                "ALTER TABLE request_logs ADD COLUMN guard_ms REAL NOT NULL DEFAULT 0",
+            )
+            .execute(&pool)
+            .await
+            .context("迁移 request_logs.guard_ms 失败")?;
+        }
+
+        let has_prepare_ms = cols
+            .iter()
+            .any(|(_, name, _, _, _, _)| name == "prepare_ms");
+        if !has_prepare_ms {
+            sqlx::query(
+                "ALTER TABLE request_logs ADD COLUMN prepare_ms REAL NOT NULL DEFAULT 0",
+            )
+            .execute(&pool)
+            .await
+            .context("迁移 request_logs.prepare_ms 失败")?;
+        }
+
+        let has_upstream_ms = cols
+            .iter()
+            .any(|(_, name, _, _, _, _)| name == "upstream_ms");
+        if !has_upstream_ms {
+            sqlx::query(
+                "ALTER TABLE request_logs ADD COLUMN upstream_ms REAL NOT NULL DEFAULT 0",
+            )
+            .execute(&pool)
+            .await
+            .context("迁移 request_logs.upstream_ms 失败")?;
         }
 
         sqlx::query(
@@ -514,13 +555,17 @@ pub async fn get_metrics_db_status_detail() -> Result<MetricsDBStatus> {
         .ok();
 
     let wal_file_size_bytes: Option<i64> = if base.file_exists {
-        std::fs::metadata(format!("{}-wal", base.path)).ok().map(|m| m.len() as i64)
+        std::fs::metadata(format!("{}-wal", base.path))
+            .ok()
+            .map(|m| m.len() as i64)
     } else {
         None
     };
 
     let shm_file_size_bytes: Option<i64> = if base.file_exists {
-        std::fs::metadata(format!("{}-shm", base.path)).ok().map(|m| m.len() as i64)
+        std::fs::metadata(format!("{}-shm", base.path))
+            .ok()
+            .map(|m| m.len() as i64)
     } else {
         None
     };
@@ -633,7 +678,9 @@ pub async fn remove_blacklist_entry(ip: String) -> Result<()> {
 }
 
 pub async fn get_blacklist_entries() -> Result<Vec<BlacklistEntry>> {
-    let Some(pool) = pool() else { return Ok(vec![]) };
+    let Some(pool) = pool() else {
+        return Ok(vec![]);
+    };
 
     let rows = sqlx::query_as::<_, BlacklistEntry>(
         "SELECT id, ip, reason, expires_at, created_at FROM blacklist ORDER BY created_at DESC",
@@ -645,5 +692,6 @@ pub async fn get_blacklist_entries() -> Result<Vec<BlacklistEntry>> {
 }
 
 // 请求日志写入队列
-pub(super) static REQUEST_LOG_TX: Lazy<RwLock<Option<tokio::sync::mpsc::Sender<RequestLogInsert>>>> =
-    Lazy::new(|| RwLock::new(None));
+pub(super) static REQUEST_LOG_TX: Lazy<
+    RwLock<Option<tokio::sync::mpsc::Sender<RequestLogInsert>>>,
+> = Lazy::new(|| RwLock::new(None));

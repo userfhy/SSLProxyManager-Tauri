@@ -115,6 +115,9 @@ pub fn enqueue_request_log(
     status: StatusCode,
     upstream: &str,
     matched_route_id: &str,
+    guard_ms: f64,
+    prepare_ms: f64,
+    upstream_ms: f64,
 ) {
     metrics::try_enqueue_request_log(metrics::RequestLogInsert {
         timestamp: chrono::Utc::now().timestamp(),
@@ -127,6 +130,9 @@ pub fn enqueue_request_log(
         status_code: status.as_u16() as i32,
         upstream: upstream.to_string(),
         latency_ms: ctx.elapsed_ms(),
+        guard_ms,
+        prepare_ms,
+        upstream_ms,
         user_agent: ctx.user_agent_header.as_ref().to_string(),
         referer: ctx.referer_header.as_ref().to_string(),
         matched_route_id: matched_route_id.to_string(),
