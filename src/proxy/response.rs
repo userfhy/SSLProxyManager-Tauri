@@ -1,12 +1,14 @@
-use crate::config;
-use super::{cached_regex, send_log_with_app, AppState};
-use super::context::{enqueue_request_log, format_access_log, format_headers_for_log, RequestContext};
+use super::context::{
+    enqueue_request_log, format_access_log, format_headers_for_log, RequestContext,
+};
 use super::helpers::{content_type_allowed, is_hop_header_fast};
 use super::logging::push_log_lazy;
+use super::{cached_regex, send_log_with_app, AppState};
+use crate::config;
 use axum::body::Bytes;
 use axum::{
     body::Body,
-    http::{HeaderName, HeaderMap, StatusCode},
+    http::{HeaderMap, HeaderName, StatusCode},
     response::{IntoResponse, Response},
 };
 use std::net::SocketAddr;
@@ -18,6 +20,9 @@ pub(crate) struct ProxyResponseMeta<'a> {
     pub inbound_headers: &'a HeaderMap,
     pub matched_route_id: &'a str,
     pub remote: &'a SocketAddr,
+    pub guard_ms: f64,
+    pub prepare_ms: f64,
+    pub upstream_ms: f64,
 }
 
 pub async fn handle_upstream_response(
@@ -39,7 +44,14 @@ pub async fn handle_upstream_response(
         )
     });
 
-    enqueue_request_log(node, ctx, meta.remote, status, meta.target, meta.matched_route_id);
+    enqueue_request_log(
+        node,
+        ctx,
+        meta.remote,
+        status,
+        meta.target,
+        meta.matched_route_id,
+    );
 
     let mut out = Response::new(Body::empty());
     *out.status_mut() = StatusCode::from_u16(status.as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
@@ -96,18 +108,26 @@ pub async fn handle_upstream_response(
     if !status.is_success() {
         let inbound_headers_line = format_headers_for_log(meta.inbound_headers);
         let outbound_headers_line = format_headers_for_log(meta.outbound_headers_snapshot);
+        let total_ms = ctx.elapsed_ms();
+
+        send_log_with_app(
+            &state.app,
+            format!(
+                "Reverse proxy error (IN): {} {} -> {} status={} | inbound_headers=[{}] | phase_ms[guard={:.2},prepare={:.2},upstream={:.2},total={:.2}]",
+                ctx.method.as_str(),
+                ctx.uri,
+                meta.target,
+                status.as_u16(),
+                inbound_headers_line,
+                meta.guard_ms,
+                meta.prepare_ms,
+                meta.upstream_ms,
+                total_ms,
+            ),
+        );
 
         send_log_with_app(&state.app, format!(
-            "Reverse proxy error (IN): {} {} -> {} status={} | inbound_headers=[{}]",
-            ctx.method.as_str(),
-            ctx.uri,
-            meta.target,
-            status.as_u16(),
-            inbound_headers_line
-        ));
-
-        send_log_with_app(&state.app, format!(
-            "Reverse proxy error (OUT): {} {} -> {} status={} | outbound_headers=[{}] | req_body_size={}",
+            "Reverse proxy error (OUT): {} {} -> {} status={} | outbound_headers=[{}] | req_body_size={} | phase_ms[guard={:.2},prepare={:.2},upstream={:.2},total={:.2}]",
             ctx.method.as_str(),
             ctx.uri,
             meta.target,
@@ -115,7 +135,11 @@ pub async fn handle_upstream_response(
             outbound_headers_line,
             meta.req_body_size
                 .map(|n| n.to_string())
-                .unwrap_or_else(|| "stream".to_string())
+                .unwrap_or_else(|| "stream".to_string()),
+            meta.guard_ms,
+            meta.prepare_ms,
+            meta.upstream_ms,
+            total_ms,
         ));
     }
 
