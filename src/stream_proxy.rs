@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Context, Result};
+use dashmap::DashMap;
 use parking_lot::RwLock;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashSet;
@@ -11,10 +12,9 @@ use tokio::io;
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use tokio::sync::mpsc;
 use tokio::time;
-use dashmap::DashMap;
 
-use crate::{access_control, config};
 use crate::config::{StreamProxyConfig, StreamServer, StreamUpstream, StreamUpstreamServer};
+use crate::{access_control, config};
 
 static STREAM_SERVERS: once_cell::sync::Lazy<RwLock<Vec<StreamServerHandle>>> =
     once_cell::sync::Lazy::new(|| RwLock::new(Vec::new()));
@@ -59,17 +59,39 @@ pub async fn start_stream_servers(app: tauri::AppHandle, config: &StreamProxyCon
             .upstreams
             .iter()
             .find(|u| u.name == server.proxy_pass)
-            .expect("validate_stream_config should ensure upstream exists");
+            .ok_or_else(|| {
+                anyhow!(
+                    "stream server (listen_port={}) references missing upstream '{}'",
+                    server.listen_port,
+                    server.proxy_pass
+                )
+            })?;
 
-        let connect_timeout =
-            parse_duration(&server.proxy_connect_timeout).unwrap_or_else(|_| Duration::from_secs(300));
+        let connect_timeout = parse_duration(&server.proxy_connect_timeout)
+            .unwrap_or_else(|_| Duration::from_secs(300));
         let proxy_timeout =
             parse_duration(&server.proxy_timeout).unwrap_or_else(|_| Duration::from_secs(600));
 
         if server.udp {
-            start_udp_server(&app, server, upstream, connect_timeout, proxy_timeout, &mut handles).await?;
+            start_udp_server(
+                &app,
+                server,
+                upstream,
+                connect_timeout,
+                proxy_timeout,
+                &mut handles,
+            )
+            .await?;
         } else {
-            start_tcp_server(&app, server, upstream, connect_timeout, proxy_timeout, &mut handles).await?;
+            start_tcp_server(
+                &app,
+                server,
+                upstream,
+                connect_timeout,
+                proxy_timeout,
+                &mut handles,
+            )
+            .await?;
         }
     }
 
@@ -111,9 +133,15 @@ pub fn validate_stream_config(cfg: &StreamProxyConfig) -> Result<()> {
             }
             let parts: Vec<&str> = sv.addr.split(':').collect();
             if parts.len() < 2 {
-                return Err(anyhow!("invalid stream server addr (need host:port): {}", sv.addr));
+                return Err(anyhow!(
+                    "invalid stream server addr (need host:port): {}",
+                    sv.addr
+                ));
             }
-            let port_str = parts.last().unwrap().trim();
+            let port_str = parts
+                .last()
+                .map(|s| s.trim())
+                .ok_or_else(|| anyhow!("invalid stream server addr (missing port): {}", sv.addr))?;
             if port_str.parse::<u16>().is_err() {
                 return Err(anyhow!("invalid stream server addr port: {}", sv.addr));
             }
@@ -185,7 +213,11 @@ async fn start_tcp_server(
         .map(|a| a.to_string())
         .unwrap_or_else(|_| listen_addr.clone());
 
-    tracing::info!("Stream TCP server listening on {} -> {}", bound_addr, upstream.name);
+    tracing::info!(
+        "Stream TCP server listening on {} -> {}",
+        bound_addr,
+        upstream.name
+    );
     stream_log(
         app,
         format!(
@@ -287,7 +319,11 @@ async fn handle_tcp_client(
             Ok(Ok(socket)) => socket,
             Ok(Err(e)) => {
                 record_upstream_failure(&server_addr, server.max_fails, &server.fail_timeout);
-                return Err(anyhow!("Failed to connect to upstream {}: {}", server_addr, e));
+                return Err(anyhow!(
+                    "Failed to connect to upstream {}: {}",
+                    server_addr,
+                    e
+                ));
             }
             Err(_) => {
                 record_upstream_failure(&server_addr, server.max_fails, &server.fail_timeout);
@@ -515,7 +551,10 @@ async fn start_udp_server(
     Ok(())
 }
 
-fn select_upstream_server<'a>(upstream: &'a StreamUpstream, client_addr: &SocketAddr) -> &'a StreamUpstreamServer {
+fn select_upstream_server<'a>(
+    upstream: &'a StreamUpstream,
+    client_addr: &SocketAddr,
+) -> &'a StreamUpstreamServer {
     let servers = &upstream.servers;
     if servers.is_empty() {
         panic!("No servers available in upstream '{}'", upstream.name);
@@ -561,7 +600,13 @@ fn select_upstream_server_with_failover<'a>(
 
         let mut idx = match ring.binary_search_by_key(&h, |(k, _)| *k) {
             Ok(i) => i,
-            Err(i) => if i >= ring.len() { 0 } else { i },
+            Err(i) => {
+                if i >= ring.len() {
+                    0
+                } else {
+                    i
+                }
+            }
         };
 
         for _ in 0..ring.len() {
@@ -601,7 +646,9 @@ static HASH_RING_CACHE: once_cell::sync::Lazy<DashMap<String, Arc<Vec<(u64, usiz
     once_cell::sync::Lazy::new(DashMap::new);
 
 fn get_or_build_ring(upstream: &StreamUpstream) -> Arc<Vec<(u64, usize)>> {
-    let cache_key = upstream.servers.iter()
+    let cache_key = upstream
+        .servers
+        .iter()
         .map(|s| s.addr.as_str())
         .collect::<Vec<_>>()
         .join("|");

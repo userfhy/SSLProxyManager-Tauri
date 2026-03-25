@@ -4,18 +4,20 @@ mod models;
 mod query;
 mod writer;
 
-use anyhow::{anyhow, Context, Result};
 use self::helpers::{normalize_request_path_for_top, normalize_upstream_for_top};
 pub use self::models::{
     BlacklistEntry, DashboardStatsPoint, DashboardStatsRequest, DashboardStatsResponse, KeyValue,
     MetricsPayload, MetricsSeries, QueryMetricsRequest, QueryMetricsResponse,
     QueryRequestLogsRequest, QueryRequestLogsResponse, RequestLog, RequestLogInsert, TopListItem,
 };
+use anyhow::{anyhow, Context, Result};
 use once_cell::sync::Lazy;
 
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
-use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePool, SqlitePoolOptions, SqliteSynchronous};
+use sqlx::sqlite::{
+    SqliteConnectOptions, SqliteJournalMode, SqlitePool, SqlitePoolOptions, SqliteSynchronous,
+};
 use sqlx::{ConnectOptions, QueryBuilder}; // 移除了未使用的 Row
 use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
@@ -70,14 +72,13 @@ fn hash_fnv1a_64(s: &str) -> u64 {
 }
 
 #[inline]
-fn get_or_default_by_str<'a, V: Default>(
-    map: &'a mut HashMap<String, V>,
-    key: &str,
-) -> &'a mut V {
-    if !map.contains_key(key) {
-        map.insert(key.to_string(), V::default());
+fn get_or_default_by_str<'a, V: Default>(map: &'a mut HashMap<String, V>, key: &str) -> &'a mut V {
+    use std::collections::hash_map::Entry;
+
+    match map.entry(key.to_string()) {
+        Entry::Occupied(e) => e.into_mut(),
+        Entry::Vacant(e) => e.insert(V::default()),
     }
-    map.get_mut(key).expect("key inserted or existed")
 }
 
 const METRICS_CACHE_TTL: Duration = Duration::from_millis(500);
@@ -139,7 +140,10 @@ impl RtSeriesAgg {
     fn add(&mut self, ts: i64, status_code: i32, latency_ms: f64) {
         self.buckets
             .entry(ts)
-            .or_insert_with(|| RtBucket { ts, ..Default::default() })
+            .or_insert_with(|| RtBucket {
+                ts,
+                ..Default::default()
+            })
             .add(status_code, latency_ms);
     }
 
@@ -182,8 +186,10 @@ impl RtSeriesAgg {
             res.s4xx.push(b.s4xx);
             res.s5xx.push(b.s5xx);
             res.s0.push(b.s0);
-            res.avg_latency_ms.push((b.avg_latency_ms() * 10000.0).round() / 10000.0);
-            res.max_latency_ms.push((b.latency_max_ms * 10000.0).round() / 10000.0);
+            res.avg_latency_ms
+                .push((b.avg_latency_ms() * 10000.0).round() / 10000.0);
+            res.max_latency_ms
+                .push((b.latency_max_ms * 10000.0).round() / 10000.0);
         }
         res
     }
@@ -194,10 +200,10 @@ fn merge_rt_series_map(dst: &mut HashMap<String, RtSeriesAgg>, src: &HashMap<Str
     for (k, v) in src.iter() {
         let dst_series = dst.entry(k.clone()).or_default();
         for (ts, b) in v.buckets.iter() {
-            let out = dst_series
-                .buckets
-                .entry(*ts)
-                .or_insert_with(|| RtBucket { ts: *ts, ..Default::default() });
+            let out = dst_series.buckets.entry(*ts).or_insert_with(|| RtBucket {
+                ts: *ts,
+                ..Default::default()
+            });
             out.count += b.count;
             out.s2xx += b.s2xx;
             out.s3xx += b.s3xx;
@@ -253,10 +259,12 @@ fn append_request_logs_where<'a>(
         qb.push(" AND upstream LIKE ").push_bind(format!("%{}%", v));
     }
     if let Some(v) = filters.request_path {
-        qb.push(" AND request_path LIKE ").push_bind(format!("%{}%", v));
+        qb.push(" AND request_path LIKE ")
+            .push_bind(format!("%{}%", v));
     }
     if let Some(v) = filters.client_ip {
-        qb.push(" AND client_ip LIKE ").push_bind(format!("%{}%", v));
+        qb.push(" AND client_ip LIKE ")
+            .push_bind(format!("%{}%", v));
     }
     if let Some(v) = filters.status_code {
         qb.push(" AND status_code = ").push_bind(v);
@@ -500,22 +508,38 @@ impl RealtimeAgg {
             by_listen_addr,
             minute_window_seconds: Some(REALTIME_MINUTE_WINDOW_SECS as i32),
             by_listen_minute: Some(by_listen_minute),
-            top_routes: if top_routes.is_empty() { None } else { Some(top_routes) },
-            top_paths: if top_paths.is_empty() { None } else { Some(top_paths) },
-            top_client_ips: if top_client_ips.is_empty() { None } else { Some(top_client_ips) },
-            top_upstream_errors: if top_upstream_errors.is_empty() { None } else { Some(top_upstream_errors) },
+            top_routes: if top_routes.is_empty() {
+                None
+            } else {
+                Some(top_routes)
+            },
+            top_paths: if top_paths.is_empty() {
+                None
+            } else {
+                Some(top_paths)
+            },
+            top_client_ips: if top_client_ips.is_empty() {
+                None
+            } else {
+                Some(top_client_ips)
+            },
+            top_upstream_errors: if top_upstream_errors.is_empty() {
+                None
+            } else {
+                Some(top_upstream_errors)
+            },
         }
     }
 }
 
 // --- DB Utils ---
 
-pub(crate) use db::{db_pool, reclaim_db_space_after_delete};
 pub use db::{
     add_blacklist_entry, deinit_db, get_blacklist_entries, get_metrics_db_status,
     get_metrics_db_status_detail, init_db, is_ip_blacklisted, refresh_blacklist_cache,
     remove_blacklist_entry, test_metrics_db_connection, MetricsDBStatus,
 };
+pub(crate) use db::{db_pool, reclaim_db_space_after_delete};
 pub use query::{
     get_dashboard_stats, get_distinct_listen_addrs, get_metrics, query_historical_metrics,
     query_request_logs,
