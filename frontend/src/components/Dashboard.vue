@@ -73,6 +73,30 @@
             <div class="stat-value">{{ avgLatency }}</div>
           </div>
         </div>
+
+        <div v-if="phaseTiming" class="phase-stats">
+          <div class="phase-title">{{ $t('dashboard.phaseTiming') }}</div>
+          <div class="phase-grid">
+            <div class="phase-item">
+              <div class="phase-name">{{ $t('dashboard.phaseGuard') }}</div>
+              <div class="phase-line">avg {{ formatPhaseMs(phaseTiming?.guard?.avg_ms) }} ms</div>
+              <div class="phase-line">p95 {{ formatPhaseMs(phaseTiming?.guard?.p95_ms) }} ms</div>
+              <div class="phase-line">p99 {{ formatPhaseMs(phaseTiming?.guard?.p99_ms) }} ms</div>
+            </div>
+            <div class="phase-item">
+              <div class="phase-name">{{ $t('dashboard.phasePrepare') }}</div>
+              <div class="phase-line">avg {{ formatPhaseMs(phaseTiming?.prepare?.avg_ms) }} ms</div>
+              <div class="phase-line">p95 {{ formatPhaseMs(phaseTiming?.prepare?.p95_ms) }} ms</div>
+              <div class="phase-line">p99 {{ formatPhaseMs(phaseTiming?.prepare?.p99_ms) }} ms</div>
+            </div>
+            <div class="phase-item">
+              <div class="phase-name">{{ $t('dashboard.phaseUpstream') }}</div>
+              <div class="phase-line">avg {{ formatPhaseMs(phaseTiming?.upstream?.avg_ms) }} ms</div>
+              <div class="phase-line">p95 {{ formatPhaseMs(phaseTiming?.upstream?.p95_ms) }} ms</div>
+              <div class="phase-line">p99 {{ formatPhaseMs(phaseTiming?.upstream?.p99_ms) }} ms</div>
+            </div>
+          </div>
+        </div>
       </el-card>
 
       <el-card class="panel panel--qps" shadow="hover">
@@ -339,12 +363,25 @@ type MetricsSeries = {
   latencyDist?: KV[]
 }
 
+type PhaseMetricStats = {
+  avg_ms?: number
+  p95_ms?: number
+  p99_ms?: number
+}
+
+type PhaseTimingStats = {
+  guard?: PhaseMetricStats
+  prepare?: PhaseMetricStats
+  upstream?: PhaseMetricStats
+}
+
 type DashboardStatsResponse = {
   top_routes?: Array<{ item: string; count: number }>
   top_route_errors?: Array<{ item: string; count: number }>
   top_paths?: Array<{ item: string; count: number }>
   top_ips?: Array<{ item: string; count: number }>
   top_upstream_errors?: Array<{ item: string; count: number }>
+  phase_timing?: PhaseTimingStats
 }
 
 type MetricsPayload = {
@@ -823,6 +860,9 @@ const topRoutes = ref<Array<{ item: string; count: number }>>([])
 const topPaths = ref<Array<{ item: string; count: number }>>([])
 const topClientIps = ref<Array<{ item: string; count: number }>>([])
 const topUpstreamErrors = ref<Array<{ item: string; count: number }>>([])
+const phaseTiming = ref<PhaseTimingStats | null>(null)
+
+const formatPhaseMs = (v?: number) => Number.isFinite(v as number) ? Number(v as number).toFixed(2) : '0.00'
 
 const fetchTopRoutes = async () => {
   if (!props.isActive) return
@@ -865,8 +905,11 @@ const fetchTopRoutes = async () => {
     topUpstreamErrors.value = Array.isArray(res?.top_upstream_errors)
       ? res.top_upstream_errors.map((it) => ({ item: String(it.item || ''), count: Number(it.count) || 0 }))
       : []
+
+    phaseTiming.value = res?.phase_timing || null
   } catch (e) {
     topRoutes.value = []
+    phaseTiming.value = null
   }
 }
 
@@ -942,6 +985,7 @@ const clearHistoricalData = () => {
   topPaths.value = []
   topClientIps.value = []
   topUpstreamErrors.value = []
+  phaseTiming.value = null
   ElMessage.info(t('dashboard.historicalDataCleared'))
 }
 
@@ -1917,10 +1961,43 @@ h3 {
   margin-bottom: 8px;
 }
 
-.stat-value {
-  font-size: 28px;
-  font-weight: 700;
-  color: var(--text);
+.phase-stats {
+  margin-top: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  background: var(--card-bg);
+}
+
+.phase-title {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+
+.phase-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.phase-item {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--input-bg);
+  padding: 10px;
+}
+
+.phase-name {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.phase-line {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.6;
 }
 
 .tables {
@@ -2005,6 +2082,7 @@ h3 {
   .chart { height: 250px; }
   .stats { grid-template-columns: repeat(2, 1fr); }
   .tables { grid-template-columns: 1fr; }
+  .phase-grid { grid-template-columns: 1fr; }
   
   .panel--latency,
   .panel--percentile {
