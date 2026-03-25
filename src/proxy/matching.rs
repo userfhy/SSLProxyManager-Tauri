@@ -134,7 +134,10 @@ pub fn match_route<'a>(
         }
 
         if let Some(ref methods) = r.methods {
-            if !methods.iter().any(|m| m.eq_ignore_ascii_case(method.as_str())) {
+            if !methods
+                .iter()
+                .any(|m| m.eq_ignore_ascii_case(method.as_str()))
+            {
                 continue;
             }
         }
@@ -142,10 +145,7 @@ pub fn match_route<'a>(
         if let Some(ref required_headers) = r.headers {
             let mut headers_ok = true;
             for (key, expected) in required_headers {
-                let actual = headers
-                    .get(key)
-                    .and_then(|v| v.to_str().ok())
-                    .unwrap_or("");
+                let actual = headers.get(key).and_then(|v| v.to_str().ok()).unwrap_or("");
 
                 if !wildcard_match_ignore_ascii_case(expected, actual) {
                     headers_ok = false;
@@ -162,7 +162,11 @@ pub fn match_route<'a>(
             None => Some(cand),
             Some((best_r, best_has_host, best_plen)) => {
                 if cand.1 != best_has_host {
-                    if cand.1 { Some(cand) } else { Some((best_r, best_has_host, best_plen)) }
+                    if cand.1 {
+                        Some(cand)
+                    } else {
+                        Some((best_r, best_has_host, best_plen))
+                    }
                 } else if cand.2 > best_plen {
                     Some(cand)
                 } else {
@@ -186,8 +190,14 @@ mod tests {
     #[test]
     fn wildcard_match_handles_simple_patterns() {
         assert!(wildcard_match_ignore_ascii_case("*", "anything"));
-        assert!(wildcard_match_ignore_ascii_case("bearer *", "Bearer token-123"));
-        assert!(wildcard_match_ignore_ascii_case("*json*", "application/json; charset=utf-8"));
+        assert!(wildcard_match_ignore_ascii_case(
+            "bearer *",
+            "Bearer token-123"
+        ));
+        assert!(wildcard_match_ignore_ascii_case(
+            "*json*",
+            "application/json; charset=utf-8"
+        ));
         assert!(wildcard_match_ignore_ascii_case("abc*xyz", "xxAbC---XyZyy"));
 
         assert!(!wildcard_match_ignore_ascii_case("abc*xyz", "abxcyz"));

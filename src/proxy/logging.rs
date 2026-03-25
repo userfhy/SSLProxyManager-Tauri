@@ -14,16 +14,17 @@ pub static LOG_DROPPED: once_cell::sync::Lazy<std::sync::atomic::AtomicU64> =
 
 pub static LOGS: RwLock<VecDeque<String>> = RwLock::new(VecDeque::new());
 
-pub static SKIP_HEADERS: once_cell::sync::Lazy<HashSet<axum::http::HeaderName>> = once_cell::sync::Lazy::new(|| {
-    let mut set = HashSet::new();
-    set.insert(axum::http::header::HOST);
-    set.insert(axum::http::header::CONNECTION);
-    set.insert(axum::http::header::ACCEPT_ENCODING);
-    set.insert(axum::http::HeaderName::from_static("x-real-ip"));
-    set.insert(axum::http::HeaderName::from_static("x-forwarded-for"));
-    set.insert(axum::http::HeaderName::from_static("x-forwarded-proto"));
-    set
-});
+pub static SKIP_HEADERS: once_cell::sync::Lazy<HashSet<axum::http::HeaderName>> =
+    once_cell::sync::Lazy::new(|| {
+        let mut set = HashSet::new();
+        set.insert(axum::http::header::HOST);
+        set.insert(axum::http::header::CONNECTION);
+        set.insert(axum::http::header::ACCEPT_ENCODING);
+        set.insert(axum::http::HeaderName::from_static("x-real-ip"));
+        set.insert(axum::http::HeaderName::from_static("x-forwarded-for"));
+        set.insert(axum::http::HeaderName::from_static("x-forwarded-proto"));
+        set
+    });
 
 pub fn get_logs() -> Vec<String> {
     LOGS.read().iter().cloned().collect()

@@ -269,7 +269,10 @@ struct HttpClientCacheKey {
 static HTTP_TEST_CLIENT_CACHE: Lazy<DashMap<HttpClientCacheKey, reqwest::Client>> =
     Lazy::new(DashMap::new);
 
-fn get_or_build_http_test_client(timeout_ms: u64, follow_redirects: bool) -> Result<reqwest::Client> {
+fn get_or_build_http_test_client(
+    timeout_ms: u64,
+    follow_redirects: bool,
+) -> Result<reqwest::Client> {
     let key = HttpClientCacheKey {
         timeout_ms,
         follow_redirects,
@@ -300,8 +303,7 @@ pub async fn send_http_test_request(req: HttpTestRequest) -> Result<HttpTestResp
     let follow_redirects = req.follow_redirects.unwrap_or(true);
     let client = get_or_build_http_test_client(timeout_ms, follow_redirects)?;
 
-    let method = reqwest::Method::from_bytes(req.method.as_bytes())
-        .context("无效的 HTTP 方法")?;
+    let method = reqwest::Method::from_bytes(req.method.as_bytes()).context("无效的 HTTP 方法")?;
 
     let mut request = client.request(method, &req.url);
 
@@ -330,7 +332,10 @@ pub async fn send_http_test_request(req: HttpTestRequest) -> Result<HttpTestResp
             }
 
             // 读取响应体
-            let body = response.text().await.unwrap_or_else(|e| format!("读取响应体失败: {}", e));
+            let body = response
+                .text()
+                .await
+                .unwrap_or_else(|e| format!("读取响应体失败: {}", e));
 
             let elapsed_ms = start.elapsed().as_millis() as u64;
 
@@ -362,7 +367,11 @@ pub fn test_route_matching(req: RouteTestRequest) -> Result<RouteTestResult> {
     let config = config::get_config();
     let req_headers = normalize_request_headers(req.headers.as_ref());
     let req_host = req.host.as_deref().unwrap_or("").trim();
-    let listen_addr_filter = req.listen_addr.as_deref().map(str::trim).filter(|s| !s.is_empty());
+    let listen_addr_filter = req
+        .listen_addr
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
 
     for rule in &config.rules {
         if !rule.enabled {
@@ -399,7 +408,8 @@ pub fn test_route_matching(req: RouteTestRequest) -> Result<RouteTestResult> {
                 remove_headers: route.remove_headers.clone(),
                 static_dir: route.static_dir.clone(),
                 proxy_pass_path: route.proxy_pass_path.clone(),
-                basic_auth_required: rule.basic_auth_enable && !route.exclude_basic_auth.unwrap_or(false),
+                basic_auth_required: rule.basic_auth_enable
+                    && !route.exclude_basic_auth.unwrap_or(false),
                 ssl_enabled: rule.ssl_enable,
             });
         }
@@ -518,7 +528,11 @@ fn find_best_matching_route<'a>(
             continue;
         }
 
-        let route_host = route.host.as_deref().map(str::trim).filter(|s| !s.is_empty());
+        let route_host = route
+            .host
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty());
         let host_ok = match route_host {
             None => true,
             Some(h) => host_matches(h, host),
@@ -529,7 +543,10 @@ fn find_best_matching_route<'a>(
 
         if let Some(route_methods) = &route.methods {
             if let Some(req_method) = method {
-                if !route_methods.iter().any(|m| m.eq_ignore_ascii_case(req_method)) {
+                if !route_methods
+                    .iter()
+                    .any(|m| m.eq_ignore_ascii_case(req_method))
+                {
                     continue;
                 }
             }
@@ -799,7 +816,9 @@ pub async fn run_performance_test(req: PerformanceTestRequest) -> Result<Perform
 }
 
 /// 验证配置
-pub async fn validate_configuration(req: ConfigValidationRequest) -> Result<ConfigValidationResult> {
+pub async fn validate_configuration(
+    req: ConfigValidationRequest,
+) -> Result<ConfigValidationResult> {
     use futures_util::stream::{self, StreamExt};
 
     const VALIDATION_CONCURRENCY: usize = 16;
@@ -826,36 +845,32 @@ pub async fn validate_configuration(req: ConfigValidationRequest) -> Result<Conf
             })
             .collect();
 
-        let mut cert_results: Vec<_> = stream::iter(
-            cert_targets
-                .into_iter()
-                .enumerate()
-                .map(|(idx, (listen_addr, cert_file, key_file))| async move {
-                    let check = match axum_server::tls_rustls::RustlsConfig::from_pem_file(
-                        &cert_file,
-                        &key_file,
-                    )
-                    .await
-                    {
-                        Ok(_) => CertificateCheckResult {
-                            listen_addr: listen_addr.clone(),
-                            cert_file,
-                            key_file,
-                            valid: true,
-                            error: None,
-                        },
-                        Err(e) => CertificateCheckResult {
-                            listen_addr: listen_addr.clone(),
-                            cert_file,
-                            key_file,
-                            valid: false,
-                            error: Some(e.to_string()),
-                        },
-                    };
+        let mut cert_results: Vec<_> = stream::iter(cert_targets.into_iter().enumerate().map(
+            |(idx, (listen_addr, cert_file, key_file))| async move {
+                let check = match axum_server::tls_rustls::RustlsConfig::from_pem_file(
+                    &cert_file, &key_file,
+                )
+                .await
+                {
+                    Ok(_) => CertificateCheckResult {
+                        listen_addr: listen_addr.clone(),
+                        cert_file,
+                        key_file,
+                        valid: true,
+                        error: None,
+                    },
+                    Err(e) => CertificateCheckResult {
+                        listen_addr: listen_addr.clone(),
+                        cert_file,
+                        key_file,
+                        valid: false,
+                        error: Some(e.to_string()),
+                    },
+                };
 
-                    (idx, check)
-                }),
-        )
+                (idx, check)
+            },
+        ))
         .buffer_unordered(VALIDATION_CONCURRENCY)
         .collect()
         .await;
@@ -884,42 +899,39 @@ pub async fn validate_configuration(req: ConfigValidationRequest) -> Result<Conf
             .flat_map(|route| route.upstreams.iter().map(|upstream| upstream.url.clone()))
             .collect();
 
-        let mut upstream_results: Vec<_> = stream::iter(
-            upstream_targets
-                .into_iter()
-                .enumerate()
-                .map(|(idx, url)| {
-                    let client = client.clone();
-                    async move {
-                        let start = Instant::now();
-                        let check = match timeout(Duration::from_secs(5), client.get(&url).send()).await {
-                            Ok(Ok(_)) => UpstreamCheckResult {
-                                url,
-                                reachable: true,
-                                response_time_ms: Some(start.elapsed().as_millis() as u64),
-                                error: None,
-                            },
-                            Ok(Err(e)) => UpstreamCheckResult {
-                                url,
-                                reachable: false,
-                                response_time_ms: None,
-                                error: Some(e.to_string()),
-                            },
-                            Err(_) => UpstreamCheckResult {
-                                url,
-                                reachable: false,
-                                response_time_ms: None,
-                                error: Some("请求超时".to_string()),
-                            },
-                        };
+        let mut upstream_results: Vec<_> =
+            stream::iter(upstream_targets.into_iter().enumerate().map(|(idx, url)| {
+                let client = client.clone();
+                async move {
+                    let start = Instant::now();
+                    let check = match timeout(Duration::from_secs(5), client.get(&url).send()).await
+                    {
+                        Ok(Ok(_)) => UpstreamCheckResult {
+                            url,
+                            reachable: true,
+                            response_time_ms: Some(start.elapsed().as_millis() as u64),
+                            error: None,
+                        },
+                        Ok(Err(e)) => UpstreamCheckResult {
+                            url,
+                            reachable: false,
+                            response_time_ms: None,
+                            error: Some(e.to_string()),
+                        },
+                        Err(_) => UpstreamCheckResult {
+                            url,
+                            reachable: false,
+                            response_time_ms: None,
+                            error: Some("请求超时".to_string()),
+                        },
+                    };
 
-                        (idx, check)
-                    }
-                }),
-        )
-        .buffer_unordered(VALIDATION_CONCURRENCY)
-        .collect()
-        .await;
+                    (idx, check)
+                }
+            }))
+            .buffer_unordered(VALIDATION_CONCURRENCY)
+            .collect()
+            .await;
 
         upstream_results.sort_by_key(|(idx, _)| *idx);
         for (_, check) in upstream_results {
@@ -957,11 +969,9 @@ pub async fn validate_configuration(req: ConfigValidationRequest) -> Result<Conf
                 })
                 .collect();
 
-            let mut port_results: Vec<_> = stream::iter(
-                listen_targets
-                    .into_iter()
-                    .enumerate()
-                    .map(|(idx, listen_addr)| async move {
+            let mut port_results: Vec<_> =
+                stream::iter(listen_targets.into_iter().enumerate().map(
+                    |(idx, listen_addr)| async move {
                         let normalized_addr = if listen_addr.starts_with(':') {
                             format!("0.0.0.0{}", listen_addr)
                         } else {
@@ -982,11 +992,11 @@ pub async fn validate_configuration(req: ConfigValidationRequest) -> Result<Conf
                         };
 
                         (idx, check)
-                    }),
-            )
-            .buffer_unordered(VALIDATION_CONCURRENCY)
-            .collect()
-            .await;
+                    },
+                ))
+                .buffer_unordered(VALIDATION_CONCURRENCY)
+                .collect()
+                .await;
 
             port_results.sort_by_key(|(idx, _)| *idx);
             for (_, check) in port_results {
@@ -1071,7 +1081,11 @@ pub fn generate_self_signed_cert(req: SelfSignedCertRequest) -> Result<SelfSigne
     if common_name.is_empty() {
         return Err(anyhow!("通用名称不能为空"));
     }
-    let organization = req.organization.as_deref().map(str::trim).filter(|s| !s.is_empty());
+    let organization = req
+        .organization
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
     let organizational_unit = req
         .organizational_unit
         .as_deref()
@@ -1094,8 +1108,8 @@ pub fn generate_self_signed_cert(req: SelfSignedCertRequest) -> Result<SelfSigne
     let mut seen = HashSet::new();
     subject_alt_names.retain(|s| seen.insert(s.to_ascii_lowercase()));
 
-    let mut params = CertificateParams::new(subject_alt_names.clone())
-        .context("无效的备用名称(SAN)")?;
+    let mut params =
+        CertificateParams::new(subject_alt_names.clone()).context("无效的备用名称(SAN)")?;
     params.distinguished_name = DistinguishedName::new();
     params
         .distinguished_name
@@ -1126,11 +1140,18 @@ pub fn generate_self_signed_cert(req: SelfSignedCertRequest) -> Result<SelfSigne
     );
 
     let key_pair = KeyPair::generate().context("生成私钥失败")?;
-    let cert = params.self_signed(&key_pair).context("生成自签名证书失败")?;
+    let cert = params
+        .self_signed(&key_pair)
+        .context("生成自签名证书失败")?;
     let cert_pem = cert.pem();
     let key_pem = key_pair.serialize_pem();
 
-    let output_dir = if let Some(dir) = req.output_dir.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+    let output_dir = if let Some(dir) = req
+        .output_dir
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
         PathBuf::from(dir)
     } else {
         let cfg_path = config::get_config_path().context("获取配置路径失败")?;
@@ -1251,8 +1272,8 @@ pub async fn get_ssl_cert_info(req: SslCertInfoRequest) -> Result<SslCertInfoRes
 
 /// 端口扫描
 pub async fn scan_ports(req: PortScanRequest) -> Result<PortScanResult> {
-    use std::time::Duration;
     use futures_util::stream::{self, StreamExt};
+    use std::time::Duration;
     use tokio::time::timeout;
 
     let start = Instant::now();
@@ -1266,9 +1287,22 @@ pub async fn scan_ports(req: PortScanRequest) -> Result<PortScanResult> {
         let host = host.clone();
         async move {
             let addr = format!("{}:{}", host, port);
-            let is_open = timeout(timeout_duration, tokio::net::TcpStream::connect(&addr)).await.is_ok();
-            let service = if is_open { get_service_name(port) } else { None };
-            (index, PortStatus { port, open: is_open, service })
+            let is_open = timeout(timeout_duration, tokio::net::TcpStream::connect(&addr))
+                .await
+                .is_ok();
+            let service = if is_open {
+                get_service_name(port)
+            } else {
+                None
+            };
+            (
+                index,
+                PortStatus {
+                    port,
+                    open: is_open,
+                    service,
+                },
+            )
         }
     }))
     .buffer_unordered(concurrency);
@@ -1308,19 +1342,42 @@ pub fn encode_decode(req: EncodeDecodeRequest) -> Result<EncodeDecodeResult> {
         "base64_encode" => base64::engine::general_purpose::STANDARD.encode(&req.input),
         "base64_decode" => match base64::engine::general_purpose::STANDARD.decode(&req.input) {
             Ok(bytes) => String::from_utf8(bytes).unwrap_or_else(|_| "无法解码为UTF-8".to_string()),
-            Err(e) => return Ok(EncodeDecodeResult { output: String::new(), error: Some(e.to_string()) }),
+            Err(e) => {
+                return Ok(EncodeDecodeResult {
+                    output: String::new(),
+                    error: Some(e.to_string()),
+                })
+            }
         },
         "url_encode" => urlencoding::encode(&req.input).to_string(),
         "url_decode" => match urlencoding::decode(&req.input) {
             Ok(s) => s.to_string(),
-            Err(e) => return Ok(EncodeDecodeResult { output: String::new(), error: Some(e.to_string()) }),
+            Err(e) => {
+                return Ok(EncodeDecodeResult {
+                    output: String::new(),
+                    error: Some(e.to_string()),
+                })
+            }
         },
         "hex_encode" => hex::encode(&req.input),
         "hex_decode" => match hex::decode(&req.input) {
             Ok(bytes) => String::from_utf8(bytes).unwrap_or_else(|_| "无法解码为UTF-8".to_string()),
-            Err(e) => return Ok(EncodeDecodeResult { output: String::new(), error: Some(e.to_string()) }),
+            Err(e) => {
+                return Ok(EncodeDecodeResult {
+                    output: String::new(),
+                    error: Some(e.to_string()),
+                })
+            }
         },
-        _ => return Ok(EncodeDecodeResult { output: String::new(), error: Some("不支持的操作".to_string()) }),
+        _ => {
+            return Ok(EncodeDecodeResult {
+                output: String::new(),
+                error: Some("不支持的操作".to_string()),
+            })
+        }
     };
-    Ok(EncodeDecodeResult { output, error: None })
+    Ok(EncodeDecodeResult {
+        output,
+        error: None,
+    })
 }

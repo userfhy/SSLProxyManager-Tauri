@@ -38,5 +38,4 @@ impl ProxyState {
     }
 }
 
-pub static PROXY_STATE: parking_lot::Mutex<ProxyState> =
-    parking_lot::Mutex::new(ProxyState::new());
+pub static PROXY_STATE: parking_lot::Mutex<ProxyState> = parking_lot::Mutex::new(ProxyState::new());

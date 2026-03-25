@@ -42,7 +42,10 @@ fn pick_download_url(rel: &GithubRelease) -> String {
     rel.html_url.clone().unwrap_or_default()
 }
 
-pub async fn check_for_updates(current_version: &str, cfg: config::UpdateConfig) -> Result<CheckResult> {
+pub async fn check_for_updates(
+    current_version: &str,
+    cfg: config::UpdateConfig,
+) -> Result<CheckResult> {
     // 兼容旧逻辑：仍然尊重 enabled 开关；server_url 配置将被前端隐藏，但仍允许保留在配置里
     if !cfg.enabled {
         return Ok(CheckResult {

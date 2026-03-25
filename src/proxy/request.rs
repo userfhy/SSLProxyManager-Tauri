@@ -5,10 +5,12 @@ use axum::response::{IntoResponse, Response};
 use regex::Regex;
 use std::net::SocketAddr;
 
-use super::{upstream::build_upstream_url, AppState};
 use super::context::{enqueue_request_log, format_access_log, RequestContext};
-use super::helpers::{cached_regex, content_type_allowed, expand_proxy_header_value, is_hop_header_fast};
+use super::helpers::{
+    cached_regex, content_type_allowed, expand_proxy_header_value, is_hop_header_fast,
+};
 use super::logging::{push_log_lazy, SKIP_HEADERS};
+use super::{upstream::build_upstream_url, AppState};
 
 pub(crate) struct PreparedProxyRequest {
     pub target: String,
@@ -62,8 +64,13 @@ pub async fn prepare_proxy_request(
         .map(|rules| rules.iter().any(|r| r.enabled))
         .unwrap_or(false);
 
-    let mut upstream_url = super::upstream::pick_upstream_smooth(route)
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "No static directory or upstream configured").into_response())?;
+    let mut upstream_url = super::upstream::pick_upstream_smooth(route).ok_or_else(|| {
+        (
+            StatusCode::NOT_FOUND,
+            "No static directory or upstream configured",
+        )
+            .into_response()
+    })?;
 
     let final_uri = rewrite_uri(route, &ctx.uri);
     upstream_url = select_upstream_url(state, &upstream_url);
@@ -78,7 +85,17 @@ pub async fn prepare_proxy_request(
         Err(e) => {
             let status = StatusCode::BAD_GATEWAY;
             push_log_lazy(&state.app, || format_access_log(node, ctx, status));
-            enqueue_request_log(node, ctx, remote, status, &upstream_url, matched_route_id);
+            enqueue_request_log(
+                node,
+                ctx,
+                remote,
+                status,
+                &upstream_url,
+                matched_route_id,
+                0.0,
+                0.0,
+                0.0,
+            );
             return Err((status, format!("bad upstream url: {e}")).into_response());
         }
     };
@@ -195,7 +212,11 @@ pub async fn prepare_proxy_request(
 
     final_headers.insert(
         HeaderName::from_static("x-forwarded-proto"),
-        HeaderValue::from_static(if state.rule.ssl_enable { "https" } else { "http" }),
+        HeaderValue::from_static(if state.rule.ssl_enable {
+            "https"
+        } else {
+            "http"
+        }),
     );
 
     if has_enabled_response_body_replace {

@@ -70,7 +70,10 @@ pub fn detect_config_changes(old: &Config, new: &Config) -> ConfigChange {
         return ConfigChange::Global;
     }
 
-    changes.into_iter().next().unwrap_or(ConfigChange::BasicOnly)
+    changes
+        .into_iter()
+        .next()
+        .unwrap_or(ConfigChange::BasicOnly)
 }
 
 fn config_listen_addrs(cfg: &Config) -> Vec<SocketAddr> {
@@ -97,7 +100,11 @@ fn config_listen_addrs(cfg: &Config) -> Vec<SocketAddr> {
     addrs
 }
 
-async fn wait_for_ports_state(addrs: &[SocketAddr], should_be_open: bool, timeout: Duration) -> bool {
+async fn wait_for_ports_state(
+    addrs: &[SocketAddr],
+    should_be_open: bool,
+    timeout: Duration,
+) -> bool {
     if addrs.is_empty() {
         return true;
     }
@@ -133,10 +140,7 @@ async fn wait_for_ports_state(addrs: &[SocketAddr], should_be_open: bool, timeou
 /// 2. 只重启受影响的部分
 /// 3. 优先等待端口实际关闭/打开，而不是仅依赖固定 sleep
 /// 4. 提供更好的错误处理
-pub async fn graceful_reload(
-    app: AppHandle,
-    new_config: Config,
-) -> Result<Config> {
+pub async fn graceful_reload(app: AppHandle, new_config: Config) -> Result<Config> {
     let old_config = config::get_config();
     let change_type = detect_config_changes(&old_config, &new_config);
 
@@ -154,8 +158,7 @@ pub async fn graceful_reload(
             let new_addrs = config_listen_addrs(&new_config);
 
             if was_running {
-                proxy::stop_server(app.clone())
-                    .context("停止服务失败")?;
+                proxy::stop_server(app.clone()).context("停止服务失败")?;
 
                 let stopped = wait_for_ports_state(&old_addrs, false, Duration::from_secs(3)).await;
                 if !stopped {
@@ -164,13 +167,13 @@ pub async fn graceful_reload(
             }
 
             config::set_config(new_config.clone());
-            config::save_config()
-                .context("保存配置文件失败")?;
+            config::save_config().context("保存配置文件失败")?;
 
             if was_running {
                 match proxy::start_server(app.clone()) {
                     Ok(_) => {
-                        let started = wait_for_ports_state(&new_addrs, true, Duration::from_secs(3)).await;
+                        let started =
+                            wait_for_ports_state(&new_addrs, true, Duration::from_secs(3)).await;
                         if !started {
                             tracing::warn!("服务启动后等待监听端口就绪超时，但启动调用已返回成功");
                         }
@@ -183,7 +186,8 @@ pub async fn graceful_reload(
                         config::set_config(old_config.clone());
                         config::save_config().ok();
 
-                        let _ = wait_for_ports_state(&new_addrs, false, Duration::from_secs(2)).await;
+                        let _ =
+                            wait_for_ports_state(&new_addrs, false, Duration::from_secs(2)).await;
 
                         if let Err(rollback_err) = proxy::start_server(app) {
                             tracing::error!("回滚启动也失败: {}", rollback_err);
@@ -194,7 +198,8 @@ pub async fn graceful_reload(
                             ));
                         }
 
-                        let _ = wait_for_ports_state(&old_addrs, true, Duration::from_secs(3)).await;
+                        let _ =
+                            wait_for_ports_state(&old_addrs, true, Duration::from_secs(3)).await;
 
                         Err(anyhow::anyhow!("新配置启动失败，已回滚到旧配置: {}", e))
                     }

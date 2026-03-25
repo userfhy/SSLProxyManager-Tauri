@@ -4,9 +4,7 @@ use axum::{
     extract::{
         connect_info::ConnectInfo,
         ws::{self},
-        FromRef,
-        State,
-        WebSocketUpgrade,
+        FromRef, State, WebSocketUpgrade,
     },
     http::{HeaderMap, StatusCode, Uri},
     response::{IntoResponse, Response},
@@ -109,9 +107,10 @@ pub fn start_ws_servers(app: tauri::AppHandle) -> Result<()> {
             }
         });
 
-        WS_SERVERS
-            .write()
-            .push(WsServerHandle { handle, shutdown_tx });
+        WS_SERVERS.write().push(WsServerHandle {
+            handle,
+            shutdown_tx,
+        });
     }
 
     Ok(())
@@ -147,7 +146,10 @@ async fn start_ws_rule_server(
     let app_router = app_router.into_make_service_with_connect_info::<SocketAddr>();
 
     info!("WS listen {} -> {}", rule.listen_addr, addr);
-    ws_log(&app, format!("Listening address: {} -> {}", rule.listen_addr, addr));
+    ws_log(
+        &app,
+        format!("Listening address: {} -> {}", rule.listen_addr, addr),
+    );
 
     if rule.ssl_enable {
         ws_log(&app, format!("HTTPS enabled: {}", addr));
@@ -160,7 +162,7 @@ async fn start_ws_rule_server(
         .with_context(|| "Failed to load WS TLS certificate/private key")?;
 
         let mut shutdown_rx = shutdown_rx;
-        
+
         if need_dual_stack && addr.is_ipv6() {
             // 在 Linux 上，绑定 [::]:port 通常已经启用了 IPv6 dual-stack，
             // 可以同时处理 IPv4 和 IPv6 连接，不需要再绑定 0.0.0.0:port
@@ -176,7 +178,7 @@ async fn start_ws_rule_server(
                     addr
                 ),
             );
-            
+
             let server_future = axum_server::bind_rustls(addr, tls_cfg).serve(app_router);
             tokio::select! {
                 res = server_future => {
@@ -201,7 +203,7 @@ async fn start_ws_rule_server(
         ws_log(&app, format!("HTTP enabled: {}", addr));
 
         let mut shutdown_rx = shutdown_rx;
-        
+
         if need_dual_stack && addr.is_ipv6() {
             // 在 Linux 上，绑定 [::]:port 通常已经启用了 IPv6 dual-stack，
             // 可以同时处理 IPv4 和 IPv6 连接，不需要再绑定 0.0.0.0:port
@@ -217,7 +219,7 @@ async fn start_ws_rule_server(
                     addr
                 ),
             );
-            
+
             let optimizer = TcpOptimizer::default();
             let listener = optimizer.optimize_listener(addr).await?;
             let server_future = axum::serve(listener, app_router);
@@ -258,10 +260,19 @@ async fn ws_handler(
 ) -> Response {
     // 访问控制（与 HTTP 代理一致）：黑名单优先，其次白名单，再次 allow_all_lan
     if state.ws_access_control_enabled
-        && !access_control::is_allowed_fast(&remote, &headers, state.allow_all_lan, state.allow_all_ip, &state.whitelist)
+        && !access_control::is_allowed_fast(
+            &remote,
+            &headers,
+            state.allow_all_lan,
+            state.allow_all_ip,
+            &state.whitelist,
+        )
     {
         let ip = access_control::client_ip_from_headers(&remote, &headers);
-        let _ = app.emit("log-line", format!("WS forbidden: ip={ip} path={}", uri.path()));
+        let _ = app.emit(
+            "log-line",
+            format!("WS forbidden: ip={ip} path={}", uri.path()),
+        );
         return (StatusCode::FORBIDDEN, "Forbidden").into_response();
     }
 
@@ -293,7 +304,9 @@ async fn proxy_ws(client: ws::WebSocket, upstream_url: String) -> Result<()> {
         while let Some(msg) = c_rx.next().await {
             let msg = msg.map_err(|e| anyhow!(e))?;
             let tmsg = match msg {
-                ws::Message::Text(s) => tokio_tungstenite::tungstenite::Message::Text(s.to_string().into()),
+                ws::Message::Text(s) => {
+                    tokio_tungstenite::tungstenite::Message::Text(s.to_string().into())
+                }
                 ws::Message::Binary(b) => tokio_tungstenite::tungstenite::Message::Binary(b),
                 ws::Message::Ping(b) => tokio_tungstenite::tungstenite::Message::Ping(b),
                 ws::Message::Pong(b) => tokio_tungstenite::tungstenite::Message::Pong(b),
@@ -316,10 +329,18 @@ async fn proxy_ws(client: ws::WebSocket, upstream_url: String) -> Result<()> {
         while let Some(msg) = u_rx.next().await {
             let msg = msg.map_err(|e| anyhow!(e))?;
             let amsg = match msg {
-                tokio_tungstenite::tungstenite::Message::Text(s) => ws::Message::Text(s.to_string().into()),
-                tokio_tungstenite::tungstenite::Message::Binary(b) => ws::Message::Binary(Bytes::from(b)),
-                tokio_tungstenite::tungstenite::Message::Ping(b) => ws::Message::Ping(Bytes::from(b)),
-                tokio_tungstenite::tungstenite::Message::Pong(b) => ws::Message::Pong(Bytes::from(b)),
+                tokio_tungstenite::tungstenite::Message::Text(s) => {
+                    ws::Message::Text(s.to_string().into())
+                }
+                tokio_tungstenite::tungstenite::Message::Binary(b) => {
+                    ws::Message::Binary(Bytes::from(b))
+                }
+                tokio_tungstenite::tungstenite::Message::Ping(b) => {
+                    ws::Message::Ping(Bytes::from(b))
+                }
+                tokio_tungstenite::tungstenite::Message::Pong(b) => {
+                    ws::Message::Pong(Bytes::from(b))
+                }
                 tokio_tungstenite::tungstenite::Message::Close(c) => {
                     let close = c.map(|c| ws::CloseFrame {
                         code: ws::CloseCode::from(u16::from(c.code)),
@@ -359,7 +380,7 @@ fn parse_listen_addr(s: &str) -> Result<(SocketAddr, bool)> {
         let port = trimmed;
         let ipv6_format = format!("[::]{}", port);
         let ipv4_format = format!("0.0.0.0{}", port);
-        
+
         // 优先使用 IPv6，因为它通常可以同时监听 IPv4（dual-stack）
         if let Ok(addr) = ipv6_format.parse::<SocketAddr>() {
             (addr, true) // 标记需要同时绑定

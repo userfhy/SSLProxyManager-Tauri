@@ -2,13 +2,13 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use std::net::SocketAddr;
 
-use super::AppState;
 use super::auth::is_basic_auth_ok;
 use super::context::RequestContext;
 use super::early::{
     handle_access_control, handle_basic_auth_failure, handle_missing_route, handle_rate_limit,
 };
 use super::matching::match_route;
+use super::AppState;
 
 pub(crate) struct GuardOutcome<'a> {
     pub route: &'a crate::config::Route,
@@ -23,7 +23,8 @@ pub fn resolve_route_and_run_guards<'a>(
     req_headers: &HeaderMap,
 ) -> Result<GuardOutcome<'a>, Response> {
     let host = ctx.host_header.as_ref();
-    let (route, matched_route_id) = match_route(&state.rule.routes, host, &ctx.path, method, req_headers);
+    let (route, matched_route_id) =
+        match_route(&state.rule.routes, host, &ctx.path, method, req_headers);
 
     if let Some(resp) = handle_access_control(state, ctx, remote, req_headers, &matched_route_id) {
         return Err(resp);
@@ -49,7 +50,11 @@ pub fn resolve_route_and_run_guards<'a>(
     };
 
     if route.upstreams.is_empty() && route.static_dir.is_none() {
-        return Err((StatusCode::NOT_FOUND, "No static directory or upstream configured").into_response());
+        return Err((
+            StatusCode::NOT_FOUND,
+            "No static directory or upstream configured",
+        )
+            .into_response());
     }
 
     Ok(GuardOutcome {

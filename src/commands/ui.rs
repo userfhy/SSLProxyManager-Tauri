@@ -181,7 +181,10 @@ pub fn quit_app(app: tauri::AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn save_config_toml_as(app: tauri::AppHandle, content: String) -> Result<Option<String>, String> {
+pub async fn save_config_toml_as(
+    app: tauri::AppHandle,
+    content: String,
+) -> Result<Option<String>, String> {
     let ts = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
     let default_name = format!("config-{}.toml", ts);
 
@@ -249,8 +252,12 @@ pub async fn save_chart_png_with_dialog(
 pub async fn export_current_config_toml(app: tauri::AppHandle) -> Result<Option<String>, String> {
     let cfg_path = crate::config::get_config_path().map_err(|e| e.to_string())?;
 
-    let content = std::fs::read_to_string(&cfg_path)
-        .map_err(|e| format!("Failed to read current config file ({}): {e}", cfg_path.display()))?;
+    let content = std::fs::read_to_string(&cfg_path).map_err(|e| {
+        format!(
+            "Failed to read current config file ({}): {e}",
+            cfg_path.display()
+        )
+    })?;
 
     let ts = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
     let default_name = format!("config-{}.toml", ts);

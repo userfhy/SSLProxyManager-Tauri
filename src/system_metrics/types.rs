@@ -178,4 +178,3 @@ pub(super) struct HistoricalRow {
     pub(super) processes_forked_total: Option<i64>,
     pub(super) uptime_seconds: Option<f64>,
 }
-

@@ -5,10 +5,10 @@ use std::{net::SocketAddr, sync::Arc, time::Duration};
 use tower_http::compression::{CompressionLayer, CompressionLevel};
 use tracing::info;
 
-use crate::{config, rate_limit};
 use super::listen::parse_listen_addr;
 use super::logging::send_log;
 use super::{healthz, proxy_handler, AppState};
+use crate::{config, rate_limit};
 
 fn build_upstream_clients(cfg: &config::Config) -> Result<(reqwest::Client, reqwest::Client)> {
     let client_builder = || {
@@ -115,12 +115,16 @@ pub async fn start_rule_server(
 
         if cfg.compression_gzip {
             let gzip_level = cfg.compression_gzip_level.clamp(1, 9) as i32;
-            compression_layer = compression_layer.gzip(true).quality(CompressionLevel::Precise(gzip_level));
+            compression_layer = compression_layer
+                .gzip(true)
+                .quality(CompressionLevel::Precise(gzip_level));
         }
 
         if cfg.compression_brotli {
             let brotli_level = cfg.compression_brotli_level.clamp(0, 11) as i32;
-            compression_layer = compression_layer.br(true).quality(CompressionLevel::Precise(brotli_level));
+            compression_layer = compression_layer
+                .br(true)
+                .quality(CompressionLevel::Precise(brotli_level));
         }
 
         app_router = app_router.layer(compression_layer);
@@ -131,11 +135,20 @@ pub async fn start_rule_server(
     let routes_summary = rule
         .routes
         .iter()
-        .map(|rt| format!("{} -> {} upstreams", rt.path.as_deref().unwrap_or("/"), rt.upstreams.len()))
+        .map(|rt| {
+            format!(
+                "{} -> {} upstreams",
+                rt.path.as_deref().unwrap_or("/"),
+                rt.upstreams.len()
+            )
+        })
         .collect::<Vec<_>>()
         .join(", ");
 
-    send_log(format!("[HTTP] Listening address: {} -> {}", listen_addr, addr));
+    send_log(format!(
+        "[HTTP] Listening address: {} -> {}",
+        listen_addr, addr
+    ));
     info!("[HTTP] Listening address: {} -> {}", listen_addr, addr);
 
     if rule.ssl_enable {
@@ -149,8 +162,14 @@ pub async fn start_rule_server(
         send_log(format!("[HTTP] HTTPS enabled: {}", addr));
 
         if need_dual_stack && addr.is_ipv6() {
-            send_log(format!("[HTTP] Listening on IPv6 (dual-stack): {} (supports both IPv4 and IPv6)", addr));
-            info!("[HTTP] Listening on IPv6 (dual-stack): {} (supports both IPv4 and IPv6)", addr);
+            send_log(format!(
+                "[HTTP] Listening on IPv6 (dual-stack): {} (supports both IPv4 and IPv6)",
+                addr
+            ));
+            info!(
+                "[HTTP] Listening on IPv6 (dual-stack): {} (supports both IPv4 and IPv6)",
+                addr
+            );
         }
 
         send_log(format!(
@@ -162,7 +181,10 @@ pub async fn start_rule_server(
         let ax_shutdown_handle = ax_handle.clone();
         tauri::async_runtime::spawn(async move {
             let _ = shutdown_rx.await;
-            info!("Shutdown signal received, HTTPS service {} is stopping", addr);
+            info!(
+                "Shutdown signal received, HTTPS service {} is stopping",
+                addr
+            );
             ax_shutdown_handle.graceful_shutdown(Some(Duration::from_secs(5)));
         });
 
@@ -175,8 +197,14 @@ pub async fn start_rule_server(
         send_log(format!("[HTTP] HTTP enabled: {}", addr));
 
         if need_dual_stack && addr.is_ipv6() {
-            send_log(format!("[HTTP] Listening on IPv6 (dual-stack): {} (supports both IPv4 and IPv6)", addr));
-            info!("[HTTP] Listening on IPv6 (dual-stack): {} (supports both IPv4 and IPv6)", addr);
+            send_log(format!(
+                "[HTTP] Listening on IPv6 (dual-stack): {} (supports both IPv4 and IPv6)",
+                addr
+            ));
+            info!(
+                "[HTTP] Listening on IPv6 (dual-stack): {} (supports both IPv4 and IPv6)",
+                addr
+            );
         }
 
         send_log(format!(
@@ -191,7 +219,10 @@ pub async fn start_rule_server(
         axum::serve(listener, app_router)
             .with_graceful_shutdown(async move {
                 let _ = shutdown_rx.await;
-                info!("Shutdown signal received, HTTP service {} is stopping", addr);
+                info!(
+                    "Shutdown signal received, HTTP service {} is stopping",
+                    addr
+                );
             })
             .await
             .map_err(|e| anyhow!("HTTP service failed: {e}"))?;

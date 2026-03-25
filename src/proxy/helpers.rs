@@ -37,7 +37,10 @@ pub fn generate_etag(path: &std::path::Path, mtime: std::time::SystemTime, size:
     use std::hash::{Hash, Hasher};
     use std::time::UNIX_EPOCH;
 
-    let mtime_secs = mtime.duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    let mtime_secs = mtime
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
     let hash_input = format!("{}-{}-{}", mtime_secs, size, path.display());
 
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
@@ -64,7 +67,13 @@ pub fn get_or_create_etag(path: &std::path::Path) -> Option<String> {
     }
 
     let etag = generate_etag(path, mtime, size);
-    ETAG_CACHE.insert(key, EtagEntry { mtime, etag: etag.clone() });
+    ETAG_CACHE.insert(
+        key,
+        EtagEntry {
+            mtime,
+            etag: etag.clone(),
+        },
+    );
     Some(etag)
 }
 
@@ -178,9 +187,7 @@ pub fn cached_serve_dir(dir: &str) -> ServeDir {
         return entry.clone();
     }
 
-    let service = ServeDir::new(dir)
-        .precompressed_gzip()
-        .precompressed_br();
+    let service = ServeDir::new(dir).precompressed_gzip().precompressed_br();
     STATIC_DIR_SERVICE_CACHE.insert(dir.to_string(), service.clone());
     service
 }
@@ -220,7 +227,12 @@ pub fn is_hop_header_fast(name: &str) -> bool {
 }
 
 #[inline]
-pub fn expand_proxy_header_value(raw: &str, remote: &SocketAddr, inbound_headers: &HeaderMap, is_tls: bool) -> String {
+pub fn expand_proxy_header_value(
+    raw: &str,
+    remote: &SocketAddr,
+    inbound_headers: &HeaderMap,
+    is_tls: bool,
+) -> String {
     if !(raw.contains('$')) {
         return raw.to_string();
     }

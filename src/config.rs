@@ -128,16 +128,16 @@ fn default_stream_access_control_enabled() -> bool {
 
 // 新增的默认值函数
 fn default_upstream_connect_timeout_ms() -> u64 {
-    3000  // 从 5000 降低到 3000，更快失败
+    3000 // 从 5000 降低到 3000，更快失败
 }
 fn default_upstream_read_timeout_ms() -> u64 {
     30000
 }
 fn default_upstream_pool_max_idle() -> usize {
-    200  // 从 100 增加到 200，提升高并发性能
+    200 // 从 100 增加到 200，提升高并发性能
 }
 fn default_upstream_pool_idle_timeout_sec() -> u64 {
-    90  // 从 60 增加到 90，减少连接重建
+    90 // 从 60 增加到 90，减少连接重建
 }
 fn default_max_response_body_size() -> usize {
     10 * 1024 * 1024
@@ -608,7 +608,8 @@ pub(crate) fn get_config_path() -> Result<PathBuf> {
         let base = std::env::var_os("APPDATA")
             .map(PathBuf::from)
             .or_else(|| {
-                std::env::var_os("USERPROFILE").map(|p| PathBuf::from(p).join("AppData").join("Roaming"))
+                std::env::var_os("USERPROFILE")
+                    .map(|p| PathBuf::from(p).join("AppData").join("Roaming"))
             })
             .context("无法确定配置目录（缺少 APPDATA/USERPROFILE）")?;
         return Ok(base.join("SSLProxyManager").join("config.toml"));
@@ -620,12 +621,11 @@ pub(crate) fn get_config_path() -> Result<PathBuf> {
         let home = std::env::var_os("HOME")
             .map(PathBuf::from)
             .context("无法确定配置目录（缺少 HOME）")?;
-        return Ok(
-            home.join("Library")
-                .join("Application Support")
-                .join("SSLProxyManager")
-                .join("config.toml"),
-        );
+        return Ok(home
+            .join("Library")
+            .join("Application Support")
+            .join("SSLProxyManager")
+            .join("config.toml"));
     }
 
     // 其它：暂时沿用可执行文件同目录
@@ -758,7 +758,6 @@ pub fn realtime_logs_settings() -> (bool, bool) {
 pub fn set_config(config: Config) {
     *CONFIG.write() = config;
 }
-
 
 pub fn ensure_config_ids_for_save(config: &mut Config) {
     ensure_config_ids(config);

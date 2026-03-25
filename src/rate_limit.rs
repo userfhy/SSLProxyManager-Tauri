@@ -53,7 +53,7 @@ impl TokenBucket {
     fn try_consume(&mut self) -> bool {
         let now = Instant::now();
         let elapsed = now.duration_since(self.last_update);
-        
+
         // 补充令牌
         let tokens_to_add = elapsed.as_secs_f64() * self.refill_rate;
         self.tokens = (self.tokens + tokens_to_add).min(self.capacity);
@@ -67,7 +67,6 @@ impl TokenBucket {
             false
         }
     }
-
 }
 
 /// 速率限制器
@@ -84,7 +83,7 @@ impl RateLimiter {
     pub fn new(config: RateLimitConfig) -> Self {
         let buckets: Arc<DashMap<String, Arc<RwLock<TokenBucket>>>> = Arc::new(DashMap::new());
         let buckets_clone = buckets.clone();
-        
+
         // 启动清理任务：定期清理长时间未使用的令牌桶
         let cleanup_handle = if config.enabled {
             Some(tokio::spawn(async move {
@@ -125,7 +124,8 @@ impl RateLimiter {
             return (true, false);
         }
 
-        let bucket = self.buckets
+        let bucket = self
+            .buckets
             .entry(ip.to_string())
             .or_insert_with(|| {
                 Arc::new(RwLock::new(TokenBucket::new(
@@ -137,13 +137,12 @@ impl RateLimiter {
 
         let mut bucket = bucket.write();
         let allowed = bucket.try_consume();
-        
+
         // 如果超过限制且配置了封禁时间，则标记需要封禁
         let should_ban = !allowed && self.config.ban_seconds > 0;
-        
+
         (allowed, should_ban)
     }
-
 }
 
 /// 全局速率限制器（按监听地址分组）
@@ -154,9 +153,6 @@ pub static RATE_LIMITERS: once_cell::sync::Lazy<Arc<DashMap<String, Arc<RwLock<R
 pub fn get_rate_limiter(listen_addr: &str, config: RateLimitConfig) -> Arc<RwLock<RateLimiter>> {
     RATE_LIMITERS
         .entry(listen_addr.to_string())
-        .or_insert_with(|| {
-            Arc::new(RwLock::new(RateLimiter::new(config)))
-        })
+        .or_insert_with(|| Arc::new(RwLock::new(RateLimiter::new(config))))
         .clone()
 }
-

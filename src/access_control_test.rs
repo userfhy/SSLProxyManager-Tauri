@@ -4,15 +4,15 @@
 #[cfg(test)]
 mod access_control_tests {
     use crate::access_control;
-    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
     use axum::http::HeaderMap;
+    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 
     #[test]
     fn test_ipv4_mapped_conversion() {
         // 测试 IPv4-mapped IPv6 地址转换
         let ipv6_mapped = "::ffff:192.168.1.128".parse::<IpAddr>().unwrap();
         let converted = access_control::to_ipv4_mapped(&ipv6_mapped);
-        
+
         match converted {
             IpAddr::V4(v4) => {
                 assert_eq!(v4, Ipv4Addr::new(192, 168, 1, 128));
@@ -69,9 +69,12 @@ mod access_control_tests {
         let remote = SocketAddr::new(Ipv6Addr::LOCALHOST.into(), 8080);
         let headers = HeaderMap::new();
         let whitelist = vec![];
-        
+
         let allowed = access_control::is_allowed_fast(&remote, &headers, false, false, &whitelist);
-        assert!(allowed, "IPv6 loopback should be allowed even without allow_all_lan");
+        assert!(
+            allowed,
+            "IPv6 loopback should be allowed even without allow_all_lan"
+        );
         println!("✓ IPv6 loopback (::1) is allowed");
     }
 
@@ -82,9 +85,12 @@ mod access_control_tests {
         let remote = SocketAddr::new(ipv6_mapped.into(), 8080);
         let headers = HeaderMap::new();
         let whitelist = vec![];
-        
+
         let allowed = access_control::is_allowed_fast(&remote, &headers, true, false, &whitelist);
-        assert!(allowed, "IPv4-mapped IPv6 LAN address should be allowed with allow_all_lan=true");
+        assert!(
+            allowed,
+            "IPv4-mapped IPv6 LAN address should be allowed with allow_all_lan=true"
+        );
         println!("✓ IPv4-mapped IPv6 LAN address (::ffff:192.168.1.128) is allowed with allow_all_lan=true");
     }
 
@@ -95,9 +101,12 @@ mod access_control_tests {
         let remote = SocketAddr::new(ipv6_ula.into(), 8080);
         let headers = HeaderMap::new();
         let whitelist = vec![];
-        
+
         let allowed = access_control::is_allowed_fast(&remote, &headers, true, false, &whitelist);
-        assert!(allowed, "IPv6 unique local address should be allowed with allow_all_lan=true");
+        assert!(
+            allowed,
+            "IPv6 unique local address should be allowed with allow_all_lan=true"
+        );
         println!("✓ IPv6 unique local address (fc00::1) is allowed with allow_all_lan=true");
     }
 }

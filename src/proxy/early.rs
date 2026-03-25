@@ -2,10 +2,12 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use std::net::SocketAddr;
 
-use super::AppState;
 use super::auth::unauthorized_response;
-use super::context::{enqueue_request_log, format_access_log, format_headers_for_log, RequestContext};
+use super::context::{
+    enqueue_request_log, format_access_log, format_headers_for_log, RequestContext,
+};
 use super::logging::{push_log_lazy, send_log_with_app};
+use super::AppState;
 use crate::{access_control, metrics, rate_limit};
 
 pub fn handle_access_control(
@@ -26,15 +28,28 @@ pub fn handle_access_control(
         push_log_lazy(&state.app, || format_access_log(node, ctx, status));
 
         let inbound_headers_line = format_headers_for_log(req_headers);
-        send_log_with_app(&state.app, format!(
+        send_log_with_app(
+            &state.app,
+            format!(
             "Reverse proxy error (IN): {} {} -> [IP Blacklist] status={} | inbound_headers=[{}]",
             ctx.method.as_str(),
             ctx.uri,
             status.as_u16(),
             inbound_headers_line
-        ));
+        ),
+        );
 
-        enqueue_request_log(node, ctx, remote, status, "", matched_route_id);
+        enqueue_request_log(
+            node,
+            ctx,
+            remote,
+            status,
+            "",
+            matched_route_id,
+            0.0,
+            0.0,
+            0.0,
+        );
         return Some((status, "IP Forbidden").into_response());
     }
 
@@ -70,7 +85,17 @@ pub fn handle_access_control(
             state.whitelist.len()
         ));
 
-        enqueue_request_log(node, ctx, remote, status, "", matched_route_id);
+        enqueue_request_log(
+            node,
+            ctx,
+            remote,
+            status,
+            "",
+            matched_route_id,
+            0.0,
+            0.0,
+            0.0,
+        );
         return Some((status, "Forbidden").into_response());
     }
 
@@ -107,13 +132,18 @@ pub fn handle_rate_limit(
                     ip_str.clone(),
                     format!("Rate limit exceeded, auto-ban for {} seconds", ban_seconds),
                     ban_seconds,
-                ).await {
+                )
+                .await
+                {
                     tracing::warn!("Failed to add IP to blacklist: {} - {}", ip_str, e);
                 } else {
-                    send_log_with_app(&app_clone, format!(
+                    send_log_with_app(
+                        &app_clone,
+                        format!(
                         "[Rate Limit] IP {} was banned for {} seconds due to rate limit exceeded",
                         ip_str, ban_seconds
-                    ));
+                    ),
+                    );
                 }
             });
         }
@@ -121,7 +151,17 @@ pub fn handle_rate_limit(
 
     let status = StatusCode::TOO_MANY_REQUESTS;
     push_log_lazy(&state.app, || format_access_log(node, ctx, status));
-    enqueue_request_log(node, ctx, remote, status, "", matched_route_id);
+    enqueue_request_log(
+        node,
+        ctx,
+        remote,
+        status,
+        "",
+        matched_route_id,
+        0.0,
+        0.0,
+        0.0,
+    );
     Some((status, "Rate limit exceeded").into_response())
 }
 
@@ -142,15 +182,28 @@ pub fn handle_basic_auth_failure(
     push_log_lazy(&state.app, || format_access_log(node, ctx, status));
 
     let inbound_headers_line = format_headers_for_log(req_headers);
-    send_log_with_app(&state.app, format!(
+    send_log_with_app(
+        &state.app,
+        format!(
         "Reverse proxy error (IN): {} {} -> [Basic Auth Failed] status={} | inbound_headers=[{}]",
         ctx.method.as_str(),
         ctx.uri,
         status.as_u16(),
         inbound_headers_line
-    ));
+    ),
+    );
 
-    enqueue_request_log(node, ctx, remote, status, "", matched_route_id);
+    enqueue_request_log(
+        node,
+        ctx,
+        remote,
+        status,
+        "",
+        matched_route_id,
+        0.0,
+        0.0,
+        0.0,
+    );
     Some(unauthorized_response())
 }
 
@@ -163,6 +216,16 @@ pub fn handle_missing_route(
     let node = &*state.listen_addr;
     let status = StatusCode::NOT_FOUND;
     push_log_lazy(&state.app, || format_access_log(node, ctx, status));
-    enqueue_request_log(node, ctx, remote, status, "", matched_route_id);
+    enqueue_request_log(
+        node,
+        ctx,
+        remote,
+        status,
+        "",
+        matched_route_id,
+        0.0,
+        0.0,
+        0.0,
+    );
     (status, "No route").into_response()
 }

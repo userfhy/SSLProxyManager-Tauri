@@ -1,6 +1,9 @@
 use super::*;
 
-pub(super) fn downsample_points(points: Vec<SystemMetricsPoint>, max_points: usize) -> Vec<SystemMetricsPoint> {
+pub(super) fn downsample_points(
+    points: Vec<SystemMetricsPoint>,
+    max_points: usize,
+) -> Vec<SystemMetricsPoint> {
     if points.len() <= max_points || max_points == 0 {
         return points;
     }
@@ -90,4 +93,3 @@ pub(super) fn build_summary(points: &[SystemMetricsPoint]) -> Option<SystemMetri
         disk_write_peak_bps: disk_write_peak,
     })
 }
-

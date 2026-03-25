@@ -92,8 +92,8 @@ impl TcpOptimizer {
 
         // 设置 TCP keepalive
         if let Some(interval) = self.keepalive_interval {
-            let keepalive = socket2::TcpKeepalive::new()
-                .with_time(std::time::Duration::from_secs(interval));
+            let keepalive =
+                socket2::TcpKeepalive::new().with_time(std::time::Duration::from_secs(interval));
             socket.set_tcp_keepalive(&keepalive)?;
             debug!("TCP keepalive set to {} seconds", interval);
         }
@@ -102,10 +102,7 @@ impl TcpOptimizer {
     }
 
     /// 优化 tokio TcpListener
-    pub async fn optimize_listener(
-        &self,
-        addr: SocketAddr,
-    ) -> Result<tokio::net::TcpListener> {
+    pub async fn optimize_listener(&self, addr: SocketAddr) -> Result<tokio::net::TcpListener> {
         let socket = self.create_optimized_socket(&addr)?;
         socket.bind(&addr.into())?;
         socket.listen(1024)?; // backlog = 1024

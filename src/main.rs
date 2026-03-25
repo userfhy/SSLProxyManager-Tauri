@@ -5,24 +5,24 @@
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
-mod app;
-mod commands;
-mod config;
-mod metrics;
-mod proxy;
-mod ws_proxy;
-mod stream_proxy;
 mod access_control;
 #[cfg(test)]
 mod access_control_test;
-mod rate_limit;
-mod i18n;
+mod app;
 mod buffer_pool;
-mod network_optimizer;
 mod cache_optimizer;
+mod commands;
+mod config;
 mod hot_reload;
-mod test_tools;
+mod i18n;
+mod metrics;
+mod network_optimizer;
+mod proxy;
+mod rate_limit;
+mod stream_proxy;
 mod system_metrics;
+mod test_tools;
+mod ws_proxy;
 
 use tauri::Manager;
 
@@ -34,20 +34,19 @@ fn main() {
     // 根据构建模式优化日志配置：
     // - Debug 模式：详细日志，包含目标模块
     // - Release 模式：紧凑格式，仅 info 及以上级别
-    use tracing_subscriber::{fmt, EnvFilter, prelude::*};
+    use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| {
-            if cfg!(debug_assertions) {
-                EnvFilter::new("debug")
-            } else {
-                EnvFilter::new("info")
-            }
-        });
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+        if cfg!(debug_assertions) {
+            EnvFilter::new("debug")
+        } else {
+            EnvFilter::new("info")
+        }
+    });
 
     let fmt_layer = fmt::layer()
         .with_timer(fmt::time::ChronoLocal::rfc_3339())
-        .with_target(cfg!(debug_assertions));  // Release 模式不显示 target
+        .with_target(cfg!(debug_assertions)); // Release 模式不显示 target
 
     tracing_subscriber::registry()
         .with(filter)

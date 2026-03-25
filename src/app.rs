@@ -5,8 +5,9 @@ use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
 
 static METRICS_PUSHER_RUNNING: AtomicBool = AtomicBool::new(false);
-static METRICS_PUSHER_HANDLE: once_cell::sync::Lazy<RwLock<Option<tauri::async_runtime::JoinHandle<()>>>> =
-    once_cell::sync::Lazy::new(|| RwLock::new(None));
+static METRICS_PUSHER_HANDLE: once_cell::sync::Lazy<
+    RwLock<Option<tauri::async_runtime::JoinHandle<()>>>,
+> = once_cell::sync::Lazy::new(|| RwLock::new(None));
 
 fn start_metrics_pusher(app: AppHandle) {
     // 单例：如果已经启动则跳过

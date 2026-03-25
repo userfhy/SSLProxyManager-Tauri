@@ -51,6 +51,9 @@ pub async fn handle_upstream_response(
         status,
         meta.target,
         meta.matched_route_id,
+        meta.guard_ms,
+        meta.prepare_ms,
+        meta.upstream_ms,
     );
 
     let mut out = Response::new(Body::empty());

@@ -34,7 +34,8 @@ pub fn is_basic_auth_ok(
         return false;
     };
 
-    let Ok(decoded) = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, b64) else {
+    let Ok(decoded) = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, b64)
+    else {
         return false;
     };
     let Ok(s) = String::from_utf8(decoded) else {

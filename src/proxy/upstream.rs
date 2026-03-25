@@ -1,9 +1,9 @@
 use dashmap::DashMap;
 use std::sync::Arc;
 
+use crate::config;
 use anyhow::Result;
 use axum::http::Uri;
-use crate::config;
 
 #[derive(Debug, Clone)]
 pub struct SmoothUpstream {
@@ -19,8 +19,9 @@ pub struct SmoothLbState {
     pub upstreams: Vec<SmoothUpstream>,
 }
 
-pub static UPSTREAM_LB: once_cell::sync::Lazy<DashMap<String, Arc<parking_lot::Mutex<SmoothLbState>>>> =
-    once_cell::sync::Lazy::new(DashMap::new);
+pub static UPSTREAM_LB: once_cell::sync::Lazy<
+    DashMap<String, Arc<parking_lot::Mutex<SmoothLbState>>>,
+> = once_cell::sync::Lazy::new(DashMap::new);
 
 #[inline]
 pub fn upstream_signature(route: &config::Route) -> String {
@@ -118,7 +119,11 @@ pub fn build_upstream_url(
 
     let mut new_path = orig_path.to_string();
     if let Some(pp) = proxy_pass_path {
-        let from = if route_path.is_empty() { "/" } else { route_path };
+        let from = if route_path.is_empty() {
+            "/"
+        } else {
+            route_path
+        };
         let to = if pp.trim().is_empty() { "/" } else { pp };
 
         if new_path.starts_with(from) {

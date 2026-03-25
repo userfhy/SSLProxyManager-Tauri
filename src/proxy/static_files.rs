@@ -4,10 +4,12 @@ use axum::response::{IntoResponse, Response};
 use std::net::SocketAddr;
 use tower::util::ServiceExt;
 
-use super::AppState;
 use super::context::{enqueue_request_log, format_access_log, RequestContext};
-use super::helpers::{cached_index_html, cached_serve_dir, check_etag_match, get_or_create_etag, is_asset_path};
+use super::helpers::{
+    cached_index_html, cached_serve_dir, check_etag_match, get_or_create_etag, is_asset_path,
+};
 use super::logging::push_log_lazy;
+use super::AppState;
 
 pub async fn serve_static_owned(
     state: &AppState,
@@ -38,7 +40,17 @@ pub async fn serve_static_owned(
             if check_etag_match(request_etag.as_deref(), &etag) {
                 let status = StatusCode::NOT_MODIFIED;
                 push_log_lazy(&state.app, || format_access_log(node, ctx, status));
-                enqueue_request_log(node, ctx, remote, status, "", matched_route_id);
+                enqueue_request_log(
+                    node,
+                    ctx,
+                    remote,
+                    status,
+                    "",
+                    matched_route_id,
+                    0.0,
+                    0.0,
+                    0.0,
+                );
                 return status.into_response();
             }
 
@@ -49,12 +61,32 @@ pub async fn serve_static_owned(
             );
 
             push_log_lazy(&state.app, || format_access_log(node, ctx, status));
-            enqueue_request_log(node, ctx, remote, status, "", matched_route_id);
+            enqueue_request_log(
+                node,
+                ctx,
+                remote,
+                status,
+                "",
+                matched_route_id,
+                0.0,
+                0.0,
+                0.0,
+            );
             return resp;
         }
 
         push_log_lazy(&state.app, || format_access_log(node, ctx, status));
-        enqueue_request_log(node, ctx, remote, status, "", matched_route_id);
+        enqueue_request_log(
+            node,
+            ctx,
+            remote,
+            status,
+            "",
+            matched_route_id,
+            0.0,
+            0.0,
+            0.0,
+        );
         return response;
     }
 
@@ -73,7 +105,17 @@ pub async fn serve_static_owned(
             if check_etag_match(request_etag.as_deref(), &etag) {
                 let status = StatusCode::NOT_MODIFIED;
                 push_log_lazy(&state.app, || format_access_log(node, ctx, status));
-                enqueue_request_log(node, ctx, remote, status, "", matched_route_id);
+                enqueue_request_log(
+                    node,
+                    ctx,
+                    remote,
+                    status,
+                    "",
+                    matched_route_id,
+                    0.0,
+                    0.0,
+                    0.0,
+                );
                 return status.into_response();
             }
             resp.headers_mut().insert(
@@ -83,7 +125,17 @@ pub async fn serve_static_owned(
 
             let status = StatusCode::OK;
             push_log_lazy(&state.app, || format_access_log(node, ctx, status));
-            enqueue_request_log(node, ctx, remote, status, "", matched_route_id);
+            enqueue_request_log(
+                node,
+                ctx,
+                remote,
+                status,
+                "",
+                matched_route_id,
+                0.0,
+                0.0,
+                0.0,
+            );
             return resp;
         }
     }

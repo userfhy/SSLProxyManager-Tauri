@@ -63,7 +63,7 @@ pub fn update_tray_menu_texts() {
     let _ = h.hide.set_text(i18n::t(i18n::TrayText::HideWindow));
     let _ = h.restart.set_text(i18n::t(i18n::TrayText::RestartProxy));
     let _ = h.quit.set_text(i18n::t(i18n::TrayText::Quit));
-    
+
     // 同时更新状态和切换按钮（根据当前运行状态）
     let running = crate::proxy::is_effectively_running();
     if running {
@@ -86,15 +86,51 @@ pub fn init_tray(app: &AppHandle) -> tauri::Result<()> {
     // 由前端驱动托盘状态：这里仅创建菜单项，占位显示。
     // 初始化时从 localStorage 读取语言设置（如果前端已设置）
     // 默认使用 zh-CN，前端会在启动时调用 set_locale 更新
-    
-    let status = MenuItem::with_id(app, MENU_ID_STATUS, i18n::t(i18n::TrayText::StatusStopped), false, None::<&str>)?;
-    let show = MenuItem::with_id(app, MENU_ID_SHOW, i18n::t(i18n::TrayText::ShowWindow), true, None::<&str>)?;
-    let hide = MenuItem::with_id(app, MENU_ID_HIDE, i18n::t(i18n::TrayText::HideWindow), true, None::<&str>)?;
 
-    let toggle = MenuItem::with_id(app, MENU_ID_TOGGLE, i18n::t(i18n::TrayText::ToggleStart), true, None::<&str>)?;
-    let restart = MenuItem::with_id(app, MENU_ID_RESTART, i18n::t(i18n::TrayText::RestartProxy), false, None::<&str>)?;
+    let status = MenuItem::with_id(
+        app,
+        MENU_ID_STATUS,
+        i18n::t(i18n::TrayText::StatusStopped),
+        false,
+        None::<&str>,
+    )?;
+    let show = MenuItem::with_id(
+        app,
+        MENU_ID_SHOW,
+        i18n::t(i18n::TrayText::ShowWindow),
+        true,
+        None::<&str>,
+    )?;
+    let hide = MenuItem::with_id(
+        app,
+        MENU_ID_HIDE,
+        i18n::t(i18n::TrayText::HideWindow),
+        true,
+        None::<&str>,
+    )?;
 
-    let quit = MenuItem::with_id(app, MENU_ID_QUIT, i18n::t(i18n::TrayText::Quit), true, None::<&str>)?;
+    let toggle = MenuItem::with_id(
+        app,
+        MENU_ID_TOGGLE,
+        i18n::t(i18n::TrayText::ToggleStart),
+        true,
+        None::<&str>,
+    )?;
+    let restart = MenuItem::with_id(
+        app,
+        MENU_ID_RESTART,
+        i18n::t(i18n::TrayText::RestartProxy),
+        false,
+        None::<&str>,
+    )?;
+
+    let quit = MenuItem::with_id(
+        app,
+        MENU_ID_QUIT,
+        i18n::t(i18n::TrayText::Quit),
+        true,
+        None::<&str>,
+    )?;
 
     let menu = Menu::with_items(
         app,
@@ -129,7 +165,14 @@ pub fn init_tray(app: &AppHandle) -> tauri::Result<()> {
     }
 
     // 保存句柄（给前端 invoke 的 command 用）
-    store_tray_handles(status.clone(), toggle.clone(), restart.clone(), show.clone(), hide.clone(), quit.clone());
+    store_tray_handles(
+        status.clone(),
+        toggle.clone(),
+        restart.clone(),
+        show.clone(),
+        hide.clone(),
+        quit.clone(),
+    );
 
     let builder = builder
         .on_menu_event(move |app, event| match event.id().as_ref() {
@@ -145,9 +188,10 @@ pub fn init_tray(app: &AppHandle) -> tauri::Result<()> {
 
                     #[cfg(not(target_os = "linux"))]
                     {
-                        let _ = window.request_user_attention(Some(tauri::UserAttentionType::Critical));
-                    let _ = window.set_always_on_top(true);
-                    let _ = window.set_always_on_top(false);
+                        let _ =
+                            window.request_user_attention(Some(tauri::UserAttentionType::Critical));
+                        let _ = window.set_always_on_top(true);
+                        let _ = window.set_always_on_top(false);
                     }
                 }
             }
@@ -177,8 +221,7 @@ pub fn init_tray(app: &AppHandle) -> tauri::Result<()> {
                     let _ = window.unminimize();
                     let _ = window.show();
                     let _ = window.set_focus();
-                    let _ =
-                        window.request_user_attention(Some(tauri::UserAttentionType::Critical));
+                    let _ = window.request_user_attention(Some(tauri::UserAttentionType::Critical));
                     let _ = window.set_always_on_top(true);
                     let _ = window.set_always_on_top(false);
 
@@ -214,10 +257,10 @@ pub fn init_tray(app: &AppHandle) -> tauri::Result<()> {
 
                         #[cfg(not(target_os = "linux"))]
                         {
-                        let _ = window
-                            .request_user_attention(Some(tauri::UserAttentionType::Critical));
-                        let _ = window.set_always_on_top(true);
-                        let _ = window.set_always_on_top(false);
+                            let _ = window
+                                .request_user_attention(Some(tauri::UserAttentionType::Critical));
+                            let _ = window.set_always_on_top(true);
+                            let _ = window.set_always_on_top(false);
                         }
                     }
                 }

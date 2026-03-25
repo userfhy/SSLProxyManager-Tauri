@@ -2,11 +2,11 @@ use anyhow::Result;
 use tauri::Emitter;
 use tracing::{error, info};
 
-use crate::{config, stream_proxy, ws_proxy};
-use super::lifecycle::{Phase, PROXY_STATE, ServerHandle};
+use super::lifecycle::{Phase, ServerHandle, PROXY_STATE};
 use super::listen::precheck_rule;
 use super::logging::{init_log_task, send_log, send_log_with_app, LOG_TX};
 use super::server::start_rule_server;
+use crate::{config, stream_proxy, ws_proxy};
 
 pub fn start_server(app: tauri::AppHandle) -> Result<()> {
     init_log_task(app.clone());
@@ -29,7 +29,8 @@ pub fn start_server(app: tauri::AppHandle) -> Result<()> {
             send_log("[STREAM] Disabled");
         } else {
             tauri::async_runtime::spawn(async move {
-                if let Err(e) = stream_proxy::start_stream_servers(app2.clone(), &stream_cfg).await {
+                if let Err(e) = stream_proxy::start_stream_servers(app2.clone(), &stream_cfg).await
+                {
                     send_log_with_app(&app2, format!("[STREAM] Failed to start listener: {e}"));
                 }
             });
@@ -49,7 +50,11 @@ pub fn start_server(app: tauri::AppHandle) -> Result<()> {
                 .map(|s| s.trim())
                 .filter(|s| !s.is_empty())
                 .count();
-            if n == 0 { 1 } else { n }
+            if n == 0 {
+                1
+            } else {
+                n
+            }
         })
         .sum();
 
@@ -100,7 +105,9 @@ pub fn start_server(app: tauri::AppHandle) -> Result<()> {
             let handle = tauri::async_runtime::spawn(async move {
                 if let Err(e) = precheck_rule(&rule_clone, &listen_addr_clone).await {
                     error!("Failed to start listener({listen_addr_clone}): {e}");
-                    send_log(format!("Failed to start listener({listen_addr_clone}): {e}"));
+                    send_log(format!(
+                        "Failed to start listener({listen_addr_clone}): {e}"
+                    ));
 
                     let payload = super::RuleStartErrorPayload {
                         listen_addr: listen_addr_clone.clone(),
@@ -147,12 +154,18 @@ pub fn start_server(app: tauri::AppHandle) -> Result<()> {
                     Ok(_) => {}
                     Err(e) => {
                         error!("Failed to serve on {listen_addr_clone}: {e}");
-                        send_log_with_app(&app_handle, format!("Failed to serve on {listen_addr_clone}: {e}"));
+                        send_log_with_app(
+                            &app_handle,
+                            format!("Failed to serve on {listen_addr_clone}: {e}"),
+                        );
                     }
                 }
             });
 
-            handles.push(ServerHandle { handle, shutdown_tx });
+            handles.push(ServerHandle {
+                handle,
+                shutdown_tx,
+            });
         }
     }
 
