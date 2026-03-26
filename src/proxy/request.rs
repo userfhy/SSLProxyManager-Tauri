@@ -304,3 +304,86 @@ pub async fn prepare_proxy_request(
         upstream_req,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::rewrite_uri;
+    use crate::config::{Route, Upstream, UrlRewriteRule};
+    use axum::http::Uri;
+
+    fn sample_route() -> Route {
+        Route {
+            id: Some("route".into()),
+            enabled: true,
+            host: None,
+            path: Some("/api".into()),
+            proxy_pass_path: None,
+            set_headers: None,
+            static_dir: None,
+            exclude_basic_auth: None,
+            basic_auth_enable: None,
+            basic_auth_username: None,
+            basic_auth_password: None,
+            basic_auth_forward_header: None,
+            follow_redirects: false,
+            compression_enabled: None,
+            compression_gzip: None,
+            compression_brotli: None,
+            compression_min_length: None,
+            url_rewrite_rules: None,
+            request_body_replace: None,
+            response_body_replace: None,
+            remove_headers: None,
+            methods: None,
+            headers: None,
+            upstreams: vec![Upstream {
+                url: "http://backend".into(),
+                weight: 1,
+            }],
+        }
+    }
+
+    #[test]
+    fn rewrite_uri_applies_multiple_enabled_rules_in_order() {
+        let mut route = sample_route();
+        route.url_rewrite_rules = Some(vec![
+            UrlRewriteRule {
+                pattern: "^/api".into(),
+                replacement: "/v1".into(),
+                enabled: true,
+            },
+            UrlRewriteRule {
+                pattern: "users".into(),
+                replacement: "members".into(),
+                enabled: true,
+            },
+        ]);
+
+        let uri: Uri = "/api/users?id=1".parse().unwrap();
+        let rewritten = rewrite_uri(&route, &uri);
+
+        assert_eq!(rewritten, "/v1/members?id=1");
+    }
+
+    #[test]
+    fn rewrite_uri_skips_invalid_regex_rules_and_keeps_valid_result() {
+        let mut route = sample_route();
+        route.url_rewrite_rules = Some(vec![
+            UrlRewriteRule {
+                pattern: "(".into(),
+                replacement: "/broken".into(),
+                enabled: true,
+            },
+            UrlRewriteRule {
+                pattern: "^/api".into(),
+                replacement: "/ok".into(),
+                enabled: true,
+            },
+        ]);
+
+        let uri: Uri = "/api/test".parse().unwrap();
+        let rewritten = rewrite_uri(&route, &uri);
+
+        assert_eq!(rewritten, "/ok/test");
+    }
+}

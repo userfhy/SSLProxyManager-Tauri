@@ -162,3 +162,92 @@ pub fn build_upstream_url(
     }
     Ok(base)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{build_upstream_url, pick_upstream_smooth, upstream_signature, UPSTREAM_LB};
+    use crate::config::{Route, Upstream};
+    use axum::http::Uri;
+    use std::collections::HashMap;
+
+    fn route_with_upstreams(id: Option<&str>, upstreams: Vec<(&str, i32)>) -> Route {
+        Route {
+            id: id.map(str::to_string),
+            enabled: true,
+            host: None,
+            path: Some("/api".into()),
+            proxy_pass_path: None,
+            set_headers: None,
+            static_dir: None,
+            exclude_basic_auth: None,
+            basic_auth_enable: None,
+            basic_auth_username: None,
+            basic_auth_password: None,
+            basic_auth_forward_header: None,
+            follow_redirects: false,
+            compression_enabled: None,
+            compression_gzip: None,
+            compression_brotli: None,
+            compression_min_length: None,
+            url_rewrite_rules: None,
+            request_body_replace: None,
+            response_body_replace: None,
+            remove_headers: None,
+            methods: None,
+            headers: None,
+            upstreams: upstreams
+                .into_iter()
+                .map(|(url, weight)| Upstream {
+                    url: url.into(),
+                    weight,
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn upstream_signature_is_order_insensitive() {
+        let a = route_with_upstreams(Some("r1"), vec![("http://b", 2), ("http://a", 1)]);
+        let b = route_with_upstreams(Some("r1"), vec![("http://a", 1), ("http://b", 2)]);
+
+        assert_eq!(upstream_signature(&a), upstream_signature(&b));
+    }
+
+    #[test]
+    fn pick_upstream_smooth_returns_first_when_route_id_missing() {
+        let route = route_with_upstreams(None, vec![("http://a", 1), ("http://b", 10)]);
+        assert_eq!(pick_upstream_smooth(&route).as_deref(), Some("http://a"));
+    }
+
+    #[test]
+    fn pick_upstream_smooth_respects_weight_distribution() {
+        UPSTREAM_LB.clear();
+        let route = route_with_upstreams(Some("weighted"), vec![("http://a", 1), ("http://b", 2)]);
+        let mut counts: HashMap<String, usize> = HashMap::new();
+
+        for _ in 0..6 {
+            let picked = pick_upstream_smooth(&route).unwrap();
+            *counts.entry(picked).or_default() += 1;
+        }
+
+        assert_eq!(counts.get("http://a"), Some(&2));
+        assert_eq!(counts.get("http://b"), Some(&4));
+        UPSTREAM_LB.clear();
+    }
+
+    #[test]
+    fn build_upstream_url_rewrites_prefix_without_double_slash() {
+        let uri: Uri = "/api/v1/users".parse().unwrap();
+        let out = build_upstream_url("http://backend/", Some("/api"), Some("/internal/"), &uri)
+            .unwrap();
+        assert_eq!(out, "http://backend/internal/v1/users");
+    }
+
+    #[test]
+    fn build_upstream_url_keeps_original_path_when_prefix_not_matched() {
+        let uri: Uri = "/other/path".parse().unwrap();
+        let out = build_upstream_url("http://backend", Some("/api"), Some("/internal"), &uri)
+            .unwrap();
+        assert_eq!(out, "http://backend/other/path");
+    }
+}

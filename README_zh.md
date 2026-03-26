@@ -156,8 +156,8 @@ SSLProxyManager/
 │   │   ├── sampler.rs / writer.rs / query.rs
 │   │   ├── state.rs / types.rs / service.rs
 │   │   └── README.md
-│   ├── ws_proxy.rs                   # WebSocket 代理模块
-│   ├── stream_proxy.rs               # TCP/UDP Stream 代理模块
+│   │   ├── ws_proxy.rs               # WebSocket 代理模块
+│   │   ├── stream_proxy.rs           # TCP/UDP Stream 代理模块
 │   ├── access_control.rs             # ACL / 白名单 / 黑名单
 │   └── tray.rs                       # 系统托盘集成
 ├── frontend/                         # Vue 3 前端
@@ -185,6 +185,33 @@ SSLProxyManager/
 - `single_instance.rs` 若持续未使用，建议删除或接入真实启动路径，避免“陈旧模块”困惑。
 
 后端模块说明已补充在：`src/README.md`。
+
+## 单元测试
+
+当前后端单元测试已覆盖的核心纯逻辑包括：
+
+- `proxy/matching`：host/path/method/header 组合匹配与优先级选择
+- `proxy/request` / `proxy/response`：URI 改写、请求体/响应体替换、Content-Type 过滤
+- `proxy/upstream` / `proxy/stream_proxy`：平滑加权负载均衡、stream 故障转移与时长解析
+- `config` / `commands::config`：配置归一化、告警校验、stream 配置校验、证书路径前置校验
+- `access_control`、`helpers`、`listen`、`network_optimizer` 等边界逻辑
+
+在项目根目录运行全部后端单元测试：
+
+```bash
+cargo test
+```
+
+常用变体：
+
+```bash
+# 显示测试输出
+cargo test -- --nocapture
+
+# 只运行某个模块的测试
+cargo test proxy::matching::tests
+cargo test commands::config::tests
+```
 
 
 ## 配置说明

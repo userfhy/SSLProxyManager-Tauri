@@ -47,3 +47,46 @@ pub async fn precheck_rule(rule: &config::ListenRule, listen_addr: &str) -> Resu
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::parse_listen_addr;
+    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+
+    #[test]
+    fn parse_listen_addr_supports_short_port_syntax() {
+        let (addr, need_dual_stack) = parse_listen_addr(":8080").unwrap();
+
+        assert_eq!(addr.port(), 8080);
+        assert!(need_dual_stack);
+        assert!(matches!(
+            addr,
+            SocketAddr::V6(v6) if *v6.ip() == Ipv6Addr::UNSPECIFIED
+        ) || matches!(
+            addr,
+            SocketAddr::V4(v4) if *v4.ip() == Ipv4Addr::UNSPECIFIED
+        ));
+    }
+
+    #[test]
+    fn parse_listen_addr_trims_whitespace_for_full_socket_addr() {
+        let (addr, need_dual_stack) = parse_listen_addr(" 127.0.0.1:9000 ").unwrap();
+
+        assert_eq!(addr, SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 9000));
+        assert!(!need_dual_stack);
+    }
+
+    #[test]
+    fn parse_listen_addr_keeps_explicit_ipv6_without_dual_stack_flag() {
+        let (addr, need_dual_stack) = parse_listen_addr("[::1]:9443").unwrap();
+
+        assert_eq!(addr, SocketAddr::new(IpAddr::V6(Ipv6Addr::LOCALHOST), 9443));
+        assert!(!need_dual_stack);
+    }
+
+    #[test]
+    fn parse_listen_addr_rejects_invalid_input() {
+        let err = parse_listen_addr("not-an-addr").unwrap_err().to_string();
+        assert!(err.contains("Failed to parse listen_addr"));
+    }
+}

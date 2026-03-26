@@ -202,3 +202,111 @@ fn apply_response_body_replace(
         Err(_) => bytes,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::apply_response_body_replace;
+    use crate::config::{BodyReplaceRule, Route, Upstream};
+    use axum::body::Bytes;
+    use axum::http::{HeaderMap, HeaderValue};
+
+    fn sample_route() -> Route {
+        Route {
+            id: Some("route".into()),
+            enabled: true,
+            host: None,
+            path: Some("/".into()),
+            proxy_pass_path: None,
+            set_headers: None,
+            static_dir: None,
+            exclude_basic_auth: None,
+            basic_auth_enable: None,
+            basic_auth_username: None,
+            basic_auth_password: None,
+            basic_auth_forward_header: None,
+            follow_redirects: false,
+            compression_enabled: None,
+            compression_gzip: None,
+            compression_brotli: None,
+            compression_min_length: None,
+            url_rewrite_rules: None,
+            request_body_replace: None,
+            response_body_replace: None,
+            remove_headers: None,
+            methods: None,
+            headers: None,
+            upstreams: vec![Upstream {
+                url: "http://backend".into(),
+                weight: 1,
+            }],
+        }
+    }
+
+    #[test]
+    fn apply_response_body_replace_applies_plain_and_regex_rules_in_order() {
+        let mut route = sample_route();
+        route.response_body_replace = Some(vec![
+            BodyReplaceRule {
+                find: "world".into(),
+                replace: "team".into(),
+                use_regex: false,
+                enabled: true,
+                content_types: None,
+                compiled_regex: None,
+            },
+            BodyReplaceRule {
+                find: "hello (team)".into(),
+                replace: "hi $1".into(),
+                use_regex: true,
+                enabled: true,
+                content_types: None,
+                compiled_regex: None,
+            },
+        ]);
+
+        let headers = HeaderMap::new();
+        let body = Bytes::from("hello world");
+
+        let out = apply_response_body_replace(&route, &headers, body);
+        assert_eq!(out, Bytes::from("hi team"));
+    }
+
+    #[test]
+    fn apply_response_body_replace_respects_content_type_filter() {
+        let mut route = sample_route();
+        route.response_body_replace = Some(vec![BodyReplaceRule {
+            find: "secret".into(),
+            replace: "public".into(),
+            use_regex: false,
+            enabled: true,
+            content_types: Some("application/json".into()),
+            compiled_regex: None,
+        }]);
+
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            axum::http::header::CONTENT_TYPE,
+            HeaderValue::from_static("text/plain; charset=utf-8"),
+        );
+
+        let out = apply_response_body_replace(&route, &headers, Bytes::from("secret"));
+        assert_eq!(out, Bytes::from("secret"));
+    }
+
+    #[test]
+    fn apply_response_body_replace_ignores_invalid_utf8_body() {
+        let mut route = sample_route();
+        route.response_body_replace = Some(vec![BodyReplaceRule {
+            find: "a".into(),
+            replace: "b".into(),
+            use_regex: false,
+            enabled: true,
+            content_types: None,
+            compiled_regex: None,
+        }]);
+
+        let raw = Bytes::from_static(&[0xff, 0xfe, 0xfd]);
+        let out = apply_response_body_replace(&route, &HeaderMap::new(), raw.clone());
+        assert_eq!(out, raw);
+    }
+}

@@ -13,7 +13,8 @@
 ## 目录职责
 
 - `mod.rs`
-  - 模块装配与总入口 `proxy_handler`
+  - `proxy` 域模块装配
+  - 暴露 HTTP 主链路入口 `proxy_handler`
   - 串联 dispatch/request/response/static_files 等阶段
 - `context.rs`
   - 构建请求上下文（客户端、方法、URI、headers 等）
@@ -36,9 +37,10 @@
 - `logging.rs`
   - 请求日志写入/读取/清理接口
 - `runtime.rs`
-  - 代理服务运行时控制（启动/停止/状态）
+  - 统一运行时控制入口（启动/停止/状态）
+  - 编排 HTTP、WebSocket、TCP/UDP stream 三类监听器
 - `server.rs`
-  - server 层编排与监听相关集成
+  - HTTP/HTTPS server 层编排与监听相关集成
 - `listen.rs`
   - 监听地址解析
 - `helpers.rs`
@@ -47,6 +49,12 @@
   - 生命周期辅助逻辑
 - `types.rs`
   - proxy 域核心类型定义（含共享状态）
+- `ws_proxy.rs`
+  - WebSocket 代理运行时
+  - WS 监听、升级、上游转发与访问控制
+- `stream_proxy.rs`
+  - TCP/UDP stream 代理运行时
+  - stream 配置校验、监听、上游选择与连接转发
 
 ---
 
@@ -83,3 +91,4 @@
 - 依赖 `config` 提供路由与行为配置
 - 依赖 `metrics` 进行请求日志与统计落库
 - 与 `system_metrics` 相互独立（一个是代理请求指标，一个是系统资源指标）
+- `runtime.rs` 作为聚合层，负责调用 `ws_proxy.rs` 与 `stream_proxy.rs`

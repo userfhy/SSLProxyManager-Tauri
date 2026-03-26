@@ -156,8 +156,8 @@ SSLProxyManager/
 │   │   ├── sampler.rs / writer.rs / query.rs
 │   │   ├── state.rs / types.rs / service.rs
 │   │   └── README.md
-│   ├── ws_proxy.rs                   # WebSocket proxy module
-│   ├── stream_proxy.rs               # TCP/UDP stream proxy module
+│   │   ├── ws_proxy.rs               # WebSocket proxy module
+│   │   ├── stream_proxy.rs           # TCP/UDP stream proxy module
 │   ├── access_control.rs             # ACL / whitelist / blacklist
 │   └── tray.rs                       # System tray integration
 ├── frontend/                         # Vue 3 frontend
@@ -185,6 +185,33 @@ One optional cleanup candidate:
 - `single_instance.rs` can be removed (or wired into startup) if it remains unused, to reduce stale-module confusion.
 
 A dedicated backend module note is available at: `src/README.md`.
+
+## Unit Tests
+
+Backend unit tests currently cover core pure-logic areas including:
+
+- proxy route matching: host/path/method/header combinations and precedence
+- request/response rewriting: URI rewrite, body replacement, content-type gating
+- upstream selection: smooth weighted load balancing and stream failover logic
+- config validation and normalization: alerting, stream config, config IDs
+- access control, helper utilities, and network/listen parsing edge cases
+
+Run all backend unit tests from the project root:
+
+```bash
+cargo test
+```
+
+Useful variants:
+
+```bash
+# Show test output
+cargo test -- --nocapture
+
+# Run only one module's tests
+cargo test proxy::matching::tests
+cargo test commands::config::tests
+```
 
 
 ## Configuration

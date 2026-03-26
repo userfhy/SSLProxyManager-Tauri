@@ -760,3 +760,175 @@ pub async fn stop_stream_servers() {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        is_down, parse_duration, record_upstream_failure, record_upstream_success,
+        select_upstream_server, select_upstream_server_with_failover, validate_stream_config,
+        FAIL_MAP, HASH_RING_CACHE,
+    };
+    use crate::config::{StreamProxyConfig, StreamServer, StreamUpstream, StreamUpstreamServer};
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+    use std::time::Duration;
+
+    fn sample_upstream() -> StreamUpstream {
+        StreamUpstream {
+            name: "backend".into(),
+            hash_key: "$remote_addr".into(),
+            consistent: true,
+            servers: vec![
+                StreamUpstreamServer {
+                    addr: "127.0.0.1:10001".into(),
+                    weight: 1,
+                    max_fails: 1,
+                    fail_timeout: "30s".into(),
+                },
+                StreamUpstreamServer {
+                    addr: "127.0.0.1:10002".into(),
+                    weight: 1,
+                    max_fails: 1,
+                    fail_timeout: "30s".into(),
+                },
+            ],
+        }
+    }
+
+    fn sample_config() -> StreamProxyConfig {
+        StreamProxyConfig {
+            enabled: true,
+            upstreams: vec![sample_upstream()],
+            servers: vec![StreamServer {
+                enabled: true,
+                listen_port: 7000,
+                proxy_pass: "backend".into(),
+                proxy_connect_timeout: "3s".into(),
+                proxy_timeout: "30s".into(),
+                udp: false,
+                listen_addr: Some("127.0.0.1:7000".into()),
+            }],
+        }
+    }
+
+    fn sample_client() -> SocketAddr {
+        SocketAddr::new(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 9)), 45678)
+    }
+
+    #[test]
+    fn parse_duration_supports_seconds_minutes_hours_and_plain_number() {
+        assert_eq!(parse_duration("15").unwrap(), Duration::from_secs(15));
+        assert_eq!(parse_duration("15s").unwrap(), Duration::from_secs(15));
+        assert_eq!(parse_duration("2m").unwrap(), Duration::from_secs(120));
+        assert_eq!(parse_duration("1h").unwrap(), Duration::from_secs(3600));
+        assert_eq!(parse_duration(" 5S ").unwrap(), Duration::from_secs(5));
+    }
+
+    #[test]
+    fn parse_duration_rejects_invalid_units() {
+        let err = parse_duration("7d").unwrap_err().to_string();
+        assert!(err.contains("Invalid duration"));
+    }
+
+    #[test]
+    fn validate_stream_config_accepts_valid_config() {
+        validate_stream_config(&sample_config()).unwrap();
+    }
+
+    #[test]
+    fn validate_stream_config_rejects_duplicate_listen_ports_for_same_protocol() {
+        let mut cfg = sample_config();
+        cfg.servers.push(StreamServer {
+            enabled: true,
+            listen_port: 7000,
+            proxy_pass: "backend".into(),
+            proxy_connect_timeout: "3s".into(),
+            proxy_timeout: "30s".into(),
+            udp: false,
+            listen_addr: Some("127.0.0.1:7001".into()),
+        });
+
+        let err = validate_stream_config(&cfg).unwrap_err().to_string();
+        assert!(err.contains("listen_port duplicated"));
+    }
+
+    #[test]
+    fn validate_stream_config_allows_same_port_for_tcp_and_udp() {
+        let mut cfg = sample_config();
+        cfg.servers.push(StreamServer {
+            enabled: true,
+            listen_port: 7000,
+            proxy_pass: "backend".into(),
+            proxy_connect_timeout: "3s".into(),
+            proxy_timeout: "30s".into(),
+            udp: true,
+            listen_addr: Some("127.0.0.1:7002".into()),
+        });
+
+        validate_stream_config(&cfg).unwrap();
+    }
+
+    #[test]
+    fn validate_stream_config_rejects_missing_proxy_pass_upstream() {
+        let mut cfg = sample_config();
+        cfg.servers[0].proxy_pass = "missing".into();
+
+        let err = validate_stream_config(&cfg).unwrap_err().to_string();
+        assert!(err.contains("references missing upstream"));
+    }
+
+    #[test]
+    fn validate_stream_config_rejects_invalid_upstream_address_port() {
+        let mut cfg = sample_config();
+        cfg.upstreams[0].servers[0].addr = "127.0.0.1:notaport".into();
+
+        let err = validate_stream_config(&cfg).unwrap_err().to_string();
+        assert!(err.contains("invalid stream server addr port"));
+    }
+
+    #[test]
+    fn validate_stream_config_rejects_invalid_timeout_values() {
+        let mut cfg = sample_config();
+        cfg.servers[0].proxy_timeout = "abc".into();
+
+        let err = validate_stream_config(&cfg).unwrap_err().to_string();
+        assert!(err.contains("invalid proxy_timeout"));
+    }
+
+    #[test]
+    fn select_upstream_server_is_stable_for_same_client_with_remote_addr_hash() {
+        let upstream = sample_upstream();
+        let client = sample_client();
+
+        let first = select_upstream_server(&upstream, &client).addr.clone();
+        let second = select_upstream_server(&upstream, &client).addr.clone();
+
+        assert_eq!(first, second);
+    }
+
+    #[test]
+    fn failover_skips_marked_down_server() {
+        FAIL_MAP.clear();
+        HASH_RING_CACHE.clear();
+
+        let upstream = sample_upstream();
+        let client = sample_client();
+        let primary = select_upstream_server_with_failover(&upstream, &client)
+            .unwrap()
+            .addr
+            .clone();
+
+        record_upstream_failure(&primary, 1, "30s");
+        assert!(is_down(&primary));
+
+        let fallback = select_upstream_server_with_failover(&upstream, &client)
+            .unwrap()
+            .addr
+            .clone();
+
+        assert_ne!(fallback, primary);
+
+        record_upstream_success(&primary);
+        FAIL_MAP.clear();
+        HASH_RING_CACHE.clear();
+    }
+}

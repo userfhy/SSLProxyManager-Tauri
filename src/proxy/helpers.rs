@@ -296,3 +296,70 @@ pub fn expand_proxy_header_value(
 
     out
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        cached_content_types, check_etag_match, content_type_allowed, expand_proxy_header_value,
+        pure_content_type_from_headers,
+    };
+    use axum::http::{HeaderMap, HeaderValue};
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+
+    #[test]
+    fn cached_content_types_trims_and_normalizes_values() {
+        let parsed = cached_content_types(" Text/Html , application/json ,, ");
+        assert_eq!(&*parsed, &["text/html".to_string(), "application/json".to_string()]);
+    }
+
+    #[test]
+    fn pure_content_type_from_headers_strips_charset_suffix() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            axum::http::header::CONTENT_TYPE,
+            HeaderValue::from_static("application/json; charset=utf-8"),
+        );
+
+        assert_eq!(pure_content_type_from_headers(&headers), Some("application/json"));
+    }
+
+    #[test]
+    fn content_type_allowed_returns_true_for_empty_configuration() {
+        let headers = HeaderMap::new();
+        assert!(content_type_allowed(&headers, " "));
+    }
+
+    #[test]
+    fn check_etag_match_supports_wildcard_and_multi_value_headers() {
+        assert!(check_etag_match(Some("\"abc\", \"def\""), "\"def\""));
+        assert!(check_etag_match(Some("*"), "\"xyz\""));
+        assert!(!check_etag_match(Some("\"abc\""), "\"def\""));
+    }
+
+    #[test]
+    fn expand_proxy_header_value_expands_common_placeholders() {
+        let remote = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(10, 1, 2, 3)), 4567);
+        let mut headers = HeaderMap::new();
+        headers.insert("host", HeaderValue::from_static("example.com"));
+        headers.insert("x-forwarded-for", HeaderValue::from_static("1.1.1.1"));
+
+        let expanded = expand_proxy_header_value(
+            "$scheme://$host from $remote_addr via $proxy_add_x_forwarded_for",
+            &remote,
+            &headers,
+            true,
+        );
+
+        assert_eq!(
+            expanded,
+            "https://example.com from 10.1.2.3 via 1.1.1.1, 10.1.2.3"
+        );
+    }
+
+    #[test]
+    fn expand_proxy_header_value_keeps_plain_string_unchanged() {
+        let remote = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 80);
+        let expanded = expand_proxy_header_value("fixed-value", &remote, &HeaderMap::new(), false);
+        assert_eq!(expanded, "fixed-value");
+    }
+}

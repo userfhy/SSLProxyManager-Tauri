@@ -19,10 +19,8 @@ mod network_optimizer;
 mod proxy;
 mod rate_limit;
 mod single_instance;
-mod stream_proxy;
 mod system_metrics;
 mod test_tools;
-mod ws_proxy;
 
 use tauri::Manager;
 

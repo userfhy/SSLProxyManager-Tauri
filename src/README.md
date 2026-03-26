@@ -17,8 +17,8 @@ Overall naming and structure are **reasonable and consistent**:
 - `app.rs`: app bootstrap / cleanup orchestration
 - `config.rs`: config models, loading/saving, validation helpers
 - `proxy/`: HTTP/HTTPS reverse proxy pipeline
-- `ws_proxy.rs`: WebSocket proxy runtime
-- `stream_proxy.rs`: TCP/UDP stream proxy runtime
+- `proxy/ws_proxy.rs`: WebSocket proxy runtime
+- `proxy/stream_proxy.rs`: TCP/UDP stream proxy runtime
 - `metrics/`: request metrics + SQLite persistence + aggregation
 - `system_metrics/`: host metrics sampling/persistence/query
 - `commands/`: invoke command facade for frontend

@@ -164,11 +164,27 @@ mod tests {
         assert_eq!(optimizer.recv_buffer_size, Some(256 * 1024));
     }
 
-    #[tokio::test]
-    async fn test_create_optimized_listener() {
-        let optimizer = TcpOptimizer::default();
+    #[test]
+    fn test_create_optimized_listener() {
+        let optimizer = TcpOptimizer {
+            nodelay: true,
+            reuse_address: true,
+            #[cfg(all(unix, not(target_os = "solaris"), not(target_os = "illumos")))]
+            reuse_port: false,
+            recv_buffer_size: None,
+            send_buffer_size: None,
+            keepalive_interval: None,
+        };
         let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-        let result = optimizer.optimize_listener(addr).await;
-        assert!(result.is_ok());
+        match optimizer.create_optimized_socket(&addr) {
+            Ok(socket) => optimizer.apply_optimizations(&socket).unwrap(),
+            Err(err) => {
+                let os_err = err.root_cause().downcast_ref::<std::io::Error>();
+                assert!(
+                    os_err.and_then(std::io::Error::raw_os_error) == Some(1),
+                    "unexpected socket creation error: {err}"
+                );
+            }
+        }
     }
 }

@@ -5,7 +5,7 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
-use crate::ws_proxy;
+use crate::proxy::ws_proxy;
 
 // 为 Config 派生 PartialEq，用于配置变更检测
 impl PartialEq for Config {
@@ -1052,5 +1052,244 @@ fn ensure_config_ids(config: &mut Config) {
                 route.id = Some(Uuid::new_v4().to_string());
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        ensure_config_ids_for_save, normalize_alerting_config, validate_alerting_config,
+        AlertRulesConfig, AlertWebhookConfig, AlertingConfig, BodyReplaceRule, Config, ListenRule,
+        Route, StreamProxyConfig, Upstream, WhitelistEntry,
+    };
+
+    fn sample_route() -> Route {
+        Route {
+            id: None,
+            enabled: true,
+            host: Some("example.com".into()),
+            path: Some("/".into()),
+            proxy_pass_path: None,
+            set_headers: None,
+            static_dir: None,
+            exclude_basic_auth: None,
+            basic_auth_enable: None,
+            basic_auth_username: None,
+            basic_auth_password: None,
+            basic_auth_forward_header: None,
+            follow_redirects: false,
+            compression_enabled: None,
+            compression_gzip: None,
+            compression_brotli: None,
+            compression_min_length: None,
+            url_rewrite_rules: None,
+            request_body_replace: Some(vec![BodyReplaceRule {
+                find: "foo".into(),
+                replace: "bar".into(),
+                use_regex: false,
+                enabled: true,
+                content_types: Some(" text/html , application/json ".into()),
+                compiled_regex: None,
+            }]),
+            response_body_replace: None,
+            remove_headers: None,
+            methods: None,
+            headers: None,
+            upstreams: vec![Upstream {
+                url: "http://127.0.0.1:8080".into(),
+                weight: 1,
+            }],
+        }
+    }
+
+    fn sample_config_for_ids() -> Config {
+        Config {
+            rules: vec![ListenRule {
+                id: Some("  ".into()),
+                enabled: true,
+                listen_addr: "127.0.0.1:8443".into(),
+                listen_addrs: vec![],
+                ssl_enable: false,
+                cert_file: String::new(),
+                key_file: String::new(),
+                basic_auth_enable: false,
+                basic_auth_username: String::new(),
+                basic_auth_password: String::new(),
+                basic_auth_forward_header: false,
+                routes: vec![
+                    sample_route(),
+                    Route {
+                        id: Some("route-keep".into()),
+                        ..sample_route()
+                    },
+                ],
+                rate_limit_enabled: None,
+                rate_limit_requests_per_second: None,
+                rate_limit_burst_size: None,
+                rate_limit_window_seconds: None,
+                rate_limit_ban_seconds: None,
+            }],
+            ws_proxy_enabled: true,
+            ws_proxy: None,
+            stream: StreamProxyConfig::default(),
+            http_access_control_enabled: true,
+            ws_access_control_enabled: true,
+            stream_access_control_enabled: true,
+            allow_all_lan: true,
+            allow_all_ip: false,
+            whitelist: vec![WhitelistEntry {
+                ip: "127.0.0.1".into(),
+            }],
+            auto_start: false,
+            show_realtime_logs: true,
+            realtime_logs_only_errors: false,
+            stream_proxy: true,
+            max_body_size: 1024,
+            max_response_body_size: 2048,
+            upstream_connect_timeout_ms: 3000,
+            upstream_read_timeout_ms: 30000,
+            upstream_pool_max_idle: 10,
+            upstream_pool_idle_timeout_sec: 30,
+            enable_http2: true,
+            compression_enabled: false,
+            compression_gzip: true,
+            compression_brotli: true,
+            compression_min_length: 1024,
+            compression_gzip_level: 6,
+            compression_brotli_level: 6,
+            system_metrics_sample_interval_secs: 10,
+            system_metrics_persistence_enabled: true,
+            metrics_storage: None,
+            update: None,
+            alerting: None,
+        }
+    }
+
+    fn sample_alerting() -> Option<AlertingConfig> {
+        Some(AlertingConfig {
+            enabled: true,
+            webhook: Some(AlertWebhookConfig {
+                enabled: true,
+                provider: "  slack  ".into(),
+                url: "  https://example.com/hook  ".into(),
+                secret: Some("   secret-token   ".into()),
+                system_report_enabled: true,
+                quiet_hours_enabled: true,
+                quiet_hours_start: " 23:00 ".into(),
+                quiet_hours_end: " 08:00 ".into(),
+                system_report_interval_minutes: 60,
+                system_report_weekdays: vec![7, 1, 3, 3, 0, 8],
+            }),
+            rules: AlertRulesConfig {
+                server_start_error: true,
+            },
+        })
+    }
+
+    #[test]
+    fn ensure_config_ids_for_save_fills_missing_or_blank_ids() {
+        let mut cfg = sample_config_for_ids();
+
+        ensure_config_ids_for_save(&mut cfg);
+
+        let rule = &cfg.rules[0];
+        assert!(rule.id.as_ref().is_some_and(|id| !id.trim().is_empty()));
+        assert!(rule.routes[0]
+            .id
+            .as_ref()
+            .is_some_and(|id| !id.trim().is_empty()));
+        assert_eq!(rule.routes[1].id.as_deref(), Some("route-keep"));
+    }
+
+    #[test]
+    fn normalize_alerting_config_trims_secret_and_deduplicates_weekdays() {
+        let mut alerting = sample_alerting();
+
+        normalize_alerting_config(&mut alerting);
+
+        let webhook = alerting.unwrap().webhook.unwrap();
+        assert_eq!(webhook.provider, "slack");
+        assert_eq!(webhook.url, "https://example.com/hook");
+        assert_eq!(webhook.secret.as_deref(), Some("secret-token"));
+        assert_eq!(webhook.quiet_hours_start, "23:00");
+        assert_eq!(webhook.quiet_hours_end, "08:00");
+        assert_eq!(webhook.system_report_weekdays, vec![1, 3, 7]);
+    }
+
+    #[test]
+    fn normalize_alerting_config_drops_empty_secret() {
+        let mut alerting = sample_alerting();
+        alerting
+            .as_mut()
+            .unwrap()
+            .webhook
+            .as_mut()
+            .unwrap()
+            .secret = Some("   ".into());
+
+        normalize_alerting_config(&mut alerting);
+
+        assert!(alerting.unwrap().webhook.unwrap().secret.is_none());
+    }
+
+    #[test]
+    fn validate_alerting_config_accepts_normalized_valid_webhook() {
+        let mut alerting = sample_alerting();
+        normalize_alerting_config(&mut alerting);
+
+        validate_alerting_config(&alerting).unwrap();
+    }
+
+    #[test]
+    fn validate_alerting_config_rejects_empty_url_when_enabled() {
+        let mut alerting = sample_alerting();
+        alerting.as_mut().unwrap().webhook.as_mut().unwrap().url = " ".into();
+        normalize_alerting_config(&mut alerting);
+
+        let err = validate_alerting_config(&alerting).unwrap_err();
+        assert!(err.contains("Webhook URL is empty"));
+    }
+
+    #[test]
+    fn validate_alerting_config_rejects_invalid_weekday_values() {
+        let mut alerting = sample_alerting();
+        alerting
+            .as_mut()
+            .unwrap()
+            .webhook
+            .as_mut()
+            .unwrap()
+            .system_report_weekdays = vec![1, 9];
+
+        let err = validate_alerting_config(&alerting).unwrap_err();
+        assert!(err.contains("only contain integers from 1 to 7"));
+    }
+
+    #[test]
+    fn validate_alerting_config_rejects_equal_quiet_hours_when_enabled() {
+        let mut alerting = sample_alerting();
+        let webhook = alerting.as_mut().unwrap().webhook.as_mut().unwrap();
+        webhook.quiet_hours_start = "09:30".into();
+        webhook.quiet_hours_end = "09:30".into();
+        normalize_alerting_config(&mut alerting);
+
+        let err = validate_alerting_config(&alerting).unwrap_err();
+        assert!(err.contains("cannot be the same"));
+    }
+
+    #[test]
+    fn validate_alerting_config_rejects_invalid_time_format() {
+        let mut alerting = sample_alerting();
+        alerting
+            .as_mut()
+            .unwrap()
+            .webhook
+            .as_mut()
+            .unwrap()
+            .quiet_hours_start = "9:30".into();
+        normalize_alerting_config(&mut alerting);
+
+        let err = validate_alerting_config(&alerting).unwrap_err();
+        assert!(err.contains("quiet_hours_start must be in HH:MM format"));
     }
 }

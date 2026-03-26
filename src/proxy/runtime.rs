@@ -6,7 +6,8 @@ use super::lifecycle::{Phase, ServerHandle, PROXY_STATE};
 use super::listen::precheck_rule;
 use super::logging::{init_log_task, send_log, send_log_with_app, LOG_TX};
 use super::server::start_rule_server;
-use crate::{config, stream_proxy, ws_proxy};
+use super::{stream_proxy, ws_proxy};
+use crate::config;
 
 pub fn start_server(app: tauri::AppHandle) -> Result<()> {
     init_log_task(app.clone());

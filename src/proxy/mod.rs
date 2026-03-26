@@ -12,8 +12,10 @@ pub mod response;
 pub mod runtime;
 pub mod server;
 pub mod static_files;
+pub mod stream_proxy;
 pub mod types;
 pub mod upstream;
+pub mod ws_proxy;
 
 pub use auth::healthz;
 pub use helpers::{cached_content_types, cached_regex};
