@@ -133,3 +133,89 @@ pub fn is_allowed_remote_ip(
 
     allow_all_lan && is_lan_ip(&ip)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::HeaderMap;
+    use std::net::{Ipv4Addr, Ipv6Addr};
+
+    #[test]
+    fn ipv4_mapped_conversion() {
+        let ipv6_mapped = "::ffff:192.168.1.128".parse::<IpAddr>().unwrap();
+        let converted = to_ipv4_mapped(&ipv6_mapped);
+
+        match converted {
+            IpAddr::V4(v4) => {
+                assert_eq!(v4, Ipv4Addr::new(192, 168, 1, 128));
+            }
+            _ => panic!("Expected IPv4 address, got {:?}", converted),
+        }
+    }
+
+    #[test]
+    fn ipv6_loopback_detected() {
+        let ipv6_loopback = IpAddr::V6(Ipv6Addr::LOCALHOST);
+        assert!(is_loopback_ip(&ipv6_loopback));
+    }
+
+    #[test]
+    fn ipv6_unique_local_as_lan() {
+        let ipv6_ula = "fc00::1".parse::<IpAddr>().unwrap();
+        assert!(is_lan_ip(&ipv6_ula));
+    }
+
+    #[test]
+    fn ipv6_link_local_as_lan() {
+        let ipv6_link_local = "fe80::1".parse::<IpAddr>().unwrap();
+        assert!(is_lan_ip(&ipv6_link_local));
+    }
+
+    #[test]
+    fn ipv4_mapped_lan_detection() {
+        let ipv6_mapped = "::ffff:192.168.1.128".parse::<IpAddr>().unwrap();
+        assert!(is_lan_ip(&ipv6_mapped));
+    }
+
+    #[test]
+    fn ip_to_string_converts_mapped() {
+        let ipv6_mapped = "::ffff:192.168.1.128".parse::<IpAddr>().unwrap();
+        let result = ip_to_string(&ipv6_mapped);
+        assert_eq!(result, "192.168.1.128");
+    }
+
+    #[test]
+    fn is_allowed_fast_ipv6_loopback() {
+        let remote = SocketAddr::new(Ipv6Addr::LOCALHOST.into(), 8080);
+        let headers = HeaderMap::new();
+        let whitelist = vec![];
+
+        let allowed = is_allowed_fast(&remote, &headers, false, false, &whitelist);
+        assert!(allowed, "IPv6 loopback should be allowed even without allow_all_lan");
+    }
+
+    #[test]
+    fn is_allowed_fast_ipv4_mapped_with_allow_all_lan() {
+        let ipv6_mapped = "::ffff:192.168.1.128".parse::<Ipv6Addr>().unwrap();
+        let remote = SocketAddr::new(ipv6_mapped.into(), 8080);
+        let headers = HeaderMap::new();
+        let whitelist = vec![];
+
+        let allowed = is_allowed_fast(&remote, &headers, true, false, &whitelist);
+        assert!(
+            allowed,
+            "IPv4-mapped IPv6 LAN address should be allowed with allow_all_lan=true"
+        );
+    }
+
+    #[test]
+    fn is_allowed_fast_ipv6_unique_local_with_allow_all_lan() {
+        let ipv6_ula = "fc00::1".parse::<Ipv6Addr>().unwrap();
+        let remote = SocketAddr::new(ipv6_ula.into(), 8080);
+        let headers = HeaderMap::new();
+        let whitelist = vec![];
+
+        let allowed = is_allowed_fast(&remote, &headers, true, false, &whitelist);
+        assert!(allowed, "IPv6 unique local address should be allowed with allow_all_lan=true");
+    }
+}

@@ -174,7 +174,7 @@ SSLProxyManager/
 
 可选优化（非必须）：
 
-- `src/access_control_test.rs` 可迁移为内联测试或 `tests/` 目录，以进一步区分“生产代码”和“测试代码”。当前写法本身没有问题。
+- `single_instance.rs` 若持续未使用，建议删除或接入真实启动路径，避免“陈旧模块”困惑。
 
 后端模块说明已补充在：`src/README.md`。
 

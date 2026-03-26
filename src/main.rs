@@ -6,8 +6,6 @@
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 mod access_control;
-#[cfg(test)]
-mod access_control_test;
 mod app;
 mod buffer_pool;
 mod cache_optimizer;

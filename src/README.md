@@ -39,11 +39,9 @@ Overall naming and structure are **reasonable and consistent**:
 
 These are optional improvements; current code is valid.
 
-1. `access_control_test.rs`
-   - Move into inline tests in `access_control.rs` or into `tests/` for cleaner production/test separation.
-2. `single_instance.rs`
+1. `single_instance.rs`
    - If still unused, remove or wire into actual startup path to avoid stale module confusion.
-3. `network_optimizer.rs` and `cache_optimizer.rs`
+2. `network_optimizer.rs` and `cache_optimizer.rs`
    - Consider adding a short header doc comment in each file explaining scope and call sites.
 
 ## Suggested Future Rule for New Files
