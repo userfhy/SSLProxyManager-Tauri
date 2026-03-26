@@ -6,6 +6,7 @@
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 mod access_control;
+mod alerting;
 mod app;
 mod buffer_pool;
 mod cache_optimizer;
@@ -63,6 +64,9 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             commands::get_version,
             commands::get_config,
+            commands::list_config_snapshots,
+            commands::restore_config_snapshot,
+            commands::send_test_alert,
             commands::save_config,
             commands::check_update,
             commands::start_server,

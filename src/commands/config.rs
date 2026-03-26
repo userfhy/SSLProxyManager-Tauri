@@ -65,6 +65,31 @@ pub fn get_config() -> Result<config::Config, String> {
 }
 
 #[tauri::command]
+pub fn list_config_snapshots() -> Result<Vec<config::ConfigSnapshotInfo>, String> {
+    config::list_config_snapshots().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn restore_config_snapshot(
+    app: tauri::AppHandle,
+    snapshot_name: String,
+) -> Result<config::Config, String> {
+    let cfg = config::load_config_snapshot(&snapshot_name).map_err(|e| e.to_string())?;
+    validate_config(&cfg).await?;
+
+    let saved_cfg = crate::hot_reload::graceful_reload(app, cfg)
+        .await
+        .map_err(|e| e.to_string())?;
+    system_metrics::refresh_sample_interval_from_config();
+    Ok(saved_cfg)
+}
+
+#[tauri::command]
+pub async fn send_test_alert(cfg: config::AlertingConfig) -> Result<(), String> {
+    crate::alerting::send_test_alert(cfg).await
+}
+
+#[tauri::command]
 pub async fn save_config(
     app: tauri::AppHandle,
     mut cfg: config::Config,

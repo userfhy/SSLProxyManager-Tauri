@@ -14,6 +14,29 @@ export interface MetricsDBStatus {
   [key: string]: unknown
 }
 
+export interface ConfigSnapshotInfo {
+  name: string
+  created_at_unix_ms: number
+  size_bytes: number
+}
+
+export interface AlertRulesConfig {
+  server_start_error: boolean
+}
+
+export interface AlertWebhookConfig {
+  enabled: boolean
+  provider: string
+  url: string
+  secret?: string | null
+}
+
+export interface AlertingConfig {
+  enabled: boolean
+  webhook?: AlertWebhookConfig | null
+  rules: AlertRulesConfig
+}
+
 export interface SaveDialogResult extends String {}
 
 export interface QueryMetricsRequest {
@@ -54,6 +77,18 @@ export async function GetConfig<T = unknown>(): Promise<T> {
 
 export async function SaveConfig<TConfig = unknown, TResult = TConfig>(config: TConfig): Promise<TResult> {
   return await invoke<TResult>('save_config', { cfg: config });
+}
+
+export async function ListConfigSnapshots(): Promise<ConfigSnapshotInfo[]> {
+  return await invoke<ConfigSnapshotInfo[]>('list_config_snapshots');
+}
+
+export async function RestoreConfigSnapshot(snapshotName: string): Promise<unknown> {
+  return await invoke('restore_config_snapshot', { snapshotName });
+}
+
+export async function SendTestAlert(cfg: AlertingConfig): Promise<void> {
+  return await invoke<void>('send_test_alert', { cfg });
 }
 
 export async function GetVersion(): Promise<string> {

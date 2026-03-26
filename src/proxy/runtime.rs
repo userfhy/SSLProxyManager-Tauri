@@ -114,6 +114,11 @@ pub fn start_server(app: tauri::AppHandle) -> Result<()> {
                         error: e.to_string(),
                     };
                     let _ = app_handle.emit("server-start-error", payload);
+                    crate::alerting::notify_server_start_error(
+                        &app_handle,
+                        &listen_addr_clone,
+                        &e.to_string(),
+                    );
 
                     {
                         let mut state = PROXY_STATE.lock();

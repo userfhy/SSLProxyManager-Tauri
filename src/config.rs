@@ -28,6 +28,7 @@ impl PartialEq for Config {
             && self.max_body_size == other.max_body_size
             && self.system_metrics_sample_interval_secs == other.system_metrics_sample_interval_secs
             && self.system_metrics_persistence_enabled == other.system_metrics_persistence_enabled
+            && self.alerting == other.alerting
     }
 }
 
@@ -181,6 +182,7 @@ fn default_system_metrics_persistence_enabled() -> bool {
 
 use std::fs;
 use std::path::PathBuf;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WhitelistEntry {
@@ -327,7 +329,7 @@ pub struct MetricsStorage {
     pub db_path: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct UpdateConfig {
     pub enabled: bool,
     pub server_url: String,
@@ -336,6 +338,37 @@ pub struct UpdateConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub channel: Option<String>,
     pub ignore_prerelease: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+pub struct AlertRulesConfig {
+    #[serde(default = "default_true")]
+    pub server_start_error: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct AlertWebhookConfig {
+    pub enabled: bool,
+    pub provider: String,
+    pub url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub secret: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct AlertingConfig {
+    pub enabled: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub webhook: Option<AlertWebhookConfig>,
+    #[serde(default)]
+    pub rules: AlertRulesConfig,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ConfigSnapshotInfo {
+    pub name: String,
+    pub created_at_unix_ms: i64,
+    pub size_bytes: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -497,6 +530,8 @@ pub struct Config {
     pub metrics_storage: Option<MetricsStorage>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub update: Option<UpdateConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub alerting: Option<AlertingConfig>,
 }
 
 static CONFIG: Lazy<RwLock<Config>> = Lazy::new(|| {
@@ -532,6 +567,7 @@ static CONFIG: Lazy<RwLock<Config>> = Lazy::new(|| {
         system_metrics_persistence_enabled: default_system_metrics_persistence_enabled(),
         metrics_storage: None,
         update: None,
+        alerting: None,
     })
 });
 
@@ -568,7 +604,67 @@ fn default_config() -> Config {
         system_metrics_persistence_enabled: default_system_metrics_persistence_enabled(),
         metrics_storage: None,
         update: None,
+        alerting: None,
     }
+}
+
+fn snapshots_dir(config_path: &PathBuf) -> Result<PathBuf> {
+    let parent = config_path
+        .parent()
+        .context("配置路径缺少父目录，无法创建快照目录")?;
+    Ok(parent.join("config_snapshots"))
+}
+
+fn create_config_snapshot_if_exists(config_path: &PathBuf) -> Result<()> {
+    if !config_path.exists() {
+        return Ok(());
+    }
+
+    let content = fs::read_to_string(config_path)
+        .with_context(|| format!("读取现有配置文件失败: {}", config_path.display()))?;
+
+    let dir = snapshots_dir(config_path)?;
+    fs::create_dir_all(&dir).with_context(|| format!("创建快照目录失败: {}", dir.display()))?;
+
+    let now = chrono::Local::now();
+    let name = format!("config-{}-{}.toml", now.format("%Y%m%d-%H%M%S"), now.timestamp_millis());
+    let snap_path = dir.join(name);
+    fs::write(&snap_path, content)
+        .with_context(|| format!("写入配置快照失败: {}", snap_path.display()))?;
+
+    prune_old_snapshots(config_path, 50)?;
+    Ok(())
+}
+
+fn prune_old_snapshots(config_path: &PathBuf, keep: usize) -> Result<()> {
+    let dir = snapshots_dir(config_path)?;
+    if !dir.exists() {
+        return Ok(());
+    }
+
+    let mut entries: Vec<_> = fs::read_dir(&dir)
+        .with_context(|| format!("读取快照目录失败: {}", dir.display()))?
+        .filter_map(|e| e.ok())
+        .filter_map(|e| {
+            let path = e.path();
+            if path.extension().and_then(|v| v.to_str()) != Some("toml") {
+                return None;
+            }
+            let meta = e.metadata().ok()?;
+            let modified = meta.modified().ok().unwrap_or(SystemTime::UNIX_EPOCH);
+            Some((path, modified))
+        })
+        .collect();
+
+    entries.sort_by(|a, b| b.1.cmp(&a.1));
+    if entries.len() <= keep {
+        return Ok(());
+    }
+
+    for (path, _) in entries.into_iter().skip(keep) {
+        let _ = fs::remove_file(path);
+    }
+    Ok(())
 }
 
 pub(crate) fn get_config_path() -> Result<PathBuf> {
@@ -732,10 +828,62 @@ pub fn save_config() -> Result<()> {
             .with_context(|| format!("创建配置目录失败: {}", parent.display()))?;
     }
 
+    create_config_snapshot_if_exists(&path)?;
+
     let config = CONFIG.read().clone();
     let content = toml::to_string_pretty(&config).context("序列化配置失败")?;
     fs::write(&path, content).with_context(|| format!("写入配置文件失败: {}", path.display()))?;
     Ok(())
+}
+
+pub fn list_config_snapshots() -> Result<Vec<ConfigSnapshotInfo>> {
+    let path = get_config_path()?;
+    let dir = snapshots_dir(&path)?;
+    if !dir.exists() {
+        return Ok(vec![]);
+    }
+
+    let mut out: Vec<ConfigSnapshotInfo> = fs::read_dir(&dir)
+        .with_context(|| format!("读取快照目录失败: {}", dir.display()))?
+        .filter_map(|e| e.ok())
+        .filter_map(|e| {
+            let path = e.path();
+            if path.extension().and_then(|v| v.to_str()) != Some("toml") {
+                return None;
+            }
+            let meta = e.metadata().ok()?;
+            let name = path.file_name()?.to_string_lossy().to_string();
+            let ms = meta
+                .modified()
+                .ok()
+                .and_then(|m| m.duration_since(UNIX_EPOCH).ok())
+                .map(|d| d.as_millis() as i64)
+                .unwrap_or(0);
+
+            Some(ConfigSnapshotInfo {
+                name,
+                created_at_unix_ms: ms,
+                size_bytes: meta.len(),
+            })
+        })
+        .collect();
+
+    out.sort_by(|a, b| b.created_at_unix_ms.cmp(&a.created_at_unix_ms));
+    Ok(out)
+}
+
+pub fn load_config_snapshot(name: &str) -> Result<Config> {
+    let path = get_config_path()?;
+    let dir = snapshots_dir(&path)?;
+    let file = dir.join(name);
+
+    let content = fs::read_to_string(&file)
+        .with_context(|| format!("读取配置快照失败: {}", file.display()))?;
+    let mut config: Config = toml::from_str(&content).context("解析配置快照失败")?;
+
+    ensure_config_ids(&mut config);
+    precompile_regexes(&mut config);
+    Ok(config)
 }
 
 pub fn get_config() -> Config {
