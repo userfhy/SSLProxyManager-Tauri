@@ -94,7 +94,7 @@ pub fn init_tray(app: &AppHandle) -> tauri::Result<()> {
         app,
         MENU_ID_STATUS,
         i18n::t(i18n::TrayText::StatusStopped),
-        false,
+        true,
         None::<&str>,
     )?;
     let show = MenuItem::with_id(
@@ -156,10 +156,14 @@ pub fn init_tray(app: &AppHandle) -> tauri::Result<()> {
     };
 
     #[allow(unused_mut)]
-    let mut builder = TrayIconBuilder::new()
-        .menu(&menu)
-        .icon(icon)
-        .show_menu_on_left_click(false);
+    let mut builder = TrayIconBuilder::new().menu(&menu).icon(icon);
+
+    // 非 Linux 平台关闭“左键单击弹菜单”，保留双击切换窗口体验。
+    // Linux 平台该选项不可靠，保持默认行为（由桌面环境决定）。
+    #[cfg(not(target_os = "linux"))]
+    {
+        builder = builder.show_menu_on_left_click(false);
+    }
 
     // 平台差异说明（Tauri 2）：
     // - Linux: tooltip 不支持；托盘点击/双击事件也不保证可用（官方标注 unsupported）
@@ -192,7 +196,23 @@ pub fn init_tray(app: &AppHandle) -> tauri::Result<()> {
 
     let builder = builder
         .on_menu_event(move |app, event| match event.id().as_ref() {
-            MENU_ID_STATUS => {}
+            MENU_ID_STATUS => {
+                // Linux 兜底：部分桌面环境只稳定支持菜单事件。
+                // 点击状态项时切换主窗口显隐，提供“图标点击失效”时的可达入口。
+                #[cfg(target_os = "linux")]
+                {
+                    if let Some(window) = app.get_webview_window("main") {
+                        let visible = window.is_visible().unwrap_or(false);
+                        if visible {
+                            let _ = window.hide();
+                        } else {
+                            let _ = window.unminimize();
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                }
+            }
             MENU_ID_SHOW => {
                 if let Some(window) = app.get_webview_window("main") {
                     let _ = window.unminimize();
