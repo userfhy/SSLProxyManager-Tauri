@@ -111,13 +111,25 @@
 
       <!-- 内容区域 -->
       <div class="content-area">
-        <BaseConfig v-show="activeTab === 'base'" ref="baseConfigRef" />
+        <BaseConfig
+          v-if="isLazyTabLoaded('base')"
+          v-show="activeTab === 'base'"
+          ref="baseConfigRef"
+        />
         <ConfigCard 
           v-show="activeTab === 'config'" 
           ref="configCardRef"
         />
-        <WsProxyConfig v-show="activeTab === 'ws'" ref="wsProxyConfigRef" />
-        <StreamProxyConfig v-show="activeTab === 'stream'" ref="streamProxyConfigRef" />
+        <WsProxyConfig
+          v-if="isLazyTabLoaded('ws')"
+          v-show="activeTab === 'ws'"
+          ref="wsProxyConfigRef"
+        />
+        <StreamProxyConfig
+          v-if="isLazyTabLoaded('stream')"
+          v-show="activeTab === 'stream'"
+          ref="streamProxyConfigRef"
+        />
         <Dashboard
           v-if="isLazyTabLoaded('dashboard')"
           :is-active="activeTab === 'dashboard'"
@@ -130,12 +142,14 @@
           :config="globalConfig"
           v-show="activeTab === 'systemMetrics'"
         />
-        <AccessControl 
+        <AccessControl
+          v-if="isLazyTabLoaded('access')"
           v-show="activeTab === 'access'"
           ref="accessControlRef"
           :config="globalConfig"
         />
         <MetricsStorage
+          v-if="isLazyTabLoaded('storage')"
           v-show="activeTab === 'storage'"
           ref="metricsStorageRef"
           :config="globalConfig"
@@ -143,7 +157,11 @@
         <RequestLogs v-if="isLazyTabLoaded('requestLogs')" v-show="activeTab === 'requestLogs'" />
         <TestTools v-if="isLazyTabLoaded('testTools')" v-show="activeTab === 'testTools'" />
         <LogViewer v-if="isLazyTabLoaded('logs')" v-show="activeTab === 'logs'" />
-        <About v-show="activeTab === 'about'" ref="aboutRef" />
+        <About
+          v-if="isLazyTabLoaded('about')"
+          v-show="activeTab === 'about'"
+          ref="aboutRef"
+        />
       </div>
     </div>
 
@@ -153,18 +171,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onBeforeUnmount, watch, defineAsyncComponent } from 'vue'
+import { ref, reactive, computed, onMounted, onBeforeUnmount, watch, defineAsyncComponent, nextTick } from 'vue'
 import { StartServer, StopServer, GetStatus, QuitApp, EventsOn, SetTrayProxyState } from './api'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { enable as enableAutostart, disable as disableAutostart, isEnabled as isAutostartEnabled } from '@tauri-apps/plugin-autostart'
 import TitleBar from './components/TitleBar.vue'
-import BaseConfig from './components/BaseConfig.vue'
 import ConfigCard from './components/ConfigCard.vue'
-import WsProxyConfig from './components/WsProxyConfig.vue'
-import StreamProxyConfig from './components/StreamProxyConfig.vue'
-import AccessControl from './components/AccessControl.vue'
-import MetricsStorage from './components/MetricsStorage.vue'
-import About from './components/About.vue'
 import Sidebar from './components/Sidebar.vue'
 import TermsDialog from './components/TermsDialog.vue'
 import LanguageSelector from './components/LanguageSelector.vue'
@@ -174,11 +186,29 @@ import { GetConfig, SaveConfig } from './api'
 import { GetTermsAccepted } from './api'
 import { useI18n } from 'vue-i18n'
 
-const Dashboard = defineAsyncComponent(() => import('./components/Dashboard.vue'))
-const SystemMetrics = defineAsyncComponent(() => import('./components/SystemMetrics.vue'))
-const RequestLogs = defineAsyncComponent(() => import('./components/RequestLogs.vue'))
-const TestTools = defineAsyncComponent(() => import('./components/TestTools.vue'))
-const LogViewer = defineAsyncComponent(() => import('./components/LogViewer.vue'))
+const loadBaseConfig = () => import('./components/BaseConfig.vue')
+const loadWsProxyConfig = () => import('./components/WsProxyConfig.vue')
+const loadStreamProxyConfig = () => import('./components/StreamProxyConfig.vue')
+const loadDashboard = () => import('./components/Dashboard.vue')
+const loadSystemMetrics = () => import('./components/SystemMetrics.vue')
+const loadAccessControl = () => import('./components/AccessControl.vue')
+const loadMetricsStorage = () => import('./components/MetricsStorage.vue')
+const loadRequestLogs = () => import('./components/RequestLogs.vue')
+const loadAbout = () => import('./components/About.vue')
+const loadTestTools = () => import('./components/TestTools.vue')
+const loadLogViewer = () => import('./components/LogViewer.vue')
+
+const BaseConfig = defineAsyncComponent(loadBaseConfig)
+const WsProxyConfig = defineAsyncComponent(loadWsProxyConfig)
+const StreamProxyConfig = defineAsyncComponent(loadStreamProxyConfig)
+const Dashboard = defineAsyncComponent(loadDashboard)
+const SystemMetrics = defineAsyncComponent(loadSystemMetrics)
+const AccessControl = defineAsyncComponent(loadAccessControl)
+const MetricsStorage = defineAsyncComponent(loadMetricsStorage)
+const RequestLogs = defineAsyncComponent(loadRequestLogs)
+const About = defineAsyncComponent(loadAbout)
+const TestTools = defineAsyncComponent(loadTestTools)
+const LogViewer = defineAsyncComponent(loadLogViewer)
 
 const { t, locale } = useI18n()
 
@@ -186,24 +216,30 @@ const activeTab = ref<'base' | 'config' | 'ws' | 'stream' | 'logs' | 'dashboard'
 const status = ref('stopped')
 const starting = ref(false)
 const saving = ref(false)
-const baseConfigRef = ref<InstanceType<typeof BaseConfig> | null>(null)
+const baseConfigRef = ref<any>(null)
 const configCardRef = ref<InstanceType<typeof ConfigCard> | null>(null)
-const wsProxyConfigRef = ref<InstanceType<typeof WsProxyConfig> | null>(null)
-const streamProxyConfigRef = ref<InstanceType<typeof StreamProxyConfig> | null>(null)
+const wsProxyConfigRef = ref<any>(null)
+const streamProxyConfigRef = ref<any>(null)
 const systemMetricsRef = ref<any>(null)
-const accessControlRef = ref<InstanceType<typeof AccessControl> | null>(null)
-const metricsStorageRef = ref<InstanceType<typeof MetricsStorage> | null>(null)
-const aboutRef = ref<InstanceType<typeof About> | null>(null)
+const accessControlRef = ref<any>(null)
+const metricsStorageRef = ref<any>(null)
+const aboutRef = ref<any>(null)
 const globalConfig = ref<any>({})
 const showTermsDialog = ref(false)
 
 // 仅对重量级页面做懒加载，减少首屏黑屏等待
 const lazyLoadedTabs = reactive<Record<string, boolean>>({
+  base: false,
   dashboard: false,
   systemMetrics: false,
+  access: false,
+  storage: false,
   requestLogs: false,
+  about: false,
   testTools: false,
   logs: false,
+  ws: false,
+  stream: false,
 })
 
 const markLazyTabLoaded = (key: string) => {
@@ -217,6 +253,32 @@ const isLazyTabLoaded = (key: string) => {
     return true
   }
   return !!lazyLoadedTabs[key]
+}
+
+const ensureConfigTabsLoaded = async () => {
+  const tabsToLoad = [
+    'base',
+    'ws',
+    'stream',
+    'access',
+    'storage',
+    'about',
+    'systemMetrics',
+  ] as const
+
+  tabsToLoad.forEach((key) => markLazyTabLoaded(key))
+
+  await Promise.all([
+    loadBaseConfig(),
+    loadWsProxyConfig(),
+    loadStreamProxyConfig(),
+    loadAccessControl(),
+    loadMetricsStorage(),
+    loadAbout(),
+    loadSystemMetrics(),
+  ])
+
+  await nextTick()
 }
 
 // 运行时间相关
@@ -546,6 +608,8 @@ const stop = async () => {
 const handleSaveConfig = async () => {
   saving.value = true
   try {
+    await ensureConfigTabsLoaded()
+
     // 从 ConfigCard 获取配置
     let configCardConfig = {}
     try {

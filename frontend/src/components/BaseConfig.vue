@@ -412,6 +412,7 @@ defineExpose({
 .config-page :deep(.el-card__header) {
   border-bottom: 1px solid var(--border);
   padding: 16px 20px;
+  background: var(--input-bg);
 }
 
 .config-page :deep(.el-card__body) {
@@ -419,15 +420,11 @@ defineExpose({
 }
 
 .base-tabs {
-  margin-top: -6px;
+  margin-top: 0;
 }
 
 .base-tabs :deep(.el-tabs__header) {
-  position: sticky;
-  top: 0;
-  z-index: 20;
   margin-bottom: 18px;
-  padding-top: 4px;
 }
 
 .header-row {
@@ -444,14 +441,9 @@ defineExpose({
 }
 
 .header-row h3 {
-  font-size: 24px;
-  font-weight: 700;
-  color: var(--text);
-  background: linear-gradient(135deg, var(--primary), var(--primary-hover));
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  letter-spacing: -0.5px;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--primary);
   margin: 0;
 }
 
