@@ -2,12 +2,9 @@ use crate::i18n;
 use parking_lot::RwLock;
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
-    tray::TrayIconBuilder,
+    tray::{MouseButton, TrayIconBuilder, TrayIconEvent},
     AppHandle, Emitter, Manager,
 };
-
-#[cfg(not(target_os = "linux"))]
-use tauri::tray::{MouseButton, TrayIconEvent};
 
 struct TrayMenuHandles<R: tauri::Runtime> {
     status: MenuItem<R>,
@@ -94,7 +91,7 @@ pub fn init_tray(app: &AppHandle) -> tauri::Result<()> {
         app,
         MENU_ID_STATUS,
         i18n::t(i18n::TrayText::StatusStopped),
-        true,
+        false,
         None::<&str>,
     )?;
     let show = MenuItem::with_id(
@@ -156,28 +153,11 @@ pub fn init_tray(app: &AppHandle) -> tauri::Result<()> {
     };
 
     #[allow(unused_mut)]
-    let mut builder = TrayIconBuilder::new().menu(&menu).icon(icon);
-
-    // 非 Linux 平台关闭“左键单击弹菜单”，保留双击切换窗口体验。
-    // Linux 平台该选项不可靠，保持默认行为（由桌面环境决定）。
-    #[cfg(not(target_os = "linux"))]
-    {
-        builder = builder.show_menu_on_left_click(false);
-    }
-
-    // 平台差异说明（Tauri 2）：
-    // - Linux: tooltip 不支持；托盘点击/双击事件也不保证可用（官方标注 unsupported）
-    // - Windows/macOS: tooltip 正常可用
-    #[cfg(not(target_os = "linux"))]
-    {
-        builder = builder.tooltip(i18n::t(i18n::TrayText::Tooltip));
-    }
-
-    // Linux 上 tooltip 不可用，尽量使用 title（部分桌面环境会显示在托盘区域，非悬浮提示）
-    #[cfg(target_os = "linux")]
-    {
-        builder = builder.title("SSLProxyManager");
-    }
+    let mut builder = TrayIconBuilder::new()
+        .menu(&menu)
+        .icon(icon)
+        .show_menu_on_left_click(false)
+        .tooltip(i18n::t(i18n::TrayText::Tooltip));
 
     #[cfg(target_os = "macos")]
     {
@@ -196,23 +176,7 @@ pub fn init_tray(app: &AppHandle) -> tauri::Result<()> {
 
     let builder = builder
         .on_menu_event(move |app, event| match event.id().as_ref() {
-            MENU_ID_STATUS => {
-                // Linux 兜底：部分桌面环境只稳定支持菜单事件。
-                // 点击状态项时切换主窗口显隐，提供“图标点击失效”时的可达入口。
-                #[cfg(target_os = "linux")]
-                {
-                    if let Some(window) = app.get_webview_window("main") {
-                        let visible = window.is_visible().unwrap_or(false);
-                        if visible {
-                            let _ = window.hide();
-                        } else {
-                            let _ = window.unminimize();
-                            let _ = window.show();
-                            let _ = window.set_focus();
-                        }
-                    }
-                }
-            }
+            MENU_ID_STATUS => {}
             MENU_ID_SHOW => {
                 if let Some(window) = app.get_webview_window("main") {
                     let _ = window.unminimize();
@@ -273,46 +237,26 @@ pub fn init_tray(app: &AppHandle) -> tauri::Result<()> {
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {
-            #[cfg(target_os = "linux")]
+            if let TrayIconEvent::DoubleClick {
+                button: MouseButton::Left,
+                ..
+            } = event
             {
-                // Linux 兜底：部分桌面环境会发 Click 事件（也有环境完全不发）。
-                // 若收到左键点击，则尝试切换主窗口显隐。
-                if let tauri::tray::TrayIconEvent::Click {
-                    button: tauri::tray::MouseButton::Left,
-                    ..
-                } = event
-                {
-                    let app = tray.app_handle();
-                    if let Some(window) = app.get_webview_window("main") {
-                        let visible = window.is_visible().unwrap_or(false);
-                        if visible {
-                            let _ = window.hide();
-                        } else {
-                            let _ = window.unminimize();
-                            let _ = window.show();
-                            let _ = window.set_focus();
-                        }
-                    }
-                }
-            }
+                let app = tray.app_handle();
+                if let Some(window) = app.get_webview_window("main") {
+                    let visible = window.is_visible().unwrap_or(false);
+                    if visible {
+                        let _ = window.hide();
+                    } else {
+                        let _ = window.unminimize();
+                        let _ = window.show();
 
-            #[cfg(not(target_os = "linux"))]
-            {
-                if let TrayIconEvent::DoubleClick {
-                    button: MouseButton::Left,
-                    ..
-                } = event
-                {
-                    let app = tray.app_handle();
-                    if let Some(window) = app.get_webview_window("main") {
-                        let visible = window.is_visible().unwrap_or(false);
-                        if visible {
-                            let _ = window.hide();
-                        } else {
-                            let _ = window.unminimize();
-                            let _ = window.show();
+                        // Linux 下 request_user_attention + always_on_top 切换可能导致任务栏图标持续闪烁。
+                        // 这里仅做必要的 focus。
+                        let _ = window.set_focus();
 
-                            let _ = window.set_focus();
+                        #[cfg(not(target_os = "linux"))]
+                        {
                             let _ = window
                                 .request_user_attention(Some(tauri::UserAttentionType::Critical));
                             let _ = window.set_always_on_top(true);
