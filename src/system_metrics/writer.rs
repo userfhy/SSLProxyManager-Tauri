@@ -58,6 +58,12 @@ pub(super) fn try_enqueue_system_metrics(point: SystemMetricsPoint) {
     }
 }
 
+#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+pub(super) fn init_system_metrics_writer() {}
+
+#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+pub(super) fn try_enqueue_system_metrics(_point: SystemMetricsPoint) {}
+
 #[cfg(any(target_os = "linux", target_os = "windows"))]
 async fn flush_system_metrics(buf: &mut Vec<SystemMetricsPoint>) {
     let Some(pool) = crate::metrics::db_pool() else {

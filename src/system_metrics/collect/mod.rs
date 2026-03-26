@@ -124,6 +124,11 @@ pub(super) fn collect_one_point() -> Result<(SystemMetricsPoint, Vec<NetworkInte
     Ok((point, raw.interfaces))
 }
 
+#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+pub(super) fn collect_one_point() -> Result<(SystemMetricsPoint, Vec<NetworkInterfaceStats>)> {
+    anyhow::bail!("system metrics are currently only supported on Linux and Windows");
+}
+
 pub(super) fn reset_platform_collect_state() {
     #[cfg(target_os = "windows")]
     self::windows::reset_windows_collect_state();

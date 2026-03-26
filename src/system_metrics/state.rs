@@ -47,19 +47,19 @@ pub(super) static WINDOWS_PDH: Lazy<RwLock<Option<WindowsPdhState>>> =
 #[cfg(target_os = "windows")]
 #[derive(Debug, Default)]
 pub(super) struct WindowsLoadAvgState {
-    initialized: bool,
-    last_ts: i64,
-    load1: f64,
-    load5: f64,
-    load15: f64,
+    pub(super) initialized: bool,
+    pub(super) last_ts: i64,
+    pub(super) load1: f64,
+    pub(super) load5: f64,
+    pub(super) load15: f64,
 }
 
 #[cfg(target_os = "windows")]
 #[derive(Debug)]
 pub(super) struct WindowsPdhState {
-    query: usize,
-    read_counter: usize,
-    write_counter: usize,
+    pub(super) query: usize,
+    pub(super) read_counter: usize,
+    pub(super) write_counter: usize,
 }
 
 pub(super) fn to_i64_saturated(v: u64) -> i64 {
