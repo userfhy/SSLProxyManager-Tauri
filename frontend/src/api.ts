@@ -29,6 +29,12 @@ export interface AlertWebhookConfig {
   provider: string
   url: string
   secret?: string | null
+  system_report_enabled?: boolean
+  quiet_hours_enabled?: boolean
+  quiet_hours_start?: string
+  quiet_hours_end?: string
+  system_report_interval_minutes?: number
+  system_report_weekdays?: number[]
 }
 
 export interface AlertingConfig {

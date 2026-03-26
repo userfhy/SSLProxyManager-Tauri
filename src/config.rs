@@ -180,6 +180,22 @@ fn default_system_metrics_persistence_enabled() -> bool {
     true
 }
 
+fn default_quiet_hours_start() -> String {
+    "23:00".to_string()
+}
+
+fn default_quiet_hours_end() -> String {
+    "08:00".to_string()
+}
+
+fn default_system_report_interval_minutes() -> u32 {
+    60
+}
+
+fn default_system_report_weekdays() -> Vec<u8> {
+    vec![1, 2, 3, 4, 5, 6, 7]
+}
+
 use std::fs;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -353,6 +369,18 @@ pub struct AlertWebhookConfig {
     pub url: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub secret: Option<String>,
+    #[serde(default)]
+    pub system_report_enabled: bool,
+    #[serde(default)]
+    pub quiet_hours_enabled: bool,
+    #[serde(default = "default_quiet_hours_start")]
+    pub quiet_hours_start: String,
+    #[serde(default = "default_quiet_hours_end")]
+    pub quiet_hours_end: String,
+    #[serde(default = "default_system_report_interval_minutes")]
+    pub system_report_interval_minutes: u32,
+    #[serde(default = "default_system_report_weekdays")]
+    pub system_report_weekdays: Vec<u8>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -762,6 +790,7 @@ pub fn load_config() -> Result<()> {
 
     // 确保所有 ID 都存在（加载时补齐，并写回内存）
     ensure_config_ids(&mut config);
+    normalize_alerting_config(&mut config.alerting);
 
     // 预编译所有正则表达式以提升运行时性能
     precompile_regexes(&mut config);
@@ -882,6 +911,7 @@ pub fn load_config_snapshot(name: &str) -> Result<Config> {
     let mut config: Config = toml::from_str(&content).context("解析配置快照失败")?;
 
     ensure_config_ids(&mut config);
+    normalize_alerting_config(&mut config.alerting);
     precompile_regexes(&mut config);
     Ok(config)
 }
@@ -909,6 +939,100 @@ pub fn set_config(config: Config) {
 
 pub fn ensure_config_ids_for_save(config: &mut Config) {
     ensure_config_ids(config);
+}
+
+pub fn normalize_alerting_config(alerting: &mut Option<AlertingConfig>) {
+    let Some(alerting) = alerting.as_mut() else {
+        return;
+    };
+
+    let Some(webhook) = alerting.webhook.as_mut() else {
+        return;
+    };
+
+    webhook.provider = webhook.provider.trim().to_string();
+    webhook.url = webhook.url.trim().to_string();
+    webhook.secret = webhook
+        .secret
+        .take()
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty());
+    webhook.quiet_hours_start = webhook.quiet_hours_start.trim().to_string();
+    webhook.quiet_hours_end = webhook.quiet_hours_end.trim().to_string();
+
+    let weekdays = webhook
+        .system_report_weekdays
+        .iter()
+        .copied()
+        .filter(|day| (1..=7).contains(day))
+        .collect::<std::collections::BTreeSet<_>>();
+    webhook.system_report_weekdays = weekdays.into_iter().collect();
+}
+
+pub fn validate_alerting_config(
+    alerting: &Option<AlertingConfig>,
+) -> std::result::Result<(), String> {
+    let Some(alerting) = alerting.as_ref() else {
+        return Ok(());
+    };
+
+    let Some(webhook) = alerting.webhook.as_ref() else {
+        return Ok(());
+    };
+
+    if webhook.enabled && webhook.url.trim().is_empty() {
+        return Err("Webhook URL is empty".to_string());
+    }
+
+    if !(1..=10080).contains(&webhook.system_report_interval_minutes) {
+        return Err("system_report_interval_minutes must be an integer between 1 and 10080".to_string());
+    }
+
+    if webhook.system_report_weekdays.is_empty() {
+        return Err("system_report_weekdays must contain at least one weekday".to_string());
+    }
+
+    if webhook
+        .system_report_weekdays
+        .iter()
+        .any(|day| !(1..=7).contains(day))
+    {
+        return Err("system_report_weekdays must only contain integers from 1 to 7".to_string());
+    }
+
+    validate_time_hhmm(&webhook.quiet_hours_start, "quiet_hours_start")?;
+    validate_time_hhmm(&webhook.quiet_hours_end, "quiet_hours_end")?;
+
+    if webhook.quiet_hours_enabled && webhook.quiet_hours_start == webhook.quiet_hours_end {
+        return Err("quiet_hours_start and quiet_hours_end cannot be the same when quiet hours are enabled".to_string());
+    }
+
+    Ok(())
+}
+
+fn validate_time_hhmm(value: &str, field_name: &str) -> std::result::Result<(), String> {
+    let trimmed = value.trim();
+    let mut parts = trimmed.split(':');
+    let hour = parts
+        .next()
+        .ok_or_else(|| format!("{field_name} must be in HH:MM format"))?
+        .parse::<u32>()
+        .map_err(|_| format!("{field_name} must be in HH:MM format"))?;
+    let minute = parts
+        .next()
+        .ok_or_else(|| format!("{field_name} must be in HH:MM format"))?
+        .parse::<u32>()
+        .map_err(|_| format!("{field_name} must be in HH:MM format"))?;
+
+    if parts.next().is_some() || hour > 23 || minute > 59 {
+        return Err(format!("{field_name} must be in HH:MM format"));
+    }
+
+    if trimmed.len() != 5 || !trimmed.as_bytes().get(2).is_some_and(|ch| *ch == b':') {
+        return Err(format!("{field_name} must be in HH:MM format"));
+    }
+
+    Ok(())
 }
 
 fn ensure_config_ids(config: &mut Config) {

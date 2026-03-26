@@ -43,6 +43,20 @@ pub fn get_system_metrics(window_seconds: Option<i64>) -> Result<SystemMetricsRe
     get_system_metrics_inner(window_seconds)
 }
 
+pub async fn collect_current_system_metrics() -> Result<(SystemMetricsPoint, Vec<NetworkInterfaceStats>)> {
+    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+    {
+        anyhow::bail!("system metrics are currently only supported on Linux and Windows");
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
+    {
+        tauri::async_runtime::spawn_blocking(self::collect::collect_one_point)
+            .await
+            .map_err(|e| anyhow::anyhow!("failed to join system metrics collection task: {e}"))?
+    }
+}
+
 pub async fn query_historical_system_metrics(
     req: QuerySystemMetricsRequest,
 ) -> Result<QuerySystemMetricsResponse> {

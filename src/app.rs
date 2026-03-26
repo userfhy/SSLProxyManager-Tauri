@@ -72,6 +72,7 @@ pub fn init(app: &AppHandle) -> Result<()> {
     // 启动 metrics 定时推送（应用级别，和 proxy running/stopped 无关）
     start_metrics_pusher(app.clone());
     crate::system_metrics::start_system_sampler(app.clone());
+    crate::alerting::start_system_report_pusher(app.clone());
 
     // 启动后自动检查更新
     let app_handle = app.clone();
@@ -99,4 +100,5 @@ pub fn init(app: &AppHandle) -> Result<()> {
 pub fn cleanup() {
     stop_metrics_pusher();
     crate::system_metrics::stop_system_sampler();
+    crate::alerting::stop_system_report_pusher();
 }

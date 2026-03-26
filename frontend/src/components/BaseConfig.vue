@@ -167,6 +167,76 @@
               <el-form-item :label="$t('about.alertWebhookUrl')">
                 <el-input v-model="alertForm.webhook.url" :placeholder="$t('about.alertWebhookUrlPlaceholder')" />
               </el-form-item>
+
+              <el-divider />
+
+              <el-form-item :label="$t('about.systemReportEnabled')">
+                <el-switch v-model="alertForm.webhook.system_report_enabled" />
+                <el-text type="info" size="small" class="mini-hint">
+                  {{ $t('about.systemReportHint') }}
+                </el-text>
+              </el-form-item>
+
+              <template v-if="alertForm.webhook.system_report_enabled">
+                <el-form-item :label="$t('about.systemReportIntervalMinutes')">
+                  <el-select
+                    v-model="alertForm.webhook.system_report_interval_minutes"
+                    filterable
+                    allow-create
+                    default-first-option
+                    style="width: 220px;"
+                  >
+                    <el-option
+                      v-for="item in systemReportIntervalOptions"
+                      :key="item"
+                      :label="String(item)"
+                      :value="item"
+                    />
+                  </el-select>
+                  <el-text type="info" size="small" class="mini-hint">
+                    {{ $t('about.systemReportIntervalHint') }}
+                  </el-text>
+                </el-form-item>
+
+                <el-form-item :label="$t('about.systemReportWeekdays')">
+                  <el-checkbox-group v-model="alertForm.webhook.system_report_weekdays">
+                    <el-checkbox
+                      v-for="day in weekdayOptions"
+                      :key="day.value"
+                      :label="day.value"
+                    >
+                      {{ day.label }}
+                    </el-checkbox>
+                  </el-checkbox-group>
+                </el-form-item>
+
+                <el-form-item :label="$t('about.quietHoursEnabled')">
+                  <el-switch v-model="alertForm.webhook.quiet_hours_enabled" />
+                </el-form-item>
+
+                <template v-if="alertForm.webhook.quiet_hours_enabled">
+                  <el-form-item :label="$t('about.quietHoursStart')">
+                    <el-time-picker
+                      v-model="alertForm.webhook.quiet_hours_start"
+                      format="HH:mm"
+                      value-format="HH:mm"
+                      :clearable="false"
+                    />
+                  </el-form-item>
+
+                  <el-form-item :label="$t('about.quietHoursEnd')">
+                    <el-time-picker
+                      v-model="alertForm.webhook.quiet_hours_end"
+                      format="HH:mm"
+                      value-format="HH:mm"
+                      :clearable="false"
+                    />
+                    <el-text type="info" size="small" class="mini-hint">
+                      {{ $t('about.quietHoursHint') }}
+                    </el-text>
+                  </el-form-item>
+                </template>
+              </template>
             </template>
 
             <el-form-item :label="$t('about.alertRuleServerStartError')">
@@ -223,7 +293,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue'
+import { computed, ref, onMounted, watch } from 'vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import {
   GetConfig,
@@ -231,6 +301,7 @@ import {
   RestoreConfigSnapshot,
   SendTestAlert,
   type AlertingConfig,
+  type AlertWebhookConfig,
   type ConfigSnapshotInfo,
 } from '../api'
 import { useI18n } from 'vue-i18n'
@@ -251,6 +322,23 @@ const DEFAULT_COMPRESSION_BROTLI = true
 const DEFAULT_COMPRESSION_MIN_LENGTH = 1024
 const DEFAULT_COMPRESSION_GZIP_LEVEL = 6
 const DEFAULT_COMPRESSION_BROTLI_LEVEL = 6
+const DEFAULT_QUIET_HOURS_START = '23:00'
+const DEFAULT_QUIET_HOURS_END = '08:00'
+const DEFAULT_SYSTEM_REPORT_INTERVAL_MINUTES = 60
+const DEFAULT_SYSTEM_REPORT_WEEKDAYS = [1, 2, 3, 4, 5, 6, 7]
+
+interface AlertWebhookForm extends Omit<AlertWebhookConfig, 'system_report_interval_minutes'> {
+  system_report_enabled: boolean
+  quiet_hours_enabled: boolean
+  quiet_hours_start: string
+  quiet_hours_end: string
+  system_report_interval_minutes: number | string
+  system_report_weekdays: number[]
+}
+
+interface AlertingForm extends Omit<AlertingConfig, 'webhook'> {
+  webhook: AlertWebhookForm
+}
 
 const autoStart = ref(false)
 const showRealtimeLogs = ref(true)
@@ -273,19 +361,105 @@ const sendingTestAlert = ref(false)
 const loadingSnapshots = ref(false)
 const restoringSnapshotName = ref('')
 const snapshotList = ref<ConfigSnapshotInfo[]>([])
+const systemReportIntervalOptions = [5, 10, 15, 30, 60, 120]
+const weekdayOptions = computed(() => [
+  { value: 1, label: t('about.weekdayMon') },
+  { value: 2, label: t('about.weekdayTue') },
+  { value: 3, label: t('about.weekdayWed') },
+  { value: 4, label: t('about.weekdayThu') },
+  { value: 5, label: t('about.weekdayFri') },
+  { value: 6, label: t('about.weekdaySat') },
+  { value: 7, label: t('about.weekdaySun') },
+])
 
-const alertForm = ref<AlertingConfig>({
+const alertForm = ref<AlertingForm>({
   enabled: false,
   webhook: {
     enabled: false,
     provider: 'wecom',
     url: '',
     secret: '',
+    system_report_enabled: false,
+    quiet_hours_enabled: false,
+    quiet_hours_start: DEFAULT_QUIET_HOURS_START,
+    quiet_hours_end: DEFAULT_QUIET_HOURS_END,
+    system_report_interval_minutes: DEFAULT_SYSTEM_REPORT_INTERVAL_MINUTES,
+    system_report_weekdays: [...DEFAULT_SYSTEM_REPORT_WEEKDAYS],
   },
   rules: {
     server_start_error: true,
   },
 })
+
+const normalizeIntervalMinutes = (value: unknown) => {
+  const raw = typeof value === 'string' ? value.trim() : value
+  if (raw === '' || raw === null || raw === undefined) {
+    throw new Error(t('about.systemReportIntervalInvalid'))
+  }
+
+  const parsed = typeof raw === 'number' ? raw : Number(raw)
+  if (!Number.isInteger(parsed)) {
+    throw new Error(t('about.systemReportIntervalInvalid'))
+  }
+  if (parsed < 1 || parsed > 10080) {
+    throw new Error(t('about.systemReportIntervalRange'))
+  }
+
+  return parsed
+}
+
+const normalizeWeekdays = (value: unknown) => {
+  const days = Array.isArray(value) ? value : []
+  const normalized = [...new Set(days.map((day) => Number(day)).filter((day) => Number.isInteger(day) && day >= 1 && day <= 7))].sort((a, b) => a - b)
+  if (!normalized.length) {
+    throw new Error(t('about.systemReportWeekdaysRequired'))
+  }
+  return normalized
+}
+
+const validateTimeValue = (value: unknown, field: 'start' | 'end') => {
+  const text = String(value || '').trim()
+  if (!/^\d{2}:\d{2}$/.test(text)) {
+    throw new Error(field === 'start' ? t('about.quietHoursStartInvalid') : t('about.quietHoursEndInvalid'))
+  }
+
+  const [hourText, minuteText] = text.split(':')
+  const hour = Number(hourText)
+  const minute = Number(minuteText)
+  if (!Number.isInteger(hour) || !Number.isInteger(minute) || hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+    throw new Error(field === 'start' ? t('about.quietHoursStartInvalid') : t('about.quietHoursEndInvalid'))
+  }
+
+  return text
+}
+
+const normalizeAlertingConfig = (): AlertingConfig => {
+  const quietHoursStart = validateTimeValue(alertForm.value.webhook.quiet_hours_start, 'start')
+  const quietHoursEnd = validateTimeValue(alertForm.value.webhook.quiet_hours_end, 'end')
+  if (alertForm.value.webhook.quiet_hours_enabled && quietHoursStart === quietHoursEnd) {
+    throw new Error(t('about.quietHoursSameTime'))
+  }
+
+  return {
+    enabled: !!alertForm.value.enabled,
+    webhook: {
+      ...alertForm.value.webhook,
+      enabled: !!alertForm.value.webhook.enabled,
+      provider: (alertForm.value.webhook.provider || 'wecom').trim(),
+      url: (alertForm.value.webhook.url || '').trim(),
+      secret: (alertForm.value.webhook.secret || '').trim() || null,
+      system_report_enabled: !!alertForm.value.webhook.system_report_enabled,
+      quiet_hours_enabled: !!alertForm.value.webhook.quiet_hours_enabled,
+      quiet_hours_start: quietHoursStart,
+      quiet_hours_end: quietHoursEnd,
+      system_report_interval_minutes: normalizeIntervalMinutes(alertForm.value.webhook.system_report_interval_minutes),
+      system_report_weekdays: normalizeWeekdays(alertForm.value.webhook.system_report_weekdays),
+    },
+    rules: {
+      server_start_error: alertForm.value.rules.server_start_error !== false,
+    },
+  }
+}
 
 const resetToDefaults = async () => {
   try {
@@ -384,7 +558,7 @@ const handleSendTestAlert = async () => {
 
   sendingTestAlert.value = true
   try {
-    await SendTestAlert(alertForm.value)
+    await SendTestAlert(normalizeAlertingConfig())
     ElMessage.success(t('about.sendTestAlertSuccess'))
   } catch (e: any) {
     ElMessage.error(t('about.sendTestAlertFailed', { error: e?.message || String(e) }))
@@ -415,12 +589,23 @@ onMounted(async () => {
 
     const alerting = configData?.alerting
     if (alerting) {
+      const savedWeekdays = Array.isArray(alerting?.webhook?.system_report_weekdays)
+        ? alerting.webhook.system_report_weekdays
+        : null
       alertForm.value.enabled = !!alerting.enabled
       alertForm.value.webhook = {
         enabled: !!alerting?.webhook?.enabled,
         provider: alerting?.webhook?.provider || 'wecom',
         url: alerting?.webhook?.url || '',
         secret: alerting?.webhook?.secret || '',
+        system_report_enabled: !!alerting?.webhook?.system_report_enabled,
+        quiet_hours_enabled: !!alerting?.webhook?.quiet_hours_enabled,
+        quiet_hours_start: alerting?.webhook?.quiet_hours_start || DEFAULT_QUIET_HOURS_START,
+        quiet_hours_end: alerting?.webhook?.quiet_hours_end || DEFAULT_QUIET_HOURS_END,
+        system_report_interval_minutes: alerting?.webhook?.system_report_interval_minutes ?? DEFAULT_SYSTEM_REPORT_INTERVAL_MINUTES,
+        system_report_weekdays: savedWeekdays?.length
+          ? [...savedWeekdays]
+          : [...DEFAULT_SYSTEM_REPORT_WEEKDAYS],
       }
       alertForm.value.rules = {
         server_start_error: alerting?.rules?.server_start_error !== false,
@@ -458,15 +643,7 @@ const getConfig = () => ({
   compression_min_length: DEFAULT_COMPRESSION_MIN_LENGTH,
   compression_gzip_level: Number(compressionGzipLevel.value),
   compression_brotli_level: Number(compressionBrotliLevel.value),
-  alerting: {
-    ...alertForm.value,
-    webhook: alertForm.value.webhook
-      ? {
-          ...alertForm.value.webhook,
-          url: (alertForm.value.webhook.url || '').trim(),
-        }
-      : null,
-  },
+  alerting: normalizeAlertingConfig(),
 })
 
 defineExpose({
@@ -491,6 +668,19 @@ defineExpose({
 
 .base-tabs {
   margin-top: -6px;
+}
+
+.base-tabs :deep(.el-tabs__header) {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  margin-bottom: 18px;
+  padding-top: 4px;
+  background: var(--card);
+}
+
+.base-tabs :deep(.el-tabs__nav-wrap) {
+  background: var(--card);
 }
 
 .header-row {

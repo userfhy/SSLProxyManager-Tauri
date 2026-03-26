@@ -56,6 +56,8 @@ pub async fn validate_config(cfg: &config::Config) -> Result<(), String> {
         stream_proxy::validate_stream_config(&cfg.stream).map_err(|e| e.to_string())?;
     }
 
+    config::validate_alerting_config(&cfg.alerting)?;
+
     Ok(())
 }
 
@@ -86,7 +88,13 @@ pub async fn restore_config_snapshot(
 
 #[tauri::command]
 pub async fn send_test_alert(cfg: config::AlertingConfig) -> Result<(), String> {
-    crate::alerting::send_test_alert(cfg).await
+    let mut alerting = Some(cfg);
+    config::normalize_alerting_config(&mut alerting);
+    config::validate_alerting_config(&alerting)?;
+    crate::alerting::send_test_alert(
+        alerting.ok_or_else(|| "Webhook config is missing".to_string())?,
+    )
+    .await
 }
 
 #[tauri::command]
@@ -95,6 +103,7 @@ pub async fn save_config(
     mut cfg: config::Config,
 ) -> Result<config::Config, String> {
     config::ensure_config_ids_for_save(&mut cfg);
+    config::normalize_alerting_config(&mut cfg.alerting);
     validate_config(&cfg).await?;
 
     if let Some(metrics_storage) = cfg.metrics_storage.as_ref() {

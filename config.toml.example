@@ -116,3 +116,20 @@ server_url = ""
 auto_check = true
 timeout_ms = 10000
 ignore_prerelease = true
+
+[alerting]
+enabled = true
+
+[alerting.webhook]
+enabled = true
+provider = "wecom"
+url = "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=your-key"
+system_report_enabled = false
+quiet_hours_enabled = false
+quiet_hours_start = "23:00"
+quiet_hours_end = "08:00"
+system_report_interval_minutes = 60
+system_report_weekdays = [1, 2, 3, 4, 5, 6, 7]
+
+[alerting.rules]
+server_start_error = true
