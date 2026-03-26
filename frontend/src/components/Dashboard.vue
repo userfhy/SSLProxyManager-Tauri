@@ -309,7 +309,7 @@ import enUs from 'element-plus/dist/locale/en.mjs'
 import { EventsOn, EventsOff } from '../api'
 import { GetListenAddrs, GetMetrics, QueryHistoricalMetrics, GetDashboardStats, GetConfig, OpenChartPreviewWindow } from '../api'
 import type { EChartsOption } from 'echarts'
-import { createLazyVChart } from '../composables/lazyEcharts'
+import { LazyDashboardVChart as VChart } from '../composables/lazyDashboardVChart'
 import { useI18n } from 'vue-i18n'
 import { useDateShortcuts } from '../composables/useDateShortcuts'
 import { emitTo, listen } from '@tauri-apps/api/event'
@@ -317,20 +317,6 @@ import { emitTo, listen } from '@tauri-apps/api/event'
 const { t, locale } = useI18n()
 const { dateShortcuts } = useDateShortcuts()
 const datePickerLocale = computed(() => (locale.value === 'en-US' ? enUs : zhCn))
-
-const VChart = createLazyVChart('dashboard-echarts', ({ use, renderers, charts, components }) => {
-  use([
-    renderers.CanvasRenderer,
-    charts.LineChart,
-    charts.BarChart,
-    charts.PieChart,
-    components.GridComponent,
-    components.TooltipComponent,
-    components.LegendComponent,
-    components.GraphicComponent,
-    components.DataZoomComponent,
-  ])
-})
 
 const props = defineProps<{ isActive: boolean }>()
 const windowVisible = ref<boolean>(typeof document === 'undefined' ? true : !document.hidden)

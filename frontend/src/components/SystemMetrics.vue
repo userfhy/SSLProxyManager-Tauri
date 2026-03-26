@@ -389,7 +389,7 @@ import {
 import { useDateShortcuts } from '../composables/useDateShortcuts'
 import { emitTo, listen } from '@tauri-apps/api/event'
 import type { EChartsOption } from 'echarts'
-import { createLazyVChart } from '../composables/lazyEcharts'
+import { LazySystemMetricsVChart as VChart } from '../composables/lazySystemMetricsVChart'
 
 type NetworkInterfaceStats = {
   name: string
@@ -469,17 +469,6 @@ type SystemMetricsEventPayload = {
 }
 
 type RateUnit = 'B' | 'KB' | 'MB'
-
-const VChart = createLazyVChart('system-metrics-echarts', ({ use, renderers, charts, components }) => {
-  use([
-    renderers.CanvasRenderer,
-    charts.LineChart,
-    components.GridComponent,
-    components.TooltipComponent,
-    components.LegendComponent,
-    components.DataZoomComponent,
-  ])
-})
 
 const props = defineProps<{ isActive: boolean; config?: any }>()
 
