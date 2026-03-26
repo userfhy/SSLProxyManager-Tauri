@@ -119,22 +119,63 @@ npm run tauri:build
 
 ```
 SSLProxyManager/
-├── src/                    # Rust backend
-│   ├── proxy.rs           # HTTP/HTTPS proxy core
-│   ├── ws_proxy.rs        # WebSocket proxy
-│   ├── stream_proxy.rs    # Stream (TCP/UDP) proxy
-│   ├── access_control.rs  # Access control
-│   ├── config.rs          # Configuration
-│   └── ...
-├── frontend/              # Vue 3 frontend
+├── src/                              # Rust backend
+│   ├── main.rs                       # Tauri app entry (command registration / lifecycle)
+│   ├── app.rs                        # App bootstrap/cleanup orchestration
+│   ├── config.rs                     # TOML config loading/validation/defaults
+│   ├── commands/                     # Tauri invoke command layer (UI-facing)
+│   │   ├── mod.rs
+│   │   ├── config.rs
+│   │   ├── metrics.rs
+│   │   ├── system.rs
+│   │   ├── tools.rs
+│   │   └── ui.rs
+│   ├── proxy/                        # HTTP/HTTPS reverse proxy pipeline
+│   │   ├── mod.rs
+│   │   ├── auth.rs
+│   │   ├── matching.rs
+│   │   ├── request.rs / response.rs
+│   │   ├── runtime.rs / server.rs
+│   │   └── ...
+│   ├── metrics/                      # Request metrics & SQLite persistence
+│   │   ├── mod.rs
+│   │   ├── db.rs / writer.rs / query.rs
+│   │   ├── models.rs / helpers.rs
+│   │   └── README.md
+│   ├── system_metrics/               # Host/system metrics (Linux/Windows)
+│   │   ├── mod.rs
+│   │   ├── collect/linux.rs / windows.rs
+│   │   ├── sampler.rs / writer.rs / query.rs
+│   │   ├── state.rs / types.rs / service.rs
+│   │   └── README.md
+│   ├── ws_proxy.rs                   # WebSocket proxy module
+│   ├── stream_proxy.rs               # TCP/UDP stream proxy module
+│   ├── access_control.rs             # ACL / whitelist / blacklist
+│   └── tray.rs                       # System tray integration
+├── frontend/                         # Vue 3 frontend
 │   ├── src/
-│   │   ├── components/    # Vue components
-│   │   ├── i18n/         # Internationalization
+│   │   ├── components/               # Vue components
+│   │   ├── composables/              # Reusable composition utilities
+│   │   ├── i18n/                     # Internationalization
 │   │   └── ...
 │   └── ...
-├── config.toml.example    # Configuration template
-└── tauri.conf.json       # Tauri settings
+├── config.toml.example               # Configuration template
+└── tauri.conf.json                   # Tauri settings
 ```
+
+### `src/` Naming Review (current state)
+
+Current naming is generally consistent and reasonable:
+
+- **Domain folders use snake_case nouns** (`proxy`, `metrics`, `system_metrics`, `commands`) and each has `mod.rs` as module entry.
+- **Behavior-oriented files use clear verbs/nouns** (`matching.rs`, `dispatch.rs`, `lifecycle.rs`, `sampler.rs`, `writer.rs`, `query.rs`).
+- **Platform-specific implementations are split cleanly** (`collect/linux.rs`, `collect/windows.rs`).
+- **UI command surface is isolated** under `src/commands/*`, which keeps backend internals decoupled from Tauri invoke bindings.
+
+One optional cleanup candidate:
+
+- `src/access_control_test.rs` can be moved into inline tests or `tests/` if you want stricter "production code vs test code" separation. It is valid as-is and does not break conventions.
+
 
 ## Configuration
 

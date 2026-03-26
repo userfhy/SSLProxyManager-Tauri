@@ -119,22 +119,63 @@ npm run tauri:build
 
 ```
 SSLProxyManager/
-├── src/                    # Rust 后端
-│   ├── proxy.rs           # HTTP/HTTPS 代理核心
-│   ├── ws_proxy.rs        # WebSocket 代理
-│   ├── stream_proxy.rs    # Stream (TCP/UDP) 代理
-│   ├── access_control.rs  # 访问控制
-│   ├── config.rs          # 配置管理
-│   └── ...
-├── frontend/              # Vue 3 前端
+├── src/                              # Rust 后端
+│   ├── main.rs                       # Tauri 入口（命令注册 / 生命周期）
+│   ├── app.rs                        # 应用初始化与清理流程
+│   ├── config.rs                     # TOML 配置加载/校验/默认值
+│   ├── commands/                     # Tauri invoke 命令层（面向前端）
+│   │   ├── mod.rs
+│   │   ├── config.rs
+│   │   ├── metrics.rs
+│   │   ├── system.rs
+│   │   ├── tools.rs
+│   │   └── ui.rs
+│   ├── proxy/                        # HTTP/HTTPS 反向代理核心流水线
+│   │   ├── mod.rs
+│   │   ├── auth.rs
+│   │   ├── matching.rs
+│   │   ├── request.rs / response.rs
+│   │   ├── runtime.rs / server.rs
+│   │   └── ...
+│   ├── metrics/                      # 请求指标与 SQLite 持久化
+│   │   ├── mod.rs
+│   │   ├── db.rs / writer.rs / query.rs
+│   │   ├── models.rs / helpers.rs
+│   │   └── README.md
+│   ├── system_metrics/               # 系统指标（Linux/Windows）
+│   │   ├── mod.rs
+│   │   ├── collect/linux.rs / windows.rs
+│   │   ├── sampler.rs / writer.rs / query.rs
+│   │   ├── state.rs / types.rs / service.rs
+│   │   └── README.md
+│   ├── ws_proxy.rs                   # WebSocket 代理模块
+│   ├── stream_proxy.rs               # TCP/UDP Stream 代理模块
+│   ├── access_control.rs             # ACL / 白名单 / 黑名单
+│   └── tray.rs                       # 系统托盘集成
+├── frontend/                         # Vue 3 前端
 │   ├── src/
-│   │   ├── components/    # Vue 组件
-│   │   ├── i18n/         # 国际化
+│   │   ├── components/               # Vue 组件
+│   │   ├── composables/              # 可复用组合式逻辑
+│   │   ├── i18n/                     # 国际化
 │   │   └── ...
 │   └── ...
-├── config.toml.example    # 配置模板
-└── tauri.conf.json       # Tauri 配置
+├── config.toml.example               # 配置模板
+└── tauri.conf.json                   # Tauri 配置
 ```
+
+### `src/` 文件命名检查（当前结论）
+
+当前命名整体是合理且一致的：
+
+- **领域目录采用 snake_case 名词**（`proxy`、`metrics`、`system_metrics`、`commands`），并用 `mod.rs` 作为入口。
+- **行为文件命名清晰**（如 `matching.rs`、`dispatch.rs`、`lifecycle.rs`、`sampler.rs`、`writer.rs`、`query.rs`）。
+- **平台实现分层明确**（`collect/linux.rs`、`collect/windows.rs`）。
+- **前端命令绑定与核心逻辑解耦**：`src/commands/*` 单独承接 Tauri 命令层。
+
+可选优化（非必须）：
+
+- `src/access_control_test.rs` 可迁移为内联测试或 `tests/` 目录，以进一步区分“生产代码”和“测试代码”。当前写法本身没有问题。
+
 
 ## 配置说明
 
