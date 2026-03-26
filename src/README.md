@@ -24,6 +24,7 @@ Overall naming and structure are **reasonable and consistent**:
 - `commands/`: invoke command facade for frontend
 - `access_control.rs`: ACL/whitelist/blacklist decisions
 - `rate_limit.rs`: per-listen address rate limiting
+- `single_instance.rs`: second-instance activation handler (focus existing main window)
 - `tray.rs`: tray integration
 - `update.rs`: update check logic
 - `test_tools.rs`: built-in testing utilities backend

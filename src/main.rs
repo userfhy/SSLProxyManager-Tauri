@@ -17,6 +17,7 @@ mod metrics;
 mod network_optimizer;
 mod proxy;
 mod rate_limit;
+mod single_instance;
 mod stream_proxy;
 mod system_metrics;
 mod test_tools;
@@ -53,10 +54,7 @@ fn main() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
-            if let Some(window) = app.get_webview_window("main") {
-                window.unminimize().ok();
-                window.set_focus().ok();
-            }
+            single_instance::handle_second_instance(&app);
         }))
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_dialog::init())

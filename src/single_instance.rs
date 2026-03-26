@@ -1,17 +1,9 @@
-use single_instance::SingleInstance as SingleInstanceLib;
+use tauri::{AppHandle, Manager};
 
-pub struct SingleInstance {
-    instance: SingleInstanceLib,
-}
-
-impl SingleInstance {
-    pub fn new(name: &str) -> std::io::Result<Self> {
-        let instance = SingleInstanceLib::new(name)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
-        Ok(Self { instance })
-    }
-
-    pub fn is_single(&self) -> bool {
-        self.instance.is_single()
+/// Handle second-instance activation by focusing the existing main window.
+pub fn handle_second_instance(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        window.unminimize().ok();
+        window.set_focus().ok();
     }
 }
