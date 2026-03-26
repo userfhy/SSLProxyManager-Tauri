@@ -176,6 +176,8 @@ One optional cleanup candidate:
 
 - `src/access_control_test.rs` can be moved into inline tests or `tests/` if you want stricter "production code vs test code" separation. It is valid as-is and does not break conventions.
 
+A dedicated backend module note is available at: `src/README.md`.
+
 
 ## Configuration
 
