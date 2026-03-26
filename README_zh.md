@@ -14,6 +14,7 @@
 - **多协议支持**：HTTP/HTTPS 反向代理、WebSocket (WS/WSS)、Stream (TCP/UDP 四层代理)
 - **精细化访问控制**：HTTP/WS/Stream 独立开关，支持局域网放行、白名单、黑名单
 - **完善的可观测性**：实时仪表板、历史指标、请求日志（SQLite）、系统监控
+- **Webhook 告警**：支持启动失败告警与定时系统参数推送
 - **内置测试工具**：HTTP 测试、路由匹配、性能测试、DNS 查询、SSL 证书检查、端口扫描、编解码工具等
 - **性能优化**：LRU 缓存、连接池、零拷贝架构、Rustls 安全 TLS
 
@@ -64,6 +65,13 @@ https://github.com/user-attachments/assets/b41b3d38-19c5-4124-a439-c4c011c16a5b
 - SQLite 历史指标与请求日志
 - 系统指标监控（Linux/Windows）：CPU、内存、Swap、网络、磁盘吞吐、TCP 状态、进程/文件句柄数、运行时长
 - 实时日志面板
+
+### Webhook 告警
+
+- Webhook 页支持测试告警
+- 支持监听/服务启动失败告警
+- 支持按周期推送系统参数
+- 支持星期过滤和免打扰时段，免打扰支持跨天区间（如 `23:00` 到 `08:00`）
 
 ### 内置测试工具
 
@@ -192,6 +200,8 @@ SSLProxyManager/
 | Windows | 可执行文件同目录 `config.toml`，或 `%APPDATA%\SSLProxyManager\config.toml` |
 | macOS | `~/Library/Application Support/SSLProxyManager/config.toml` |
 
+应用也支持系统级开机自启。界面中的开关通过 Tauri autostart 插件生效，并会将 `auto_start` 持久化到配置文件。
+
 ### 快速配置参考
 
 建议以 `config.toml.example` 为模板。
@@ -266,6 +276,27 @@ system_metrics_persistence_enabled = true
 [metrics_storage]
 enabled = true
 db_path = "./data/metrics.db"
+```
+
+#### 告警 / Webhook
+
+```toml
+[alerting]
+enabled = true
+
+[alerting.webhook]
+enabled = true
+provider = "wecom" # 或 "feishu"
+url = "https://example.com/webhook"
+system_report_enabled = true
+quiet_hours_enabled = true
+quiet_hours_start = "23:00"
+quiet_hours_end = "08:00"
+system_report_interval_minutes = 60 # 整数，范围 1-10080
+system_report_weekdays = [1, 2, 3, 4, 5, 6, 7] # 1=周一，7=周日
+
+[alerting.rules]
+server_start_error = true
 ```
 
 ## CI: 手动构建

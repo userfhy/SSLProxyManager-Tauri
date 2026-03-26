@@ -14,6 +14,7 @@ A powerful desktop proxy management application built with **Tauri 2 + Rust**, f
 - **Multi-Protocol Support**: HTTP/HTTPS reverse proxy, WebSocket (WS/WSS), and Stream (TCP/UDP Layer 4)
 - **Access Control**: Fine-grained HTTP/WS/Stream switches with LAN allow, whitelist, and blacklist modes
 - **Observability**: Real-time dashboard, historical metrics, request logs (SQLite), and system monitoring
+- **Webhook Alerting**: Webhook alerts for startup failures and scheduled system report pushes
 - **Built-in Testing Tools**: HTTP tester, route matcher, performance tester, DNS lookup, SSL cert inspector, port scanner, and more
 - **Performance Optimized**: LRU caching, connection pooling, zero-copy architecture, and Rustls for TLS
 
@@ -64,6 +65,13 @@ https://github.com/user-attachments/assets/b41b3d38-19c5-4124-a439-c4c011c16a5b
 - Historical metrics and request logs (SQLite)
 - System metrics (Linux/Windows): CPU, memory, swap, network, disk throughput, TCP states, process/file descriptor counts, uptime
 - Real-time log panel
+
+### Webhook Alerting
+
+- Webhook test alert from the Webhook tab
+- Alert on listener/server startup failure
+- Scheduled system report push
+- Weekday filtering and quiet hours, including cross-day ranges such as `23:00` to `08:00`
 
 ### Built-in Testing Tools
 
@@ -192,6 +200,8 @@ Runtime config is TOML format.
 | Windows | Next to executable, or `%APPDATA%\SSLProxyManager\config.toml` |
 | macOS | `~/Library/Application Support/SSLProxyManager/config.toml` |
 
+The app also supports OS-level autostart. The UI toggle uses the Tauri autostart plugin and persists `auto_start` in the config.
+
 ### Quick Config Reference
 
 Use `config.toml.example` as the main template.
@@ -266,6 +276,27 @@ system_metrics_persistence_enabled = true
 [metrics_storage]
 enabled = true
 db_path = "./data/metrics.db"
+```
+
+#### Alerting / Webhook
+
+```toml
+[alerting]
+enabled = true
+
+[alerting.webhook]
+enabled = true
+provider = "wecom" # or "feishu"
+url = "https://example.com/webhook"
+system_report_enabled = true
+quiet_hours_enabled = true
+quiet_hours_start = "23:00"
+quiet_hours_end = "08:00"
+system_report_interval_minutes = 60 # integer, 1-10080
+system_report_weekdays = [1, 2, 3, 4, 5, 6, 7] # 1=Mon, 7=Sun
+
+[alerting.rules]
+server_start_error = true
 ```
 
 ## CI: Manual Build

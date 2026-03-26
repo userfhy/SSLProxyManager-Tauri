@@ -20,359 +20,93 @@
 
     <el-tabs v-model="activeTab" class="base-tabs">
       <el-tab-pane :label="$t('baseConfig.tabGeneral')" name="general">
-        <el-form label-width="190px">
-          <el-form-item :label="$t('baseConfig.autoStart')">
-            <el-switch v-model="autoStart" />
-            <el-text type="info" size="small" class="mini-hint" style="margin-left: 10px;">
-              {{ $t('baseConfig.autoStartHint') }}
-            </el-text>
-          </el-form-item>
-
-          <el-form-item :label="$t('baseConfig.showRealtimeLogs')">
-            <el-switch v-model="showRealtimeLogs" />
-            <el-text type="info" size="small" class="mini-hint" style="margin-left: 10px;">
-              {{ $t('baseConfig.showRealtimeLogsHint') }}
-            </el-text>
-          </el-form-item>
-
-          <el-form-item v-if="showRealtimeLogs" :label="$t('baseConfig.realtimeLogsOnlyErrors')">
-            <el-switch v-model="realtimeLogsOnlyErrors" />
-            <el-text type="info" size="small" class="mini-hint" style="margin-left: 10px;">
-              {{ $t('baseConfig.realtimeLogsOnlyErrorsHint') }}
-            </el-text>
-          </el-form-item>
-
-          <el-form-item :label="$t('baseConfig.streamProxy')">
-            <el-switch v-model="streamProxy" :active-text="$t('common.on')" :inactive-text="$t('common.off')" />
-            <el-text type="info" size="small" class="mini-hint" style="margin-left: 10px;">
-              {{ $t('baseConfig.streamProxyHint') }}
-            </el-text>
-          </el-form-item>
-
-          <el-form-item v-if="!streamProxy" :label="$t('baseConfig.maxBodySizeMB')">
-            <el-input-number v-model="maxBodySizeMB" :min="1" :max="1024" :step="1" controls-position="right" />
-            <el-text type="info" size="small" class="mini-hint" style="margin-left: 10px;">
-              {{ $t('baseConfig.maxBodySizeMBHint') }}
-            </el-text>
-          </el-form-item>
-
-          <el-form-item v-if="!streamProxy" :label="$t('baseConfig.maxResponseBodySizeMB')">
-            <el-input-number v-model="maxResponseBodySizeMB" :min="1" :max="1024" :step="1" controls-position="right" />
-            <el-text type="info" size="small" class="mini-hint" style="margin-left: 10px;">
-              {{ $t('baseConfig.maxResponseBodySizeMBHint') }}
-            </el-text>
-          </el-form-item>
-
-          <el-form-item :label="$t('baseConfig.upstreamConnectTimeoutMs')">
-            <el-input-number v-model="upstreamConnectTimeoutMs" :min="100" :max="600000" :step="100" controls-position="right" />
-          </el-form-item>
-
-          <el-form-item :label="$t('baseConfig.upstreamReadTimeoutMs')">
-            <el-input-number v-model="upstreamReadTimeoutMs" :min="100" :max="600000" :step="100" controls-position="right" />
-          </el-form-item>
-
-          <el-form-item :label="$t('baseConfig.upstreamPoolMaxIdle')">
-            <el-input-number v-model="upstreamPoolMaxIdle" :min="0" :max="1024" :step="1" controls-position="right" />
-          </el-form-item>
-
-          <el-form-item :label="$t('baseConfig.enableHttp2')">
-            <el-switch v-model="enableHttp2" :active-text="$t('common.on')" :inactive-text="$t('common.off')" />
-            <el-text type="info" size="small" class="mini-hint" style="margin-left: 10px;">
-              {{ $t('baseConfig.enableHttp2Hint') }}
-            </el-text>
-          </el-form-item>
-
-          <el-form-item :label="$t('baseConfig.upstreamPoolIdleTimeoutSec')">
-            <el-input-number v-model="upstreamPoolIdleTimeoutSec" :min="0" :max="3600" :step="1" controls-position="right" />
-          </el-form-item>
-
-          <el-divider />
-
-          <el-form-item :label="$t('baseConfig.compressionEnabled')">
-            <el-switch v-model="compressionEnabled" :active-text="$t('common.on')" :inactive-text="$t('common.off')" />
-            <el-text type="info" size="small" class="mini-hint" style="margin-left: 10px;">
-              {{ $t('baseConfig.compressionEnabledHint') }}
-            </el-text>
-          </el-form-item>
-
-          <template v-if="compressionEnabled">
-            <el-form-item :label="$t('baseConfig.compressionGzip')">
-              <el-switch v-model="compressionGzip" :active-text="$t('common.on')" :inactive-text="$t('common.off')" />
-              <el-text type="info" size="small" class="mini-hint" style="margin-left: 10px;">
-                {{ $t('baseConfig.compressionGzipHint') }}
-              </el-text>
-            </el-form-item>
-
-            <el-form-item v-if="compressionGzip" :label="$t('baseConfig.compressionGzipLevel')">
-              <el-slider
-                v-model="compressionGzipLevel"
-                :min="1"
-                :max="9"
-                :step="1"
-                show-stops
-                show-input
-                :show-input-controls="false"
-                style="width: 300px; margin-right: 12px;"
-              />
-              <el-text type="info" size="small" class="mini-hint">
-                {{ $t('baseConfig.compressionGzipLevelHint') }}
-              </el-text>
-            </el-form-item>
-
-            <el-form-item :label="$t('baseConfig.compressionBrotli')">
-              <el-switch v-model="compressionBrotli" :active-text="$t('common.on')" :inactive-text="$t('common.off')" />
-              <el-text type="info" size="small" class="mini-hint" style="margin-left: 10px;">
-                {{ $t('baseConfig.compressionBrotliHint') }}
-              </el-text>
-            </el-form-item>
-
-            <el-form-item v-if="compressionBrotli" :label="$t('baseConfig.compressionBrotliLevel')">
-              <el-slider
-                v-model="compressionBrotliLevel"
-                :min="0"
-                :max="11"
-                :step="1"
-                show-stops
-                show-input
-                :show-input-controls="false"
-                style="width: 300px; margin-right: 12px;"
-              />
-              <el-text type="info" size="small" class="mini-hint">
-                {{ $t('baseConfig.compressionBrotliLevelHint') }}
-              </el-text>
-            </el-form-item>
-          </template>
-        </el-form>
+        <BaseConfigGeneralTab :model="generalForm" />
       </el-tab-pane>
 
       <el-tab-pane :label="$t('baseConfig.tabWebhook')" name="webhook">
-        <el-form :model="alertForm" label-width="180px">
-          <el-form-item :label="$t('about.alertingEnabled')">
-            <el-switch v-model="alertForm.enabled" />
-          </el-form-item>
-
-          <template v-if="alertForm.enabled">
-            <el-form-item :label="$t('about.alertWebhookEnabled')">
-              <el-switch v-model="alertForm.webhook.enabled" />
-            </el-form-item>
-
-            <template v-if="alertForm.webhook.enabled">
-              <el-form-item :label="$t('about.alertProvider')">
-                <el-select v-model="alertForm.webhook.provider" style="width: 220px;">
-                  <el-option label="企业微信 WeCom" value="wecom" />
-                  <el-option label="飞书 Feishu" value="feishu" />
-                </el-select>
-              </el-form-item>
-
-              <el-form-item :label="$t('about.alertWebhookUrl')">
-                <el-input v-model="alertForm.webhook.url" :placeholder="$t('about.alertWebhookUrlPlaceholder')" />
-              </el-form-item>
-
-              <el-divider />
-
-              <el-form-item :label="$t('about.systemReportEnabled')">
-                <el-switch v-model="alertForm.webhook.system_report_enabled" />
-                <el-text type="info" size="small" class="mini-hint">
-                  {{ $t('about.systemReportHint') }}
-                </el-text>
-              </el-form-item>
-
-              <template v-if="alertForm.webhook.system_report_enabled">
-                <el-form-item :label="$t('about.systemReportIntervalMinutes')">
-                  <el-select
-                    v-model="alertForm.webhook.system_report_interval_minutes"
-                    filterable
-                    allow-create
-                    default-first-option
-                    style="width: 220px;"
-                  >
-                    <el-option
-                      v-for="item in systemReportIntervalOptions"
-                      :key="item"
-                      :label="String(item)"
-                      :value="item"
-                    />
-                  </el-select>
-                  <el-text type="info" size="small" class="mini-hint">
-                    {{ $t('about.systemReportIntervalHint') }}
-                  </el-text>
-                </el-form-item>
-
-                <el-form-item :label="$t('about.systemReportWeekdays')">
-                  <el-checkbox-group v-model="alertForm.webhook.system_report_weekdays">
-                    <el-checkbox
-                      v-for="day in weekdayOptions"
-                      :key="day.value"
-                      :label="day.value"
-                    >
-                      {{ day.label }}
-                    </el-checkbox>
-                  </el-checkbox-group>
-                </el-form-item>
-
-                <el-form-item :label="$t('about.quietHoursEnabled')">
-                  <el-switch v-model="alertForm.webhook.quiet_hours_enabled" />
-                </el-form-item>
-
-                <template v-if="alertForm.webhook.quiet_hours_enabled">
-                  <el-form-item :label="$t('about.quietHoursStart')">
-                    <el-time-picker
-                      v-model="alertForm.webhook.quiet_hours_start"
-                      format="HH:mm"
-                      value-format="HH:mm"
-                      :clearable="false"
-                    />
-                  </el-form-item>
-
-                  <el-form-item :label="$t('about.quietHoursEnd')">
-                    <el-time-picker
-                      v-model="alertForm.webhook.quiet_hours_end"
-                      format="HH:mm"
-                      value-format="HH:mm"
-                      :clearable="false"
-                    />
-                    <el-text type="info" size="small" class="mini-hint">
-                      {{ $t('about.quietHoursHint') }}
-                    </el-text>
-                  </el-form-item>
-                </template>
-              </template>
-            </template>
-
-            <el-form-item :label="$t('about.alertRuleServerStartError')">
-              <el-switch v-model="alertForm.rules.server_start_error" />
-            </el-form-item>
-
-            <el-form-item>
-              <el-button type="primary" @click="handleSendTestAlert" :loading="sendingTestAlert">
-                {{ $t('about.sendTestAlert') }}
-              </el-button>
-            </el-form-item>
-          </template>
-        </el-form>
+        <BaseConfigWebhookTab
+          :model="alertForm"
+          :sending-test-alert="sendingTestAlert"
+          :interval-options="systemReportIntervalOptions"
+          :weekday-options="weekdayOptions"
+          @send-test-alert="handleSendTestAlert"
+        />
       </el-tab-pane>
 
       <el-tab-pane :label="$t('baseConfig.tabSnapshots')" name="snapshots">
-        <el-form label-width="180px">
-          <el-form-item :label="$t('about.configSnapshots')">
-            <el-button @click="loadSnapshots" :loading="loadingSnapshots">{{ $t('about.refreshSnapshots') }}</el-button>
-          </el-form-item>
-
-          <el-form-item>
-            <el-table :data="snapshotList" style="width: 100%" size="small" v-loading="loadingSnapshots">
-              <el-table-column prop="name" :label="$t('about.snapshotName')" min-width="240" />
-              <el-table-column :label="$t('about.snapshotTime')" min-width="180">
-                <template #default="scope">
-                  {{ formatTs(scope.row.created_at_unix_ms) }}
-                </template>
-              </el-table-column>
-              <el-table-column :label="$t('about.snapshotSize')" width="120">
-                <template #default="scope">
-                  {{ formatSize(scope.row.size_bytes) }}
-                </template>
-              </el-table-column>
-              <el-table-column :label="$t('about.actions')" width="120">
-                <template #default="scope">
-                  <el-button
-                    size="small"
-                    type="warning"
-                    class="snapshot-restore-btn"
-                    @click="handleRestoreSnapshot(scope.row.name)"
-                    :loading="restoringSnapshotName === scope.row.name"
-                  >
-                    {{ $t('about.restoreSnapshot') }}
-                  </el-button>
-                </template>
-              </el-table-column>
-            </el-table>
-          </el-form-item>
-        </el-form>
+        <BaseConfigSnapshotsTab
+          :model="snapshotsForm"
+          :format-ts="formatTs"
+          :format-size="formatSize"
+          @refresh="loadSnapshots"
+          @restore="handleRestoreSnapshot"
+        />
       </el-tab-pane>
     </el-tabs>
   </el-card>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted, watch } from 'vue'
-import { ElMessageBox, ElMessage } from 'element-plus'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   GetConfig,
   ListConfigSnapshots,
   RestoreConfigSnapshot,
   SendTestAlert,
   type AlertingConfig,
-  type AlertWebhookConfig,
-  type ConfigSnapshotInfo,
 } from '../api'
 import { useI18n } from 'vue-i18n'
+import BaseConfigGeneralTab from './base-config/BaseConfigGeneralTab.vue'
+import BaseConfigWebhookTab from './base-config/BaseConfigWebhookTab.vue'
+import BaseConfigSnapshotsTab from './base-config/BaseConfigSnapshotsTab.vue'
+import {
+  DEFAULT_COMPRESSION_BROTLI,
+  DEFAULT_COMPRESSION_BROTLI_LEVEL,
+  DEFAULT_COMPRESSION_ENABLED,
+  DEFAULT_COMPRESSION_GZIP,
+  DEFAULT_COMPRESSION_GZIP_LEVEL,
+  DEFAULT_COMPRESSION_MIN_LENGTH,
+  DEFAULT_CONNECT_TIMEOUT_MS,
+  DEFAULT_ENABLE_HTTP2,
+  DEFAULT_MAX_BODY_SIZE_MB,
+  DEFAULT_MAX_RESPONSE_BODY_SIZE_MB,
+  DEFAULT_POOL_IDLE_TIMEOUT_SEC,
+  DEFAULT_POOL_MAX_IDLE,
+  DEFAULT_QUIET_HOURS_END,
+  DEFAULT_QUIET_HOURS_START,
+  DEFAULT_READ_TIMEOUT_MS,
+  DEFAULT_SYSTEM_REPORT_INTERVAL_MINUTES,
+  DEFAULT_SYSTEM_REPORT_WEEKDAYS,
+  SYSTEM_REPORT_INTERVAL_OPTIONS,
+  type AlertingForm,
+  type BaseGeneralForm,
+  type BaseSnapshotsForm,
+} from './base-config/types'
 
 const { t } = useI18n()
 const activeTab = ref<'general' | 'webhook' | 'snapshots'>('general')
 
-const DEFAULT_CONNECT_TIMEOUT_MS = 5000
-const DEFAULT_READ_TIMEOUT_MS = 30000
-const DEFAULT_POOL_MAX_IDLE = 100
-const DEFAULT_POOL_IDLE_TIMEOUT_SEC = 60
-const DEFAULT_MAX_BODY_SIZE_MB = 10
-const DEFAULT_MAX_RESPONSE_BODY_SIZE_MB = 10
-const DEFAULT_ENABLE_HTTP2 = true
-const DEFAULT_COMPRESSION_ENABLED = false
-const DEFAULT_COMPRESSION_GZIP = true
-const DEFAULT_COMPRESSION_BROTLI = true
-const DEFAULT_COMPRESSION_MIN_LENGTH = 1024
-const DEFAULT_COMPRESSION_GZIP_LEVEL = 6
-const DEFAULT_COMPRESSION_BROTLI_LEVEL = 6
-const DEFAULT_QUIET_HOURS_START = '23:00'
-const DEFAULT_QUIET_HOURS_END = '08:00'
-const DEFAULT_SYSTEM_REPORT_INTERVAL_MINUTES = 60
-const DEFAULT_SYSTEM_REPORT_WEEKDAYS = [1, 2, 3, 4, 5, 6, 7]
+const generalForm = reactive<BaseGeneralForm>({
+  autoStart: false,
+  showRealtimeLogs: true,
+  realtimeLogsOnlyErrors: false,
+  streamProxy: true,
+  enableHttp2: DEFAULT_ENABLE_HTTP2,
+  maxBodySizeMB: DEFAULT_MAX_BODY_SIZE_MB,
+  maxResponseBodySizeMB: DEFAULT_MAX_RESPONSE_BODY_SIZE_MB,
+  upstreamConnectTimeoutMs: DEFAULT_CONNECT_TIMEOUT_MS,
+  upstreamReadTimeoutMs: DEFAULT_READ_TIMEOUT_MS,
+  upstreamPoolMaxIdle: DEFAULT_POOL_MAX_IDLE,
+  upstreamPoolIdleTimeoutSec: DEFAULT_POOL_IDLE_TIMEOUT_SEC,
+  compressionEnabled: DEFAULT_COMPRESSION_ENABLED,
+  compressionGzip: DEFAULT_COMPRESSION_GZIP,
+  compressionBrotli: DEFAULT_COMPRESSION_BROTLI,
+  compressionGzipLevel: DEFAULT_COMPRESSION_GZIP_LEVEL,
+  compressionBrotliLevel: DEFAULT_COMPRESSION_BROTLI_LEVEL,
+})
 
-interface AlertWebhookForm extends Omit<AlertWebhookConfig, 'system_report_interval_minutes'> {
-  system_report_enabled: boolean
-  quiet_hours_enabled: boolean
-  quiet_hours_start: string
-  quiet_hours_end: string
-  system_report_interval_minutes: number | string
-  system_report_weekdays: number[]
-}
-
-interface AlertingForm extends Omit<AlertingConfig, 'webhook'> {
-  webhook: AlertWebhookForm
-}
-
-const autoStart = ref(false)
-const showRealtimeLogs = ref(true)
-const realtimeLogsOnlyErrors = ref(false)
-const streamProxy = ref(true)
-const enableHttp2 = ref(DEFAULT_ENABLE_HTTP2)
-const maxBodySizeMB = ref(DEFAULT_MAX_BODY_SIZE_MB)
-const maxResponseBodySizeMB = ref(DEFAULT_MAX_RESPONSE_BODY_SIZE_MB)
-const upstreamConnectTimeoutMs = ref(DEFAULT_CONNECT_TIMEOUT_MS)
-const upstreamReadTimeoutMs = ref(DEFAULT_READ_TIMEOUT_MS)
-const upstreamPoolMaxIdle = ref(DEFAULT_POOL_MAX_IDLE)
-const upstreamPoolIdleTimeoutSec = ref(DEFAULT_POOL_IDLE_TIMEOUT_SEC)
-const compressionEnabled = ref(DEFAULT_COMPRESSION_ENABLED)
-const compressionGzip = ref(DEFAULT_COMPRESSION_GZIP)
-const compressionBrotli = ref(DEFAULT_COMPRESSION_BROTLI)
-const compressionGzipLevel = ref(DEFAULT_COMPRESSION_GZIP_LEVEL)
-const compressionBrotliLevel = ref(DEFAULT_COMPRESSION_BROTLI_LEVEL)
-
-const sendingTestAlert = ref(false)
-const loadingSnapshots = ref(false)
-const restoringSnapshotName = ref('')
-const snapshotList = ref<ConfigSnapshotInfo[]>([])
-const systemReportIntervalOptions = [5, 10, 15, 30, 60, 120]
-const weekdayOptions = computed(() => [
-  { value: 1, label: t('about.weekdayMon') },
-  { value: 2, label: t('about.weekdayTue') },
-  { value: 3, label: t('about.weekdayWed') },
-  { value: 4, label: t('about.weekdayThu') },
-  { value: 5, label: t('about.weekdayFri') },
-  { value: 6, label: t('about.weekdaySat') },
-  { value: 7, label: t('about.weekdaySun') },
-])
-
-const alertForm = ref<AlertingForm>({
+const alertForm = reactive<AlertingForm>({
   enabled: false,
   webhook: {
     enabled: false,
@@ -390,6 +124,24 @@ const alertForm = ref<AlertingForm>({
     server_start_error: true,
   },
 })
+
+const sendingTestAlert = ref(false)
+const snapshotsForm = reactive<BaseSnapshotsForm>({
+  loading: false,
+  restoringSnapshotName: '',
+  list: [],
+})
+
+const systemReportIntervalOptions = SYSTEM_REPORT_INTERVAL_OPTIONS
+const weekdayOptions = computed(() => [
+  { value: 1, label: t('about.weekdayMon') },
+  { value: 2, label: t('about.weekdayTue') },
+  { value: 3, label: t('about.weekdayWed') },
+  { value: 4, label: t('about.weekdayThu') },
+  { value: 5, label: t('about.weekdayFri') },
+  { value: 6, label: t('about.weekdaySat') },
+  { value: 7, label: t('about.weekdaySun') },
+])
 
 const normalizeIntervalMinutes = (value: unknown) => {
   const raw = typeof value === 'string' ? value.trim() : value
@@ -434,29 +186,29 @@ const validateTimeValue = (value: unknown, field: 'start' | 'end') => {
 }
 
 const normalizeAlertingConfig = (): AlertingConfig => {
-  const quietHoursStart = validateTimeValue(alertForm.value.webhook.quiet_hours_start, 'start')
-  const quietHoursEnd = validateTimeValue(alertForm.value.webhook.quiet_hours_end, 'end')
-  if (alertForm.value.webhook.quiet_hours_enabled && quietHoursStart === quietHoursEnd) {
+  const quietHoursStart = validateTimeValue(alertForm.webhook.quiet_hours_start, 'start')
+  const quietHoursEnd = validateTimeValue(alertForm.webhook.quiet_hours_end, 'end')
+  if (alertForm.webhook.quiet_hours_enabled && quietHoursStart === quietHoursEnd) {
     throw new Error(t('about.quietHoursSameTime'))
   }
 
   return {
-    enabled: !!alertForm.value.enabled,
+    enabled: !!alertForm.enabled,
     webhook: {
-      ...alertForm.value.webhook,
-      enabled: !!alertForm.value.webhook.enabled,
-      provider: (alertForm.value.webhook.provider || 'wecom').trim(),
-      url: (alertForm.value.webhook.url || '').trim(),
-      secret: (alertForm.value.webhook.secret || '').trim() || null,
-      system_report_enabled: !!alertForm.value.webhook.system_report_enabled,
-      quiet_hours_enabled: !!alertForm.value.webhook.quiet_hours_enabled,
+      ...alertForm.webhook,
+      enabled: !!alertForm.webhook.enabled,
+      provider: (alertForm.webhook.provider || 'wecom').trim(),
+      url: (alertForm.webhook.url || '').trim(),
+      secret: (alertForm.webhook.secret || '').trim() || null,
+      system_report_enabled: !!alertForm.webhook.system_report_enabled,
+      quiet_hours_enabled: !!alertForm.webhook.quiet_hours_enabled,
       quiet_hours_start: quietHoursStart,
       quiet_hours_end: quietHoursEnd,
-      system_report_interval_minutes: normalizeIntervalMinutes(alertForm.value.webhook.system_report_interval_minutes),
-      system_report_weekdays: normalizeWeekdays(alertForm.value.webhook.system_report_weekdays),
+      system_report_interval_minutes: normalizeIntervalMinutes(alertForm.webhook.system_report_interval_minutes),
+      system_report_weekdays: normalizeWeekdays(alertForm.webhook.system_report_weekdays),
     },
     rules: {
-      server_start_error: alertForm.value.rules.server_start_error !== false,
+      server_start_error: alertForm.rules.server_start_error !== false,
     },
   }
 }
@@ -473,24 +225,24 @@ const resetToDefaults = async () => {
       }
     )
 
-    autoStart.value = false
-    showRealtimeLogs.value = true
-    realtimeLogsOnlyErrors.value = false
-    streamProxy.value = true
-    enableHttp2.value = DEFAULT_ENABLE_HTTP2
-    maxBodySizeMB.value = DEFAULT_MAX_BODY_SIZE_MB
-    maxResponseBodySizeMB.value = DEFAULT_MAX_RESPONSE_BODY_SIZE_MB
-    upstreamConnectTimeoutMs.value = DEFAULT_CONNECT_TIMEOUT_MS
-    upstreamReadTimeoutMs.value = DEFAULT_READ_TIMEOUT_MS
-    upstreamPoolMaxIdle.value = DEFAULT_POOL_MAX_IDLE
-    upstreamPoolIdleTimeoutSec.value = DEFAULT_POOL_IDLE_TIMEOUT_SEC
-    compressionEnabled.value = DEFAULT_COMPRESSION_ENABLED
-    compressionGzip.value = DEFAULT_COMPRESSION_GZIP
-    compressionBrotli.value = DEFAULT_COMPRESSION_BROTLI
-    compressionGzipLevel.value = DEFAULT_COMPRESSION_GZIP_LEVEL
-    compressionBrotliLevel.value = DEFAULT_COMPRESSION_BROTLI_LEVEL
+    generalForm.autoStart = false
+    generalForm.showRealtimeLogs = true
+    generalForm.realtimeLogsOnlyErrors = false
+    generalForm.streamProxy = true
+    generalForm.enableHttp2 = DEFAULT_ENABLE_HTTP2
+    generalForm.maxBodySizeMB = DEFAULT_MAX_BODY_SIZE_MB
+    generalForm.maxResponseBodySizeMB = DEFAULT_MAX_RESPONSE_BODY_SIZE_MB
+    generalForm.upstreamConnectTimeoutMs = DEFAULT_CONNECT_TIMEOUT_MS
+    generalForm.upstreamReadTimeoutMs = DEFAULT_READ_TIMEOUT_MS
+    generalForm.upstreamPoolMaxIdle = DEFAULT_POOL_MAX_IDLE
+    generalForm.upstreamPoolIdleTimeoutSec = DEFAULT_POOL_IDLE_TIMEOUT_SEC
+    generalForm.compressionEnabled = DEFAULT_COMPRESSION_ENABLED
+    generalForm.compressionGzip = DEFAULT_COMPRESSION_GZIP
+    generalForm.compressionBrotli = DEFAULT_COMPRESSION_BROTLI
+    generalForm.compressionGzipLevel = DEFAULT_COMPRESSION_GZIP_LEVEL
+    generalForm.compressionBrotliLevel = DEFAULT_COMPRESSION_BROTLI_LEVEL
 
-    window.dispatchEvent(new CustomEvent('toggle-realtime-logs', { detail: showRealtimeLogs.value }))
+    window.dispatchEvent(new CustomEvent('toggle-realtime-logs', { detail: generalForm.showRealtimeLogs }))
     ElMessage.success(t('baseConfig.restoreSuccess'))
   } catch {
     // 用户取消
@@ -513,13 +265,13 @@ const formatSize = (size: number) => {
 }
 
 const loadSnapshots = async () => {
-  loadingSnapshots.value = true
+  snapshotsForm.loading = true
   try {
-    snapshotList.value = await ListConfigSnapshots()
+    snapshotsForm.list = await ListConfigSnapshots()
   } catch (e: any) {
     ElMessage.error(e?.message || String(e))
   } finally {
-    loadingSnapshots.value = false
+    snapshotsForm.loading = false
   }
 }
 
@@ -534,7 +286,7 @@ const handleRestoreSnapshot = async (name: string) => {
     }
   )
 
-  restoringSnapshotName.value = name
+  snapshotsForm.restoringSnapshotName = name
   try {
     await RestoreConfigSnapshot(name)
     ElMessage.success(t('about.restoreSnapshotSuccess'))
@@ -542,16 +294,16 @@ const handleRestoreSnapshot = async (name: string) => {
   } catch (e: any) {
     ElMessage.error(t('about.restoreSnapshotFailed', { error: e?.message || String(e) }))
   } finally {
-    restoringSnapshotName.value = ''
+    snapshotsForm.restoringSnapshotName = ''
   }
 }
 
 const handleSendTestAlert = async () => {
-  if (!alertForm.value.enabled || !alertForm.value.webhook?.enabled) {
+  if (!alertForm.enabled || !alertForm.webhook?.enabled) {
     ElMessage.warning(t('about.alertConfigIncomplete'))
     return
   }
-  if (!alertForm.value.webhook.url?.trim()) {
+  if (!alertForm.webhook.url?.trim()) {
     ElMessage.warning(t('about.alertWebhookUrlRequired'))
     return
   }
@@ -570,30 +322,30 @@ const handleSendTestAlert = async () => {
 onMounted(async () => {
   try {
     const configData = (await GetConfig()) as any
-    autoStart.value = !!configData.auto_start
-    showRealtimeLogs.value = configData.show_realtime_logs !== false
-    realtimeLogsOnlyErrors.value = !!configData.realtime_logs_only_errors
-    streamProxy.value = configData.stream_proxy !== false
-    enableHttp2.value = configData.enable_http2 !== false
-    maxBodySizeMB.value = Math.round(((configData.max_body_size ?? DEFAULT_MAX_BODY_SIZE_MB * 1024 * 1024) / 1024 / 1024) * 100) / 100
-    maxResponseBodySizeMB.value = Math.round(((configData.max_response_body_size ?? DEFAULT_MAX_RESPONSE_BODY_SIZE_MB * 1024 * 1024) / 1024 / 1024) * 100) / 100
-    upstreamConnectTimeoutMs.value = configData.upstream_connect_timeout_ms ?? DEFAULT_CONNECT_TIMEOUT_MS
-    upstreamReadTimeoutMs.value = configData.upstream_read_timeout_ms ?? DEFAULT_READ_TIMEOUT_MS
-    upstreamPoolMaxIdle.value = configData.upstream_pool_max_idle ?? DEFAULT_POOL_MAX_IDLE
-    upstreamPoolIdleTimeoutSec.value = configData.upstream_pool_idle_timeout_sec ?? DEFAULT_POOL_IDLE_TIMEOUT_SEC
-    compressionEnabled.value = configData.compression_enabled ?? DEFAULT_COMPRESSION_ENABLED
-    compressionGzip.value = configData.compression_gzip ?? DEFAULT_COMPRESSION_GZIP
-    compressionBrotli.value = configData.compression_brotli ?? DEFAULT_COMPRESSION_BROTLI
-    compressionGzipLevel.value = configData.compression_gzip_level ?? DEFAULT_COMPRESSION_GZIP_LEVEL
-    compressionBrotliLevel.value = configData.compression_brotli_level ?? DEFAULT_COMPRESSION_BROTLI_LEVEL
+    generalForm.autoStart = !!configData.auto_start
+    generalForm.showRealtimeLogs = configData.show_realtime_logs !== false
+    generalForm.realtimeLogsOnlyErrors = !!configData.realtime_logs_only_errors
+    generalForm.streamProxy = configData.stream_proxy !== false
+    generalForm.enableHttp2 = configData.enable_http2 !== false
+    generalForm.maxBodySizeMB = Math.round(((configData.max_body_size ?? DEFAULT_MAX_BODY_SIZE_MB * 1024 * 1024) / 1024 / 1024) * 100) / 100
+    generalForm.maxResponseBodySizeMB = Math.round(((configData.max_response_body_size ?? DEFAULT_MAX_RESPONSE_BODY_SIZE_MB * 1024 * 1024) / 1024 / 1024) * 100) / 100
+    generalForm.upstreamConnectTimeoutMs = configData.upstream_connect_timeout_ms ?? DEFAULT_CONNECT_TIMEOUT_MS
+    generalForm.upstreamReadTimeoutMs = configData.upstream_read_timeout_ms ?? DEFAULT_READ_TIMEOUT_MS
+    generalForm.upstreamPoolMaxIdle = configData.upstream_pool_max_idle ?? DEFAULT_POOL_MAX_IDLE
+    generalForm.upstreamPoolIdleTimeoutSec = configData.upstream_pool_idle_timeout_sec ?? DEFAULT_POOL_IDLE_TIMEOUT_SEC
+    generalForm.compressionEnabled = configData.compression_enabled ?? DEFAULT_COMPRESSION_ENABLED
+    generalForm.compressionGzip = configData.compression_gzip ?? DEFAULT_COMPRESSION_GZIP
+    generalForm.compressionBrotli = configData.compression_brotli ?? DEFAULT_COMPRESSION_BROTLI
+    generalForm.compressionGzipLevel = configData.compression_gzip_level ?? DEFAULT_COMPRESSION_GZIP_LEVEL
+    generalForm.compressionBrotliLevel = configData.compression_brotli_level ?? DEFAULT_COMPRESSION_BROTLI_LEVEL
 
     const alerting = configData?.alerting
     if (alerting) {
       const savedWeekdays = Array.isArray(alerting?.webhook?.system_report_weekdays)
         ? alerting.webhook.system_report_weekdays
         : null
-      alertForm.value.enabled = !!alerting.enabled
-      alertForm.value.webhook = {
+      alertForm.enabled = !!alerting.enabled
+      alertForm.webhook = {
         enabled: !!alerting?.webhook?.enabled,
         provider: alerting?.webhook?.provider || 'wecom',
         url: alerting?.webhook?.url || '',
@@ -607,7 +359,7 @@ onMounted(async () => {
           ? [...savedWeekdays]
           : [...DEFAULT_SYSTEM_REPORT_WEEKDAYS],
       }
-      alertForm.value.rules = {
+      alertForm.rules = {
         server_start_error: alerting?.rules?.server_start_error !== false,
       }
     }
@@ -618,31 +370,31 @@ onMounted(async () => {
   await loadSnapshots()
 })
 
-watch(showRealtimeLogs, (v) => {
+watch(() => generalForm.showRealtimeLogs, (v) => {
   if (!v) {
-    realtimeLogsOnlyErrors.value = false
+    generalForm.realtimeLogsOnlyErrors = false
   }
   window.dispatchEvent(new CustomEvent('toggle-realtime-logs', { detail: v }))
 })
 
 const getConfig = () => ({
-  auto_start: !!autoStart.value,
-  show_realtime_logs: !!showRealtimeLogs.value,
-  realtime_logs_only_errors: !!realtimeLogsOnlyErrors.value,
-  stream_proxy: !!streamProxy.value,
-  enable_http2: !!enableHttp2.value,
-  max_body_size: Math.floor(maxBodySizeMB.value * 1024 * 1024),
-  max_response_body_size: Math.floor(maxResponseBodySizeMB.value * 1024 * 1024),
-  upstream_connect_timeout_ms: Number(upstreamConnectTimeoutMs.value),
-  upstream_read_timeout_ms: Number(upstreamReadTimeoutMs.value),
-  upstream_pool_max_idle: Number(upstreamPoolMaxIdle.value),
-  upstream_pool_idle_timeout_sec: Number(upstreamPoolIdleTimeoutSec.value),
-  compression_enabled: !!compressionEnabled.value,
-  compression_gzip: !!compressionGzip.value,
-  compression_brotli: !!compressionBrotli.value,
+  auto_start: !!generalForm.autoStart,
+  show_realtime_logs: !!generalForm.showRealtimeLogs,
+  realtime_logs_only_errors: !!generalForm.realtimeLogsOnlyErrors,
+  stream_proxy: !!generalForm.streamProxy,
+  enable_http2: !!generalForm.enableHttp2,
+  max_body_size: Math.floor(generalForm.maxBodySizeMB * 1024 * 1024),
+  max_response_body_size: Math.floor(generalForm.maxResponseBodySizeMB * 1024 * 1024),
+  upstream_connect_timeout_ms: Number(generalForm.upstreamConnectTimeoutMs),
+  upstream_read_timeout_ms: Number(generalForm.upstreamReadTimeoutMs),
+  upstream_pool_max_idle: Number(generalForm.upstreamPoolMaxIdle),
+  upstream_pool_idle_timeout_sec: Number(generalForm.upstreamPoolIdleTimeoutSec),
+  compression_enabled: !!generalForm.compressionEnabled,
+  compression_gzip: !!generalForm.compressionGzip,
+  compression_brotli: !!generalForm.compressionBrotli,
   compression_min_length: DEFAULT_COMPRESSION_MIN_LENGTH,
-  compression_gzip_level: Number(compressionGzipLevel.value),
-  compression_brotli_level: Number(compressionBrotliLevel.value),
+  compression_gzip_level: Number(generalForm.compressionGzipLevel),
+  compression_brotli_level: Number(generalForm.compressionBrotliLevel),
   alerting: normalizeAlertingConfig(),
 })
 
@@ -676,11 +428,6 @@ defineExpose({
   z-index: 20;
   margin-bottom: 18px;
   padding-top: 4px;
-  background: var(--card);
-}
-
-.base-tabs :deep(.el-tabs__nav-wrap) {
-  background: var(--card);
 }
 
 .header-row {
