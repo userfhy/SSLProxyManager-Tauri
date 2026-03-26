@@ -632,7 +632,7 @@ fn create_config_snapshot_if_exists(config_path: &PathBuf) -> Result<()> {
     fs::write(&snap_path, content)
         .with_context(|| format!("写入配置快照失败: {}", snap_path.display()))?;
 
-    prune_old_snapshots(config_path, 50)?;
+    prune_old_snapshots(config_path, 20)?;
     Ok(())
 }
 

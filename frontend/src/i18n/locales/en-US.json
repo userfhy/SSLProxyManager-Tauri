@@ -65,7 +65,10 @@
     "compressionBrotli": "Brotli Compression",
     "compressionBrotliHint": "Enable Brotli compression algorithm (better compression ratio but higher CPU usage).",
     "compressionBrotliLevel": "Brotli Compression Level",
-    "compressionBrotliLevelHint": "Higher level means better compression but more CPU usage. Recommended: 6 (balanced)."
+    "compressionBrotliLevelHint": "Higher level means better compression but more CPU usage. Recommended: 6 (balanced).",
+    "tabGeneral": "General",
+    "tabWebhook": "Webhook Alerts",
+    "tabSnapshots": "Config Snapshots"
   },
   "app": {
     "title": "Reverse Proxy Management Panel",
@@ -135,8 +138,7 @@
     "tools": "Tools",
     "testTools": "Test Tools",
     "system": "System",
-    "about": "About",
-    "configManage": "Config Center"
+    "about": "About"
   },
   "about": {
     "title": "About",
@@ -887,8 +889,5 @@
     "generatedCertFile": "Certificate File",
     "generatedKeyFile": "Private Key File",
     "renderHtml": "Render HTML"
-  },
-  "configManage": {
-    "title": "Config Center"
   }
 }

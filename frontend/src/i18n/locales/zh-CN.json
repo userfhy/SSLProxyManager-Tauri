@@ -65,7 +65,10 @@
     "compressionBrotli": "Brotli 压缩",
     "compressionBrotliHint": "启用 Brotli 压缩算法（压缩率更高，但 CPU 消耗更大）。",
     "compressionBrotliLevel": "Brotli 压缩等级",
-    "compressionBrotliLevelHint": "等级越高压缩率越大，但 CPU 消耗也越大。推荐值：6（平衡）。"
+    "compressionBrotliLevelHint": "等级越高压缩率越大，但 CPU 消耗也越大。推荐值：6（平衡）。",
+    "tabGeneral": "基础参数",
+    "tabWebhook": "Webhook 告警",
+    "tabSnapshots": "配置快照"
   },
   "app": {
     "title": "数据反向代理管理面板",
@@ -131,8 +134,7 @@
     "tools": "工具",
     "testTools": "测试工具",
     "system": "系统",
-    "about": "关于",
-    "configManage": "配置管理中心"
+    "about": "关于"
   },
   "about": {
     "title": "关于",
@@ -883,8 +885,5 @@
     "generatedCertFile": "证书文件",
     "generatedKeyFile": "私钥文件",
     "renderHtml": "渲染HTML"
-  },
-  "configManage": {
-    "title": "配置管理中心"
   }
 }
