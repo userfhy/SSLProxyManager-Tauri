@@ -4,6 +4,9 @@ import AutoImport from 'unplugin-auto-import/vite'
 import Components from 'unplugin-vue-components/vite'
 import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
 
+const isNodeModulePath = (id: string, pkg: string) =>
+  id.includes(`/node_modules/${pkg}/`) || id.includes(`\\node_modules\\${pkg}\\`)
+
 export default defineConfig({
   plugins: [
     vue(),
@@ -24,8 +27,25 @@ export default defineConfig({
         manualChunks(id) {
           if (!id.includes('node_modules')) return
 
-          if (id.includes('echarts') || id.includes('zrender')) {
-            return 'vendor-echarts'
+          if (isNodeModulePath(id, 'vue-echarts')) {
+            return 'vendor-vue-echarts'
+          }
+
+          if (isNodeModulePath(id, 'zrender')) {
+            return 'vendor-zrender'
+          }
+
+          if (isNodeModulePath(id, 'echarts')) {
+            if (id.includes('/echarts/charts') || id.includes('/echarts/lib/chart/')) {
+              return 'vendor-echarts-charts'
+            }
+            if (id.includes('/echarts/components') || id.includes('/echarts/lib/component/')) {
+              return 'vendor-echarts-components'
+            }
+            if (id.includes('/echarts/renderers') || id.includes('/echarts/lib/renderer/')) {
+              return 'vendor-echarts-renderers'
+            }
+            return 'vendor-echarts-core'
           }
 
           if (id.includes('element-plus')) {
