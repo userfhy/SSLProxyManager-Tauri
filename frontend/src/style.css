@@ -418,6 +418,53 @@ button,
   color: #ffffff;
 }
 
+.light-mode .el-button--warning {
+  --el-button-bg-color: #f0a126;
+  --el-button-border-color: #d88913;
+  --el-button-text-color: #ffffff;
+  --el-button-hover-bg-color: #de9118;
+  --el-button-hover-border-color: #c57c11;
+  --el-button-hover-text-color: #ffffff;
+  --el-button-active-bg-color: #c98014;
+  --el-button-active-border-color: #ae6d0f;
+  --el-button-active-text-color: #ffffff;
+  color: #ffffff !important;
+  border-color: #d88913 !important;
+  background: linear-gradient(135deg, #f0a126, #d88913) !important;
+  box-shadow: 0 4px 12px rgba(216, 137, 19, 0.24);
+}
+
+.light-mode .el-button--warning:hover,
+.light-mode .el-button--warning:focus,
+.light-mode .el-button--warning:active {
+  color: #ffffff !important;
+  border-color: #ae6d0f !important;
+  box-shadow: 0 8px 22px rgba(216, 137, 19, 0.28), 0 0 0 2px rgba(216, 137, 19, 0.18);
+}
+
+.light-mode .el-button--warning.is-plain {
+  --el-button-bg-color: #f2b24a;
+  --el-button-border-color: #d88913;
+  --el-button-text-color: #ffffff;
+  --el-button-hover-bg-color: #e59e25;
+  --el-button-hover-border-color: #c57c11;
+  --el-button-hover-text-color: #ffffff;
+  --el-button-active-bg-color: #d88913;
+  --el-button-active-border-color: #ae6d0f;
+  --el-button-active-text-color: #ffffff;
+  color: #ffffff !important;
+  border-color: #d88913 !important;
+  background: linear-gradient(135deg, #f2b24a, #e59e25) !important;
+}
+
+.light-mode .el-button--warning.is-disabled,
+.light-mode .el-button--warning:disabled {
+  color: rgba(255, 255, 255, 0.92) !important;
+  border-color: #e3b66b !important;
+  background: linear-gradient(135deg, #f5cd86, #ebb55b) !important;
+  box-shadow: none;
+}
+
 .el-button.is-text:not(.is-disabled):not(:disabled):hover,
 .el-button.is-link:not(.is-disabled):not(:disabled):hover {
   background: rgba(79, 156, 249, 0.4) !important;
@@ -434,11 +481,11 @@ button,
   border-radius: var(--radius-lg);
 }
 
-.config-page :deep(.el-form-item) {
+.config-page .el-form-item {
   margin-bottom: 22px;
 }
 
-.config-page :deep(.el-card__header h3) {
+.config-page .el-card__header h3 {
   font-size: 24px;
   font-weight: 700;
   letter-spacing: -0.4px;

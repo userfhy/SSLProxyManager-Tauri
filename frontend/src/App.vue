@@ -1146,28 +1146,26 @@ h1 {
   background: rgba(245, 158, 11, 0.14) !important;
 }
 
-@media (prefers-color-scheme: light) {
-  .quit-btn {
-    --el-button-bg-color: #fde9c8;
-    --el-button-border-color: #e0a14a;
-    --el-button-text-color: #6a3d00;
-    --el-button-hover-bg-color: #f9dcad;
-    --el-button-hover-border-color: #c98220;
-    --el-button-hover-text-color: #4f2e00;
-    --el-button-active-bg-color: #f6d49e;
-    --el-button-active-border-color: #b76f0e;
-    --el-button-active-text-color: #3d2400;
-    color: #6a3d00 !important;
-    border-color: #e0a14a !important;
-    background: #fde9c8 !important;
-  }
+.light-mode .quit-btn {
+  --el-button-bg-color: #fde9c8;
+  --el-button-border-color: #e0a14a;
+  --el-button-text-color: #ffffff;
+  --el-button-hover-bg-color: #f0ae3a;
+  --el-button-hover-border-color: #c98220;
+  --el-button-hover-text-color: #ffffff;
+  --el-button-active-bg-color: #dc971d;
+  --el-button-active-border-color: #b76f0e;
+  --el-button-active-text-color: #ffffff;
+  color: #ffffff !important;
+  border-color: #e0a14a !important;
+  background: linear-gradient(135deg, #f2b24a, #e59e25) !important;
+}
 
-  .quit-btn.is-disabled,
-  .quit-btn:disabled {
-    color: #7b4c0c !important;
-    border-color: #e7bb77 !important;
-    background: #faedcf !important;
-  }
+.light-mode .quit-btn.is-disabled,
+.light-mode .quit-btn:disabled {
+  color: rgba(255, 255, 255, 0.92) !important;
+  border-color: #e3b66b !important;
+  background: linear-gradient(135deg, #f5cd86, #ebb55b) !important;
 }
 
 .save-btn {

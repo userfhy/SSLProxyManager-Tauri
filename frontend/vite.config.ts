@@ -31,6 +31,10 @@ export default defineConfig({
             return 'vendor-vue-echarts'
           }
 
+          if (id.includes('@element-plus/icons-vue')) {
+            return 'vendor-element-plus-icons'
+          }
+
           if (isNodeModulePath(id, 'zrender')) {
             return 'vendor-zrender'
           }
@@ -50,10 +54,6 @@ export default defineConfig({
 
           if (id.includes('element-plus')) {
             return 'vendor-element-plus'
-          }
-
-          if (id.includes('@element-plus/icons-vue')) {
-            return 'vendor-element-plus-icons'
           }
 
           if (id.includes('vue-i18n')) {

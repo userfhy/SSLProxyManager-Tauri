@@ -485,16 +485,16 @@ defineExpose({
   .snapshot-restore-btn {
     --el-button-bg-color: #fde9c8;
     --el-button-border-color: #d8942e;
-    --el-button-text-color: #5c3300;
-    --el-button-hover-bg-color: #f9dcad;
+    --el-button-text-color: #ffffff;
+    --el-button-hover-bg-color: #f0ae3a;
     --el-button-hover-border-color: #bf7d1f;
-    --el-button-hover-text-color: #452600;
-    --el-button-active-bg-color: #f5d39f;
+    --el-button-hover-text-color: #ffffff;
+    --el-button-active-bg-color: #dc971d;
     --el-button-active-border-color: #a96610;
-    --el-button-active-text-color: #351d00;
-    color: #5c3300 !important;
+    --el-button-active-text-color: #ffffff;
+    color: #ffffff !important;
     border-color: #d8942e !important;
-    background: #fde9c8 !important;
+    background: linear-gradient(135deg, #f2b24a, #e59e25) !important;
     font-weight: 600;
   }
 }
