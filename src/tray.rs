@@ -255,10 +255,25 @@ pub fn init_tray(app: &AppHandle) -> tauri::Result<()> {
         .on_tray_icon_event(|tray, event| {
             #[cfg(target_os = "linux")]
             {
-                // Tauri 官方文档：Linux 不保证托盘点击/双击事件可用。
-                // 因此 Linux 以菜单项（显示/隐藏）为准，不依赖图标双击。
-                let _ = tray;
-                let _ = event;
+                // Linux 兜底：部分桌面环境会发 Click 事件（也有环境完全不发）。
+                // 若收到左键点击，则尝试切换主窗口显隐。
+                if let tauri::tray::TrayIconEvent::Click {
+                    button: tauri::tray::MouseButton::Left,
+                    ..
+                } = event
+                {
+                    let app = tray.app_handle();
+                    if let Some(window) = app.get_webview_window("main") {
+                        let visible = window.is_visible().unwrap_or(false);
+                        if visible {
+                            let _ = window.hide();
+                        } else {
+                            let _ = window.unminimize();
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                }
             }
 
             #[cfg(not(target_os = "linux"))]
