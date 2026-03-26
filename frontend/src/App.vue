@@ -143,6 +143,7 @@
         <RequestLogs v-if="isLazyTabLoaded('requestLogs')" v-show="activeTab === 'requestLogs'" />
         <TestTools v-if="isLazyTabLoaded('testTools')" v-show="activeTab === 'testTools'" />
         <LogViewer v-if="isLazyTabLoaded('logs')" v-show="activeTab === 'logs'" />
+        <ConfigManage v-show="activeTab === 'configManage'" ref="configManageRef" />
         <About v-show="activeTab === 'about'" ref="aboutRef" />
       </div>
     </div>
@@ -164,6 +165,7 @@ import WsProxyConfig from './components/WsProxyConfig.vue'
 import StreamProxyConfig from './components/StreamProxyConfig.vue'
 import AccessControl from './components/AccessControl.vue'
 import MetricsStorage from './components/MetricsStorage.vue'
+import ConfigManage from './components/ConfigManage.vue'
 import About from './components/About.vue'
 import Sidebar from './components/Sidebar.vue'
 import TermsDialog from './components/TermsDialog.vue'
@@ -182,7 +184,7 @@ const LogViewer = defineAsyncComponent(() => import('./components/LogViewer.vue'
 
 const { t, locale } = useI18n()
 
-const activeTab = ref<'base' | 'config' | 'ws' | 'stream' | 'logs' | 'dashboard' | 'systemMetrics' | 'access' | 'storage' | 'requestLogs' | 'about' | 'testTools'>('config')
+const activeTab = ref<'base' | 'config' | 'ws' | 'stream' | 'logs' | 'dashboard' | 'systemMetrics' | 'access' | 'storage' | 'configManage' | 'requestLogs' | 'about' | 'testTools'>('config')
 const status = ref('stopped')
 const starting = ref(false)
 const saving = ref(false)
@@ -193,6 +195,7 @@ const streamProxyConfigRef = ref<InstanceType<typeof StreamProxyConfig> | null>(
 const systemMetricsRef = ref<any>(null)
 const accessControlRef = ref<InstanceType<typeof AccessControl> | null>(null)
 const metricsStorageRef = ref<InstanceType<typeof MetricsStorage> | null>(null)
+const configManageRef = ref<InstanceType<typeof ConfigManage> | null>(null)
 const aboutRef = ref<InstanceType<typeof About> | null>(null)
 const globalConfig = ref<any>({})
 const showTermsDialog = ref(false)
@@ -622,6 +625,18 @@ const handleSaveConfig = async () => {
       systemMetricsConfig = {}
     }
 
+    // 从配置管理模块获取配置（告警、快照相关配置）
+    let configManageConfig = {}
+    try {
+      if (configManageRef.value && typeof configManageRef.value.getConfig === 'function') {
+        configManageConfig = configManageRef.value.getConfig() || {}
+      } else {
+        configManageConfig = {}
+      }
+    } catch (e: any) {
+      configManageConfig = {}
+    }
+
     // 从 About 获取配置
     let aboutConfig = {}
     try {
@@ -640,6 +655,7 @@ const handleSaveConfig = async () => {
       ...configCardConfig,
       ...accessConfig,
       ...storageConfig,
+      ...configManageConfig,
       ...aboutConfig,
       ...systemMetricsConfig,
     }
@@ -1144,6 +1160,30 @@ h1 {
   color: #eab347 !important;
   border-color: rgba(245, 158, 11, 0.5) !important;
   background: rgba(245, 158, 11, 0.14) !important;
+}
+
+@media (prefers-color-scheme: light) {
+  .quit-btn {
+    --el-button-bg-color: #fde9c8;
+    --el-button-border-color: #e0a14a;
+    --el-button-text-color: #6a3d00;
+    --el-button-hover-bg-color: #f9dcad;
+    --el-button-hover-border-color: #c98220;
+    --el-button-hover-text-color: #4f2e00;
+    --el-button-active-bg-color: #f6d49e;
+    --el-button-active-border-color: #b76f0e;
+    --el-button-active-text-color: #3d2400;
+    color: #6a3d00 !important;
+    border-color: #e0a14a !important;
+    background: #fde9c8 !important;
+  }
+
+  .quit-btn.is-disabled,
+  .quit-btn:disabled {
+    color: #7b4c0c !important;
+    border-color: #e7bb77 !important;
+    background: #faedcf !important;
+  }
 }
 
 .save-btn {

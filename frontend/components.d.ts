@@ -16,6 +16,7 @@ declare module 'vue' {
     BaseConfig: typeof import('./src/components/BaseConfig.vue')['default']
     ChartPreviewPage: typeof import('./src/components/ChartPreviewPage.vue')['default']
     ConfigCard: typeof import('./src/components/ConfigCard.vue')['default']
+    ConfigManage: typeof import('./src/components/ConfigManage.vue')['default']
     Dashboard: typeof import('./src/components/Dashboard.vue')['default']
     ElAlert: typeof import('element-plus/es')['ElAlert']
     ElButton: typeof import('element-plus/es')['ElButton']

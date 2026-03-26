@@ -135,7 +135,8 @@
     "tools": "Tools",
     "testTools": "Test Tools",
     "system": "System",
-    "about": "About"
+    "about": "About",
+    "configManage": "Config Center"
   },
   "about": {
     "title": "About",
@@ -886,5 +887,8 @@
     "generatedCertFile": "Certificate File",
     "generatedKeyFile": "Private Key File",
     "renderHtml": "Render HTML"
+  },
+  "configManage": {
+    "title": "Config Center"
   }
 }

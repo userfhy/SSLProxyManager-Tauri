@@ -31,6 +31,10 @@
           <el-icon><Setting /></el-icon>
           <template #title>{{ $t('sidebar.baseConfig') }}</template>
         </el-menu-item>
+        <el-menu-item index="configManage">
+          <el-icon><Operation /></el-icon>
+          <template #title>{{ $t('sidebar.configManage') }}</template>
+        </el-menu-item>
       </el-menu-item-group>
 
       <el-menu-item-group :title="isCollapsed ? '' : $t('sidebar.monitoring')">
@@ -73,7 +77,7 @@
 </template>
 
 <script setup lang="ts">
-import { Setting, DataAnalysis, DataLine, Document, Lock, Search, Fold, Expand, InfoFilled, Tools, Connection, Promotion, Share } from '@element-plus/icons-vue'
+import { Setting, DataAnalysis, DataLine, Document, Lock, Search, Fold, Expand, InfoFilled, Tools, Connection, Promotion, Share, Operation } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()

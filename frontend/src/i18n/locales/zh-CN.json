@@ -131,7 +131,8 @@
     "tools": "工具",
     "testTools": "测试工具",
     "system": "系统",
-    "about": "关于"
+    "about": "关于",
+    "configManage": "配置管理中心"
   },
   "about": {
     "title": "关于",
@@ -882,5 +883,8 @@
     "generatedCertFile": "证书文件",
     "generatedKeyFile": "私钥文件",
     "renderHtml": "渲染HTML"
+  },
+  "configManage": {
+    "title": "配置管理中心"
   }
 }
