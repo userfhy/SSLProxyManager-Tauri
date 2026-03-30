@@ -39,6 +39,55 @@ fn stream_log(app: &tauri::AppHandle, message: impl Into<String>) {
     crate::proxy::send_log_with_app(app, format!("[STREAM] {}", message.into()));
 }
 
+fn normalize_stream_listen_addr(raw: &str) -> String {
+    let s = raw.trim();
+    if s.starts_with(':') {
+        format!("127.0.0.1{}", s)
+    } else {
+        s.to_string()
+    }
+}
+
+fn parse_stream_listen_addr(raw: &str) -> Result<SocketAddr> {
+    let normalized = normalize_stream_listen_addr(raw);
+    normalized
+        .parse::<SocketAddr>()
+        .map_err(|e| anyhow!("invalid stream listen_addr '{}': {}", raw, e))
+}
+
+fn server_label(server: &StreamServer) -> String {
+    if let Some(addr) = server.listen_addr.as_deref() {
+        let trimmed = addr.trim();
+        if !trimmed.is_empty() {
+            return normalize_stream_listen_addr(trimmed);
+        }
+    }
+    match server.listen_port {
+        Some(p) if p > 0 => format!("127.0.0.1:{}", p),
+        _ => "<unset>".to_string(),
+    }
+}
+
+fn resolve_listen_addr(server: &StreamServer) -> Result<String> {
+    if let Some(addr) = server.listen_addr.as_deref() {
+        let trimmed = addr.trim();
+        if !trimmed.is_empty() {
+            let parsed = parse_stream_listen_addr(trimmed)?;
+            return Ok(parsed.to_string());
+        }
+    }
+
+    if let Some(port) = server.listen_port {
+        if port > 0 {
+            return Ok(format!("127.0.0.1:{}", port));
+        }
+    }
+
+    Err(anyhow!(
+        "stream server listen_addr cannot be empty (and legacy listen_port is missing)"
+    ))
+}
+
 pub async fn start_stream_servers(app: tauri::AppHandle, config: &StreamProxyConfig) -> Result<()> {
     stop_stream_servers().await;
 
@@ -61,8 +110,8 @@ pub async fn start_stream_servers(app: tauri::AppHandle, config: &StreamProxyCon
             .find(|u| u.name == server.proxy_pass)
             .ok_or_else(|| {
                 anyhow!(
-                    "stream server (listen_port={}) references missing upstream '{}'",
-                    server.listen_port,
+                    "stream server (listen_addr={}) references missing upstream '{}'",
+                    server_label(server),
                     server.proxy_pass
                 )
             })?;
@@ -100,16 +149,18 @@ pub async fn start_stream_servers(app: tauri::AppHandle, config: &StreamProxyCon
 }
 
 pub fn validate_stream_config(cfg: &StreamProxyConfig) -> Result<()> {
-    let mut ports = HashSet::<(u16, bool)>::new();
+    let mut listen_addrs = HashSet::<(SocketAddr, bool)>::new();
     for s in &cfg.servers {
         if !s.enabled {
             continue;
         }
-        let key = (s.listen_port, s.udp);
-        if !ports.insert(key) {
+        let addr = resolve_listen_addr(s)?;
+        let parsed = parse_stream_listen_addr(&addr)?;
+        let key = (parsed, s.udp);
+        if !listen_addrs.insert(key) {
             return Err(anyhow!(
-                "stream server listen_port duplicated: port={} udp={}",
-                s.listen_port,
+                "stream server listen_addr duplicated: addr={} udp={}",
+                parsed,
                 s.udp
             ));
         }
@@ -157,21 +208,21 @@ pub fn validate_stream_config(cfg: &StreamProxyConfig) -> Result<()> {
         let pp = s.proxy_pass.trim();
         if pp.is_empty() {
             return Err(anyhow!(
-                "stream server (listen_port={}) proxy_pass cannot be empty",
-                s.listen_port
+                "stream server (listen_addr={}) proxy_pass cannot be empty",
+                server_label(s)
             ));
         }
         let Some(u) = cfg.upstreams.iter().find(|u| u.name == pp) else {
             return Err(anyhow!(
-                "stream server (listen_port={}) proxy_pass references missing upstream: {}",
-                s.listen_port,
+                "stream server (listen_addr={}) proxy_pass references missing upstream: {}",
+                server_label(s),
                 pp
             ));
         };
         if u.servers.is_empty() {
             return Err(anyhow!(
-                "stream server (listen_port={}) proxy_pass upstream '{}' has no servers",
-                s.listen_port,
+                "stream server (listen_addr={}) proxy_pass upstream '{}' has no servers",
+                server_label(s),
                 pp
             ));
         }
@@ -198,12 +249,8 @@ async fn start_tcp_server(
     proxy_timeout: Duration,
     servers: &mut Vec<StreamServerHandle>,
 ) -> Result<()> {
-    // 如果指定了 listen_addr，使用它；否则默认仅监听本机回环地址，避免意外暴露到局域网/公网
-    let listen_addr = if let Some(addr) = &server.listen_addr {
-        addr.clone()
-    } else {
-        format!("127.0.0.1:{}", server.listen_port)
-    };
+    // listen_addr 为空时兼容旧配置 listen_port，并默认回环地址
+    let listen_addr = resolve_listen_addr(server)?;
     let listener = TcpListener::bind(&listen_addr)
         .await
         .with_context(|| format!("Failed to bind stream tcp listener: {}", listen_addr))?;
@@ -399,12 +446,8 @@ async fn start_udp_server(
     let allow_all_ip = cfg.allow_all_ip;
     let whitelist: Arc<[config::WhitelistEntry]> = Arc::from(cfg.whitelist);
 
-    // 如果指定了 listen_addr，使用它；否则默认仅监听本机回环地址，避免意外暴露到局域网/公网
-    let listen_addr = if let Some(addr) = &server.listen_addr {
-        addr.clone()
-    } else {
-        format!("127.0.0.1:{}", server.listen_port)
-    };
+    // listen_addr 为空时兼容旧配置 listen_port，并默认回环地址
+    let listen_addr = resolve_listen_addr(server)?;
     let listen_sock = UdpSocket::bind(&listen_addr)
         .await
         .with_context(|| format!("Failed to bind to {}", listen_addr))?;
@@ -800,7 +843,7 @@ mod tests {
             upstreams: vec![sample_upstream()],
             servers: vec![StreamServer {
                 enabled: true,
-                listen_port: 7000,
+                listen_port: None,
                 proxy_pass: "backend".into(),
                 proxy_connect_timeout: "3s".into(),
                 proxy_timeout: "30s".into(),
@@ -835,20 +878,20 @@ mod tests {
     }
 
     #[test]
-    fn validate_stream_config_rejects_duplicate_listen_ports_for_same_protocol() {
+    fn validate_stream_config_rejects_duplicate_listen_addr_for_same_protocol() {
         let mut cfg = sample_config();
         cfg.servers.push(StreamServer {
             enabled: true,
-            listen_port: 7000,
+            listen_port: None,
             proxy_pass: "backend".into(),
             proxy_connect_timeout: "3s".into(),
             proxy_timeout: "30s".into(),
             udp: false,
-            listen_addr: Some("127.0.0.1:7001".into()),
+            listen_addr: Some("127.0.0.1:7000".into()),
         });
 
         let err = validate_stream_config(&cfg).unwrap_err().to_string();
-        assert!(err.contains("listen_port duplicated"));
+        assert!(err.contains("listen_addr duplicated"));
     }
 
     #[test]
@@ -856,12 +899,12 @@ mod tests {
         let mut cfg = sample_config();
         cfg.servers.push(StreamServer {
             enabled: true,
-            listen_port: 7000,
+            listen_port: None,
             proxy_pass: "backend".into(),
             proxy_connect_timeout: "3s".into(),
             proxy_timeout: "30s".into(),
             udp: true,
-            listen_addr: Some("127.0.0.1:7002".into()),
+            listen_addr: Some("127.0.0.1:7000".into()),
         });
 
         validate_stream_config(&cfg).unwrap();

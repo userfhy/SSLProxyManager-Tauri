@@ -89,7 +89,7 @@ impl PartialEq for StreamUpstreamServer {
 impl PartialEq for StreamServer {
     fn eq(&self, other: &Self) -> bool {
         self.enabled == other.enabled
-            && self.listen_port == other.listen_port
+            && self.listen_addr == other.listen_addr
             && self.proxy_pass == other.proxy_pass
     }
 }
@@ -451,7 +451,8 @@ pub struct StreamUpstream {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StreamServer {
     pub enabled: bool,
-    pub listen_port: u16,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub listen_port: Option<u16>,
     pub proxy_pass: String,
 
     #[serde(default = "default_stream_proxy_connect_timeout")]
@@ -463,9 +464,9 @@ pub struct StreamServer {
     #[serde(default)]
     pub udp: bool,
 
-    /// 监听地址，支持 IPv4 和 IPv6。如果未指定，默认使用 0.0.0.0（仅 IPv4）
-    /// 示例: "0.0.0.0:8080", "[::]:8080", "127.0.0.1:8080"
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// 监听地址，支持 IPv4 和 IPv6。如果未指定，默认使用 127.0.0.1（仅本机回环）
+    /// 示例: "127.0.0.1:8080", "0.0.0.0:8080", "[::]:8080"
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub listen_addr: Option<String>,
 }
 

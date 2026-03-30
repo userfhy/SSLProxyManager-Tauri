@@ -131,8 +131,11 @@
             <el-switch v-model="sv.enabled" />
           </el-form-item>
 
-          <el-form-item :label="$t('streamProxy.listenPort')" required>
-            <el-input-number v-model="sv.listen_port" :min="1" :max="65535" />
+          <el-form-item :label="$t('streamProxy.listenAddr')">
+            <el-input v-model="sv.listen_addr" :placeholder="$t('streamProxy.listenAddrPlaceholder')" style="max-width: 260px;" />
+            <el-text type="info" size="small" class="mini-hint">
+              {{ $t('streamProxy.listenAddrHint') }}
+            </el-text>
           </el-form-item>
 
           <el-form-item :label="$t('streamProxy.udp')">
@@ -184,7 +187,7 @@ interface StreamUpstream {
 interface StreamServer {
   id?: string
   enabled: boolean
-  listen_port: number
+  listen_addr: string
   proxy_pass: string
   proxy_connect_timeout: string
   proxy_timeout: string
@@ -214,12 +217,36 @@ const defaultUpstream = (): StreamUpstream => ({
 const defaultServer = (): StreamServer => ({
   id: `new-server-${Date.now()}`,
   enabled: true,
-  listen_port: 50002,
+  listen_addr: '127.0.0.1:50002',
   proxy_pass: '',
   proxy_connect_timeout: '300s',
   proxy_timeout: '600s',
   udp: false,
 })
+
+const normalizeListenAddr = (v: string): string => {
+  const s = (v || '').trim()
+  if (!s) return ''
+  if (s.startsWith(':')) return `127.0.0.1${s}`
+  return s
+}
+
+const parsePortFromListenAddr = (v: string): number | null => {
+  const s = normalizeListenAddr(v)
+  if (!s) return null
+
+  if (s.startsWith('[')) {
+    const idx = s.lastIndexOf(']:')
+    if (idx <= 0 || idx + 2 >= s.length) return null
+    const port = Number(s.slice(idx + 2).trim())
+    return Number.isInteger(port) && port >= 1 && port <= 65535 ? port : null
+  }
+
+  const idx = s.lastIndexOf(':')
+  if (idx <= 0 || idx + 1 >= s.length) return null
+  const port = Number(s.slice(idx + 1).trim())
+  return Number.isInteger(port) && port >= 1 && port <= 65535 ? port : null
+}
 
 onMounted(async () => {
   const cfg = (await GetConfig()) as any
@@ -247,7 +274,9 @@ onMounted(async () => {
   servers.value = Array.isArray(stream.servers)
     ? stream.servers.map((s: any) => ({
         enabled: s?.enabled !== false,
-        listen_port: Number(s?.listen_port ?? 50002),
+        listen_addr:
+          normalizeListenAddr(String(s?.listen_addr ?? '')) ||
+          `127.0.0.1:${Number(s?.listen_port ?? 50002)}`,
         proxy_pass: s?.proxy_pass || '',
         proxy_connect_timeout: String(s?.proxy_connect_timeout ?? '300s'),
         proxy_timeout: String(s?.proxy_timeout ?? '600s'),
@@ -314,7 +343,7 @@ const getConfig = () => {
 
   const cleanedServers = servers.value.map((s) => ({
     enabled: !!s.enabled,
-    listen_port: Number(s.listen_port || 0),
+    listen_addr: normalizeListenAddr(String(s.listen_addr || '')),
     proxy_pass: (s.proxy_pass || '').trim(),
     proxy_connect_timeout: (s.proxy_connect_timeout || '300s').trim() || '300s',
     proxy_timeout: (s.proxy_timeout || '600s').trim() || '600s',
@@ -363,21 +392,25 @@ const getConfig = () => {
       if (!sv.enabled) {
         continue
       }
-      if (!sv.listen_port || sv.listen_port < 1 || sv.listen_port > 65535) {
-        throw new Error(`Stream Server ${i + 1}：listen_port 必须为 1-65535`) 
-      }
       if (!sv.proxy_pass) {
         throw new Error(`Stream Server ${i + 1}：proxy_pass 不能为空`) 
       }
       if (!names.has(sv.proxy_pass)) {
         throw new Error(`Stream Server ${i + 1}：proxy_pass 引用了不存在的 upstream：${sv.proxy_pass}`)
       }
-
-      const portKey = `${sv.listen_port}/${sv.udp ? 'udp' : 'tcp'}`
-      if (usedPorts.has(portKey)) {
-        throw new Error(`Stream：监听端口冲突：${portKey}`)
+      if (!sv.listen_addr) {
+        throw new Error(`Stream Server ${i + 1}：listen_addr 不能为空`)
       }
-      usedPorts.add(portKey)
+      const parsedPort = parsePortFromListenAddr(sv.listen_addr)
+      if (!parsedPort) {
+        throw new Error(`Stream Server ${i + 1}：listen_addr 格式错误（示例：127.0.0.1:50002 或 [::]:50002）`)
+      }
+
+      const listenKey = `${normalizeListenAddr(sv.listen_addr)}/${sv.udp ? 'udp' : 'tcp'}`
+      if (usedPorts.has(listenKey)) {
+        throw new Error(`Stream：监听地址冲突：${listenKey}`)
+      }
+      usedPorts.add(listenKey)
 
       // TCP 优先：如果是 TCP，强校验 timeout 字符串是否像 "300s/5m/1h" 这种
       if (!sv.udp) {

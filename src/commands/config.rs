@@ -264,7 +264,7 @@ mod tests {
         cfg.stream.enabled = true;
         cfg.stream.servers = vec![crate::config::StreamServer {
             enabled: true,
-            listen_port: 7000,
+            listen_port: None,
             proxy_pass: "missing".into(),
             proxy_connect_timeout: "3s".into(),
             proxy_timeout: "30s".into(),
