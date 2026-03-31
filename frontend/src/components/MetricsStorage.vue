@@ -19,10 +19,10 @@
             v-model="localConfig.db_path"
             :placeholder="$t('metricsStorage.dbPathPlaceholder')"
           />
-          <el-button type="danger" plain :icon="FolderAdd" @click="createDbFile">
+          <el-button type="danger" :icon="FolderAdd" class="db-action-btn" @click="createDbFile">
             {{ $t('metricsStorage.createDb') }}
           </el-button>
-          <el-button type="primary" plain :icon="FolderOpened" @click="loadDbFile">
+          <el-button type="primary" :icon="FolderOpened" class="db-action-btn" @click="loadDbFile">
             {{ $t('metricsStorage.loadDb') }}
           </el-button>
         </div>
@@ -433,6 +433,13 @@ defineExpose({
 
 .db-path-selector :deep(.el-input) {
   flex: 1;
+}
+
+.db-action-btn {
+  min-width: 116px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.24);
 }
 
 .status-card,

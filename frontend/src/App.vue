@@ -171,7 +171,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onBeforeUnmount, watch, defineAsyncComponent, nextTick } from 'vue'
+import { ref, reactive, computed, onMounted, onBeforeUnmount, watch, defineAsyncComponent } from 'vue'
 import { StartServer, StopServer, GetStatus, QuitApp, EventsOn, SetTrayProxyState } from './api'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { enable as enableAutostart, disable as disableAutostart, isEnabled as isAutostartEnabled } from '@tauri-apps/plugin-autostart'
@@ -253,32 +253,6 @@ const isLazyTabLoaded = (key: string) => {
     return true
   }
   return !!lazyLoadedTabs[key]
-}
-
-const ensureConfigTabsLoaded = async () => {
-  const tabsToLoad = [
-    'base',
-    'ws',
-    'stream',
-    'access',
-    'storage',
-    'about',
-    'systemMetrics',
-  ] as const
-
-  tabsToLoad.forEach((key) => markLazyTabLoaded(key))
-
-  await Promise.all([
-    loadBaseConfig(),
-    loadWsProxyConfig(),
-    loadStreamProxyConfig(),
-    loadAccessControl(),
-    loadMetricsStorage(),
-    loadAbout(),
-    loadSystemMetrics(),
-  ])
-
-  await nextTick()
 }
 
 // 运行时间相关
@@ -608,41 +582,35 @@ const stop = async () => {
 const handleSaveConfig = async () => {
   saving.value = true
   try {
-    await ensureConfigTabsLoaded()
+    // 以后端当前完整配置为基线，避免懒加载组件尚未初始化时用默认值覆盖现有配置
+    const latestConfig = (await GetConfig()) as any
+    const finalConfig: any = { ...(latestConfig || {}) }
+
+    const mergeSection = (section: any) => {
+      if (!section || typeof section !== 'object') return
+      Object.assign(finalConfig, section)
+    }
 
     // 从 ConfigCard 获取配置
-    let configCardConfig = {}
     try {
       if (!configCardRef.value) {
         throw new Error('ConfigCard 组件未加载')
       }
-      configCardConfig = configCardRef.value.getConfig() || {}
+      mergeSection(configCardRef.value.getConfig() || {})
 
       // 从 WsProxyConfig 获取配置
       if (wsProxyConfigRef.value) {
-        const wsCfg = wsProxyConfigRef.value.getConfig() || {}
-        configCardConfig = {
-          ...configCardConfig,
-          ...wsCfg,
-        }
+        mergeSection(wsProxyConfigRef.value.getConfig() || {})
       }
 
       // 从 StreamProxyConfig 获取配置
       if (streamProxyConfigRef.value) {
-        const streamCfg = streamProxyConfigRef.value.getConfig() || {}
-        configCardConfig = {
-          ...configCardConfig,
-          ...streamCfg,
-        }
+        mergeSection(streamProxyConfigRef.value.getConfig() || {})
       }
 
       // 从 BaseConfig 获取配置（基础配置）
       if (baseConfigRef.value) {
-        const baseCfg = baseConfigRef.value.getConfig() || {}
-        configCardConfig = {
-          ...baseCfg,
-          ...configCardConfig,
-        }
+        mergeSection(baseConfigRef.value.getConfig() || {})
       }
     } catch (e: any) {
       ElMessage.error(t('app.configValidationFailed', { error: e?.message || String(e) }))
@@ -651,71 +619,39 @@ const handleSaveConfig = async () => {
     }
     
     // 从 AccessControl 获取配置
-    let accessConfig = {}
     try {
       if (accessControlRef.value) {
-        accessConfig = accessControlRef.value.getConfig() || {}
-      } else {
-        accessConfig = {}
+        mergeSection(accessControlRef.value.getConfig() || {})
       }
-    } catch (e: any) {
-      accessConfig = {}
+    } catch {
+      // ignore
     }
     
     // 从 MetricsStorage 获取配置
-    let storageConfig = {}
     try {
       if (metricsStorageRef.value) {
-        storageConfig = metricsStorageRef.value.getConfig() || {}
-      } else {
-        storageConfig = {}
+        mergeSection(metricsStorageRef.value.getConfig() || {})
       }
-    } catch (e: any) {
-      storageConfig = {}
+    } catch {
+      // ignore
     }
 
     // 从 SystemMetrics 获取配置（采样间隔、持久化开关）
-    let systemMetricsConfig = {}
     try {
       if (systemMetricsRef.value && typeof systemMetricsRef.value.getConfig === 'function') {
-        systemMetricsConfig = systemMetricsRef.value.getConfig() || {}
-      } else {
-        systemMetricsConfig = {}
+        mergeSection(systemMetricsRef.value.getConfig() || {})
       }
-    } catch (e: any) {
-      systemMetricsConfig = {}
+    } catch {
+      // ignore
     }
 
     // 从 About 获取配置
-    let aboutConfig = {}
     try {
       if (aboutRef.value) {
-        aboutConfig = aboutRef.value.getConfig() || {}
-      } else {
-        aboutConfig = {}
+        mergeSection(aboutRef.value.getConfig() || {})
       }
-    } catch (e: any) {
-      aboutConfig = {}
-    }
-    
-    // 合并配置：直接使用新获取的配置，避免被 globalConfig 中的旧数据覆盖
-    const finalConfig: any = {
-      // 直接使用新获取的配置
-      ...configCardConfig,
-      ...accessConfig,
-      ...storageConfig,
-      ...aboutConfig,
-      ...systemMetricsConfig,
-    }
-
-    // 只保留 globalConfig 中可能需要的其他字段（如果有的话）
-    // 但确保 Rules、AllowAllLAN、Whitelist、MetricsStorage、Update 使用最新的
-    for (const key in globalConfig.value) {
-      if (key !== 'Rules' && key !== 'AllowAllLAN' && key !== 'Whitelist' && key !== 'MetricsStorage' && key !== 'Update') {
-        if (!(key in finalConfig)) {
-          finalConfig[key] = globalConfig.value[key]
-        }
-      }
+    } catch {
+      // ignore
     }
 
     const savedCfg = await SaveConfig(finalConfig)
