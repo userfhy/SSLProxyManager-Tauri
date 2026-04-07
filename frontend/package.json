@@ -16,14 +16,14 @@
     "element-plus": "^2.13.6",
     "unplugin-auto-import": "^21.0.0",
     "unplugin-vue-components": "^32.0.0",
-    "vue": "^3.5.31",
+    "vue": "^3.5.32",
     "vue-echarts": "^8.0.1",
-    "vue-i18n": "^11.3.0"
+    "vue-i18n": "^11.3.1"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.10.1",
     "@vitejs/plugin-vue": "^6.0.5",
     "typescript": "^6.0.2",
-    "vite": "^8.0.3"
+    "vite": "^8.0.5"
   }
 }
