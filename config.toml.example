@@ -1,135 +1,109 @@
 ws_proxy_enabled = true
 http_access_control_enabled = true
-ws_access_control_enabled = false
+ws_access_control_enabled = true
 stream_access_control_enabled = true
 allow_all_lan = true
-auto_start = true
-show_realtime_logs = false
+allow_all_ip = false
+whitelist = []
+auto_start = false
+show_realtime_logs = true
 realtime_logs_only_errors = false
-stream_proxy = false
+stream_proxy = true
 max_body_size = 10485760
 max_response_body_size = 10485760
 upstream_connect_timeout_ms = 5000
 upstream_read_timeout_ms = 30000
 upstream_pool_max_idle = 100
 upstream_pool_idle_timeout_sec = 60
-enable_http2 = false
+enable_http2 = true
+compression_enabled = false
+compression_gzip = true
+compression_brotli = true
+compression_min_length = 1024
+compression_gzip_level = 6
+compression_brotli_level = 6
+system_metrics_sample_interval_secs = 10
+system_metrics_persistence_enabled = true
 
 [[rules]]
-id = "7d401c55-327d-4a88-956b-b751d8f66f25"
+id = "eabe2e9a-5b34-4ee6-a5c9-f8a020e67a62"
 enabled = true
-listen_addr = ":8888"
-ssl_enable = true
-cert_file = "/home/fhy/mygo/SSLProxyGui/ssl/cdc-report/server.crt"
-key_file = "/home/fhy/mygo/SSLProxyGui/ssl/cdc-report/server.key"
-basic_auth_enable = true
-basic_auth_username = "fhy"
-basic_auth_password = "666999"
+listen_addr = "0.0.0.0:8888"
+listen_addrs = ["0.0.0.0:8888"]
+ssl_enable = false
+cert_file = ""
+key_file = ""
+basic_auth_enable = false
+basic_auth_username = ""
+basic_auth_password = ""
 basic_auth_forward_header = false
+rate_limit_window_seconds = 1
 
 [[rules.routes]]
-id = "82b402ad-70de-4122-ace8-8b206aa3de3f"
+id = "3df9f390-852e-4a20-8eff-2ae6ded3822c"
 enabled = true
 path = "/"
 exclude_basic_auth = false
-follow_redirects = true
+follow_redirects = false
+url_rewrite_rules = []
+request_body_replace = []
+response_body_replace = []
+remove_headers = []
 
 [rules.routes.set_headers]
 
 [[rules.routes.upstreams]]
-url = "https://baidu.com"
-weight = 1
-
-[[rules]]
-id = "be84e732-15e3-439a-964c-226c00ebb0bb"
-enabled = true
-listen_addrs = [
-    ":8888",
-    ":8889",
-]
-ssl_enable = true
-cert_file = "/home/fhy/software/frp_0.65.0_linux_amd64/ssl/bt.aiti.fun/fullchain.crt"
-key_file = "/home/fhy/software/frp_0.65.0_linux_amd64/ssl/bt.aiti.fun/privkey.key"
-basic_auth_enable = true
-basic_auth_username = "test1"
-basic_auth_password = "666999"
-basic_auth_forward_header = false
-
-[[rules.routes]]
-id = "dd868e44ef864cde13d42158232bf6d5"
-enabled = true
-path = "/"
-static_dir = "/home/fhy/mygo/staticServer/dist"
-exclude_basic_auth = false
-follow_redirects = false
-upstreams = []
-
-[rules.routes.set_headers]
-
-[[rules.routes]]
-id = "8fc2aaf7f5d4fa2559e14296b61b2aca"
-enabled = true
-path = "/prod-api"
-proxy_pass_path = "/"
-exclude_basic_auth = true
-follow_redirects = false
-
-[rules.routes.set_headers]
-
-[[rules.routes.upstreams]]
-url = "http://127.0.0.1:8080"
+url = "http://baidu.com"
 weight = 1
 
 [[ws_proxy]]
-enabled = true
-listen_addr = "0.0.0.0:8800"
+enabled = false
+listen_addr = "0.0.0.0:9001"
 ssl_enable = false
-cert_file = "/home/fhy/mygo/SSLproxy/ssl/cdc-report/server.crt"
-key_file = "/home/fhy/mygo/SSLproxy/ssl/cdc-report/server.key"
+cert_file = ""
+key_file = ""
 
 [[ws_proxy.routes]]
 path = "/ws"
-upstream_url = "ws://124.222.6.60:8800"
+upstream_url = "ws://127.0.0.1:9000"
 
 [stream]
 enabled = false
 upstreams = []
-
-[[stream.servers]]
-enabled = true
-listen_addr = "127.0.0.1:50002"
-proxy_pass = "sendimage"
-proxy_connect_timeout = "300s"
-proxy_timeout = "600s"
-udp = false
-
-[[whitelist]]
-ip = "127.0.0.1"
+servers = []
 
 [metrics_storage]
-enabled = true
-db_path = "/home/fhy/db/metrics/metrics.db"
+enabled = false
+db_path = ""
 
 [update]
-enabled = true
+enabled = false
 server_url = ""
-auto_check = true
+auto_check = false
 timeout_ms = 10000
 ignore_prerelease = true
 
 [alerting]
-enabled = true
+enabled = false
 
 [alerting.webhook]
-enabled = true
+enabled = false
 provider = "wecom"
-url = "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=your-key"
+url = ""
 system_report_enabled = false
 quiet_hours_enabled = false
 quiet_hours_start = "23:00"
 quiet_hours_end = "08:00"
 system_report_interval_minutes = 60
-system_report_weekdays = [1, 2, 3, 4, 5, 6, 7]
+system_report_weekdays = [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+]
 
 [alerting.rules]
 server_start_error = true
