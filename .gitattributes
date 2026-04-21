@@ -1,0 +1,4 @@
+package.json text eol=lf
+package-lock.json text eol=lf
+frontend/package.json text eol=lf
+frontend/package-lock.json text eol=lf
