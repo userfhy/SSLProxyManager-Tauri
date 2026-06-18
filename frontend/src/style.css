@@ -1,5 +1,5 @@
 /* 导入动画样式 */
-@import './styles/animations.css';
+@import "./styles/animations.css";
 
 * {
   margin: 0;
@@ -7,7 +7,8 @@
   box-sizing: border-box;
 }
 
-html, body {
+html,
+body {
   height: 100%;
   width: 100%;
   margin: 0;
@@ -16,7 +17,16 @@ html, body {
 }
 
 body {
-  font-family: "SF Pro Text", "Inter", "PingFang SC", "Noto Sans SC", "Microsoft YaHei", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family:
+    "SF Pro Text",
+    "Inter",
+    "PingFang SC",
+    "Noto Sans SC",
+    "Microsoft YaHei",
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
   background: var(--bg);
   background-image: var(--bg-gradient);
   background-attachment: fixed;
@@ -25,7 +35,9 @@ body {
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
   line-height: 1.45;
-  transition: background-color 0.3s, color 0.3s;
+  transition:
+    background-color 0.3s,
+    color 0.3s;
   user-select: none;
 }
 
@@ -106,10 +118,11 @@ button,
 /* CSS 变量 - 深色主题（默认） - 增强版 */
 :root {
   --bg: #0a0e1a;
-  --bg-gradient: radial-gradient(ellipse 1400px 900px at 15% 10%, rgba(79, 156, 249, 0.18), transparent 50%),
-                 radial-gradient(ellipse 1200px 800px at 85% 25%, rgba(34, 197, 94, 0.12), transparent 55%),
-                 radial-gradient(ellipse 800px 600px at 50% 80%, rgba(168, 85, 247, 0.08), transparent 60%),
-                 linear-gradient(135deg, #0a0e1a 0%, #1a1f35 50%, #0f1729 100%);
+  --bg-gradient:
+    radial-gradient(ellipse 1400px 900px at 15% 10%, rgba(79, 156, 249, 0.18), transparent 50%),
+    radial-gradient(ellipse 1200px 800px at 85% 25%, rgba(34, 197, 94, 0.12), transparent 55%),
+    radial-gradient(ellipse 800px 600px at 50% 80%, rgba(168, 85, 247, 0.08), transparent 60%),
+    linear-gradient(135deg, #0a0e1a 0%, #1a1f35 50%, #0f1729 100%);
   --card-bg: rgba(26, 31, 53, 0.65);
   --card-hover: rgba(35, 40, 66, 0.75);
   --text: #e2e8f0;
@@ -138,7 +151,7 @@ button,
   --radius-md: 12px;
   --radius-sm: 8px;
   --radius-xs: 6px;
-  
+
   /* Element Plus 主题变量 - 深色模式 */
   --el-color-primary: #4f9cf9;
   --el-color-primary-light-3: #84bafb;
@@ -226,9 +239,10 @@ button,
 /* 浅色主题 - 增强版 */
 .light-mode {
   --bg: #f5f7fa;
-  --bg-gradient: radial-gradient(ellipse 1400px 900px at 15% 10%, rgba(37, 99, 235, 0.08), transparent 50%),
-                 radial-gradient(ellipse 1200px 800px at 85% 25%, rgba(16, 185, 129, 0.06), transparent 55%),
-                 linear-gradient(135deg, #f5f7fa 0%, #ffffff 50%, #f8fafc 100%);
+  --bg-gradient:
+    radial-gradient(ellipse 1400px 900px at 15% 10%, rgba(37, 99, 235, 0.08), transparent 50%),
+    radial-gradient(ellipse 1200px 800px at 85% 25%, rgba(16, 185, 129, 0.06), transparent 55%),
+    linear-gradient(135deg, #f5f7fa 0%, #ffffff 50%, #f8fafc 100%);
   --card-bg: rgba(255, 255, 255, 0.85);
   --card-hover: rgba(248, 250, 252, 0.95);
   --text: #1e293b;
@@ -257,7 +271,7 @@ button,
   --radius-md: 12px;
   --radius-sm: 8px;
   --radius-xs: 6px;
-  
+
   /* Element Plus 主题变量 - 浅色模式 */
   --el-color-primary: #2563eb;
   --el-color-primary-light-3: #6692f1;
@@ -290,7 +304,7 @@ button,
 }
 
 /* 路由配置区域 */
-.routes-section{
+.routes-section {
   width: 100%;
 }
 
@@ -322,7 +336,9 @@ button,
 }
 
 /* 默认白色按钮使用中性 hover/active，避免被主色覆盖 */
-.el-button:not(.el-button--primary):not(.el-button--success):not(.el-button--warning):not(.el-button--danger):not(.el-button--info):not(.is-text):not(.is-link) {
+.el-button:not(.el-button--primary):not(.el-button--success):not(.el-button--warning):not(
+    .el-button--danger
+  ):not(.el-button--info):not(.is-text):not(.is-link) {
   background: linear-gradient(135deg, rgba(100, 116, 139, 0.96), rgba(71, 85, 105, 0.98));
   border-color: rgba(148, 163, 184, 0.45);
   color: #ffffff;
@@ -336,7 +352,9 @@ button,
 
 .el-button:not(.is-text):not(.is-link):hover {
   border-color: rgba(79, 156, 249, 0.62);
-  box-shadow: 0 0 0 2px rgba(79, 156, 249, 0.34), var(--shadow-md);
+  box-shadow:
+    0 0 0 2px rgba(79, 156, 249, 0.34),
+    var(--shadow-md);
   filter: saturate(1.2) brightness(1.18);
 }
 
@@ -346,7 +364,7 @@ button,
 }
 
 .el-button::before {
-  content: '';
+  content: "";
   position: absolute;
   top: 50%;
   left: 50%;
@@ -355,7 +373,9 @@ button,
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.1);
   transform: translate(-50%, -50%);
-  transition: width 0.6s, height 0.6s;
+  transition:
+    width 0.6s,
+    height 0.6s;
 }
 
 .el-button:active::before {
@@ -372,7 +392,9 @@ button,
 
 .el-button--primary:hover {
   color: #ffffff;
-  box-shadow: 0 8px 24px rgba(79, 156, 249, 0.46), 0 0 0 2px rgba(79, 156, 249, 0.35);
+  box-shadow:
+    0 8px 24px rgba(79, 156, 249, 0.46),
+    0 0 0 2px rgba(79, 156, 249, 0.35);
   filter: saturate(1.14) brightness(1.12);
 }
 
@@ -390,7 +412,9 @@ button,
 
 .el-button--success:hover {
   color: #ffffff;
-  box-shadow: 0 8px 24px rgba(34, 197, 94, 0.46), 0 0 0 2px rgba(34, 197, 94, 0.3);
+  box-shadow:
+    0 8px 24px rgba(34, 197, 94, 0.46),
+    0 0 0 2px rgba(34, 197, 94, 0.3);
   filter: saturate(1.14) brightness(1.12);
 }
 
@@ -403,7 +427,9 @@ button,
 
 .el-button--danger:hover {
   color: #ffffff;
-  box-shadow: 0 8px 24px rgba(239, 68, 68, 0.46), 0 0 0 2px rgba(239, 68, 68, 0.3);
+  box-shadow:
+    0 8px 24px rgba(239, 68, 68, 0.46),
+    0 0 0 2px rgba(239, 68, 68, 0.3);
   filter: saturate(1.14) brightness(1.12);
 }
 
@@ -439,7 +465,9 @@ button,
 .light-mode .el-button--warning:active {
   color: #ffffff !important;
   border-color: #ae6d0f !important;
-  box-shadow: 0 8px 22px rgba(216, 137, 19, 0.28), 0 0 0 2px rgba(216, 137, 19, 0.18);
+  box-shadow:
+    0 8px 22px rgba(216, 137, 19, 0.28),
+    0 0 0 2px rgba(216, 137, 19, 0.18);
 }
 
 .light-mode .el-button--warning.is-plain {
@@ -470,7 +498,9 @@ button,
   background: rgba(79, 156, 249, 0.4) !important;
   color: #f7fbff !important;
   border: 1px solid rgba(79, 156, 249, 0.72) !important;
-  box-shadow: 0 0 0 2px rgba(79, 156, 249, 0.38), 0 10px 24px rgba(79, 156, 249, 0.28);
+  box-shadow:
+    0 0 0 2px rgba(79, 156, 249, 0.38),
+    0 10px 24px rgba(79, 156, 249, 0.28);
 }
 
 .el-button:not(.is-disabled):not(:disabled):active {

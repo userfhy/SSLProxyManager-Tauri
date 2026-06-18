@@ -68,9 +68,9 @@
 - 新增平台采集逻辑优先落在 `collect/<os>.rs`，不要回灌到 `mod.rs`。
 - 采样调度问题优先看 `sampler.rs`，写入堆积优先看 `writer.rs`。
 - 新增查询字段时同步改三处：
-  1) `types.rs`（结构）
-  2) `writer.rs`（入库字段）
-  3) `query.rs`（聚合 SQL + 映射）
+  1. `types.rs`（结构）
+  2. `writer.rs`（入库字段）
+  3. `query.rs`（聚合 SQL + 映射）
 - 任何采样频率调优都建议同时观察：
   - CPU 占用
   - DB 写入延迟

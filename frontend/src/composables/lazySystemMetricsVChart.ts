@@ -1,6 +1,6 @@
-import { defineAsyncComponent } from 'vue'
+import { defineAsyncComponent } from "vue";
 
-let loader: Promise<any> | null = null
+let loader: Promise<any> | null = null;
 
 export const LazySystemMetricsVChart = defineAsyncComponent({
   suspensible: false,
@@ -8,12 +8,12 @@ export const LazySystemMetricsVChart = defineAsyncComponent({
     if (!loader) {
       loader = (async () => {
         const [echartsCore, renderers, charts, components, vueEcharts] = await Promise.all([
-          import('echarts/core'),
-          import('echarts/renderers'),
-          import('echarts/charts'),
-          import('echarts/components'),
-          import('vue-echarts'),
-        ])
+          import("echarts/core"),
+          import("echarts/renderers"),
+          import("echarts/charts"),
+          import("echarts/components"),
+          import("vue-echarts"),
+        ]);
 
         echartsCore.use([
           renderers.CanvasRenderer,
@@ -22,12 +22,12 @@ export const LazySystemMetricsVChart = defineAsyncComponent({
           components.TooltipComponent,
           components.LegendComponent,
           components.DataZoomComponent,
-        ])
+        ]);
 
-        return vueEcharts.default
-      })()
+        return vueEcharts.default;
+      })();
     }
 
-    return loader
+    return loader;
   },
-})
+});

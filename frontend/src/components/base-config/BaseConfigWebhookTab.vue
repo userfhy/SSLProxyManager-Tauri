@@ -11,14 +11,17 @@
 
       <template v-if="model.webhook.enabled">
         <el-form-item :label="$t('about.alertProvider')">
-          <el-select v-model="model.webhook.provider" style="width: 220px;">
+          <el-select v-model="model.webhook.provider" style="width: 220px">
             <el-option label="企业微信 WeCom" value="wecom" />
             <el-option label="飞书 Feishu" value="feishu" />
           </el-select>
         </el-form-item>
 
         <el-form-item :label="$t('about.alertWebhookUrl')">
-          <el-input v-model="model.webhook.url" :placeholder="$t('about.alertWebhookUrlPlaceholder')" />
+          <el-input
+            v-model="model.webhook.url"
+            :placeholder="$t('about.alertWebhookUrlPlaceholder')"
+          />
         </el-form-item>
 
         <el-divider />
@@ -26,7 +29,7 @@
         <el-form-item :label="$t('about.systemReportEnabled')">
           <el-switch v-model="model.webhook.system_report_enabled" />
           <el-text type="info" size="small" class="mini-hint">
-            {{ $t('about.systemReportHint') }}
+            {{ $t("about.systemReportHint") }}
           </el-text>
         </el-form-item>
 
@@ -37,7 +40,7 @@
               filterable
               allow-create
               default-first-option
-              style="width: 220px;"
+              style="width: 220px"
             >
               <el-option
                 v-for="item in intervalOptions"
@@ -47,17 +50,13 @@
               />
             </el-select>
             <el-text type="info" size="small" class="mini-hint">
-              {{ $t('about.systemReportIntervalHint') }}
+              {{ $t("about.systemReportIntervalHint") }}
             </el-text>
           </el-form-item>
 
           <el-form-item :label="$t('about.systemReportWeekdays')">
             <el-checkbox-group v-model="model.webhook.system_report_weekdays">
-              <el-checkbox
-                v-for="day in weekdayOptions"
-                :key="day.value"
-                :label="day.value"
-              >
+              <el-checkbox v-for="day in weekdayOptions" :key="day.value" :label="day.value">
                 {{ day.label }}
               </el-checkbox>
             </el-checkbox-group>
@@ -85,7 +84,7 @@
                 :clearable="false"
               />
               <el-text type="info" size="small" class="mini-hint">
-                {{ $t('about.quietHoursHint') }}
+                {{ $t("about.quietHoursHint") }}
               </el-text>
             </el-form-item>
           </template>
@@ -98,7 +97,7 @@
 
       <el-form-item>
         <el-button type="primary" @click="$emit('send-test-alert')" :loading="sendingTestAlert">
-          {{ $t('about.sendTestAlert') }}
+          {{ $t("about.sendTestAlert") }}
         </el-button>
       </el-form-item>
     </template>
@@ -106,16 +105,16 @@
 </template>
 
 <script setup lang="ts">
-import type { AlertingForm } from './types'
+import type { AlertingForm } from "./types";
 
 defineProps<{
-  model: AlertingForm
-  sendingTestAlert: boolean
-  intervalOptions: number[]
-  weekdayOptions: Array<{ value: number, label: string }>
-}>()
+  model: AlertingForm;
+  sendingTestAlert: boolean;
+  intervalOptions: number[];
+  weekdayOptions: Array<{ value: number; label: string }>;
+}>();
 
 defineEmits<{
-  (e: 'send-test-alert'): void
-}>()
+  (e: "send-test-alert"): void;
+}>();
 </script>

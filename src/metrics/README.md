@@ -38,7 +38,7 @@
 5. dashboard/query API 从：
    - 实时缓存（低延迟）
    - 或 SQLite 历史数据（长窗口）
-   读取并组装响应
+     读取并组装响应
 
 ---
 
@@ -62,10 +62,10 @@
 - 新增查询优先放 `query.rs`，`mod.rs` 只保留入口与状态编排。
 - 新增持久化行为优先放 `writer.rs`/`db.rs`，不要把 SQL 零散写在 `mod.rs`。
 - 任何影响吞吐的改动都建议观察：
-  1) flush 批量大小
-  2) flush 间隔
-  3) SQL 语句复杂度
-  4) 索引命中情况
+  1. flush 批量大小
+  2. flush 间隔
+  3. SQL 语句复杂度
+  4. 索引命中情况
 - 结构体字段调整时，先同步 `models.rs`，再补齐 query/writer 映射。
 
 ---

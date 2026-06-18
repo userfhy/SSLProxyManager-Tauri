@@ -2,14 +2,14 @@
 <template>
   <el-card class="config-card config-page" shadow="hover">
     <template #header>
-      <h3>{{ $t('metricsStorage.title') }}</h3>
+      <h3>{{ $t("metricsStorage.title") }}</h3>
     </template>
 
     <el-form :model="localConfig" label-width="180px">
       <el-form-item :label="$t('metricsStorage.enable')">
         <el-switch v-model="localConfig.enabled" />
         <el-text type="info" size="small" class="hint">
-          {{ $t('metricsStorage.enableHint') }}
+          {{ $t("metricsStorage.enableHint") }}
         </el-text>
       </el-form-item>
 
@@ -20,21 +20,21 @@
             :placeholder="$t('metricsStorage.dbPathPlaceholder')"
           />
           <el-button type="danger" :icon="FolderAdd" class="db-action-btn" @click="createDbFile">
-            {{ $t('metricsStorage.createDb') }}
+            {{ $t("metricsStorage.createDb") }}
           </el-button>
           <el-button type="primary" :icon="FolderOpened" class="db-action-btn" @click="loadDbFile">
-            {{ $t('metricsStorage.loadDb') }}
+            {{ $t("metricsStorage.loadDb") }}
           </el-button>
         </div>
         <el-text type="info" size="small" class="hint">
-          {{ $t('metricsStorage.dbPathHint') }}
+          {{ $t("metricsStorage.dbPathHint") }}
         </el-text>
       </el-form-item>
 
       <!-- 数据库状态显示 -->
       <el-card v-if="localConfig.enabled" class="status-card" shadow="never">
         <template #header>
-          <span>{{ $t('metricsStorage.dbStatus') }}</span>
+          <span>{{ $t("metricsStorage.dbStatus") }}</span>
         </template>
         <div v-if="dbStatus" class="status-content">
           <el-alert
@@ -47,40 +47,80 @@
             <template #default>
               <div class="status-grid">
                 <el-descriptions :column="2" border class="status-detail-table">
-                  <template #title>{{ $t('metricsStorage.fileAndCapacity') }}</template>
-                  <el-descriptions-item :label="$t('metricsStorage.dbPathLabel')" :span="3">{{ dbStatus.path }}</el-descriptions-item>
+                  <template #title>{{ $t("metricsStorage.fileAndCapacity") }}</template>
+                  <el-descriptions-item :label="$t('metricsStorage.dbPathLabel')" :span="3">{{
+                    dbStatus.path
+                  }}</el-descriptions-item>
 
-                  <el-descriptions-item :label="$t('metricsStorage.dbMB')">{{ formatBytes(dbStatus.db_file_size_bytes) }}</el-descriptions-item>
-                  <el-descriptions-item :label="$t('metricsStorage.walMB')">{{ formatBytes(dbStatus.wal_file_size_bytes) }}</el-descriptions-item>
-                  <el-descriptions-item :label="$t('metricsStorage.shmMB')">{{ formatBytes(dbStatus.shm_file_size_bytes) }}</el-descriptions-item>
+                  <el-descriptions-item :label="$t('metricsStorage.dbMB')">{{
+                    formatBytes(dbStatus.db_file_size_bytes)
+                  }}</el-descriptions-item>
+                  <el-descriptions-item :label="$t('metricsStorage.walMB')">{{
+                    formatBytes(dbStatus.wal_file_size_bytes)
+                  }}</el-descriptions-item>
+                  <el-descriptions-item :label="$t('metricsStorage.shmMB')">{{
+                    formatBytes(dbStatus.shm_file_size_bytes)
+                  }}</el-descriptions-item>
 
-                  <el-descriptions-item :label="$t('metricsStorage.walShmMB')">{{ formatBytes(walShmBytesTotal) }}</el-descriptions-item>
-                  <el-descriptions-item :label="$t('metricsStorage.totalPageMB')">{{ formatBytes(pageBytesTotal) }}</el-descriptions-item>
-                  <el-descriptions-item :label="$t('metricsStorage.recyclableMB')">{{ formatBytes(freeBytesTotal) }}</el-descriptions-item>
+                  <el-descriptions-item :label="$t('metricsStorage.walShmMB')">{{
+                    formatBytes(walShmBytesTotal)
+                  }}</el-descriptions-item>
+                  <el-descriptions-item :label="$t('metricsStorage.totalPageMB')">{{
+                    formatBytes(pageBytesTotal)
+                  }}</el-descriptions-item>
+                  <el-descriptions-item :label="$t('metricsStorage.recyclableMB')">{{
+                    formatBytes(freeBytesTotal)
+                  }}</el-descriptions-item>
                 </el-descriptions>
 
                 <el-descriptions :column="2" border class="status-detail-table">
-                  <template #title>{{ $t('metricsStorage.logsAndTimeRange') }}</template>
-                  <el-descriptions-item :label="$t('metricsStorage.recordCount')">{{ formatNumber(dbStatus.request_logs_count) }}</el-descriptions-item>
-                  <el-descriptions-item :label="$t('metricsStorage.earliestRecord')">{{ formatTs(dbStatus.request_logs_min_ts) }}</el-descriptions-item>
-                  <el-descriptions-item :label="$t('metricsStorage.latestRecord')">{{ formatTs(dbStatus.request_logs_max_ts) }}</el-descriptions-item>
+                  <template #title>{{ $t("metricsStorage.logsAndTimeRange") }}</template>
+                  <el-descriptions-item :label="$t('metricsStorage.recordCount')">{{
+                    formatNumber(dbStatus.request_logs_count)
+                  }}</el-descriptions-item>
+                  <el-descriptions-item :label="$t('metricsStorage.earliestRecord')">{{
+                    formatTs(dbStatus.request_logs_min_ts)
+                  }}</el-descriptions-item>
+                  <el-descriptions-item :label="$t('metricsStorage.latestRecord')">{{
+                    formatTs(dbStatus.request_logs_max_ts)
+                  }}</el-descriptions-item>
                 </el-descriptions>
 
                 <el-descriptions :column="2" border class="status-detail-table">
-                  <template #title>{{ $t('metricsStorage.sqliteConfig') }}</template>
-                  <el-descriptions-item :label="$t('metricsStorage.sqliteVersion')">{{ dbStatus.sqlite_version || '—' }}</el-descriptions-item>
-                  <el-descriptions-item :label="$t('metricsStorage.journalMode')">{{ dbStatus.journal_mode || '—' }}</el-descriptions-item>
-                  <el-descriptions-item :label="$t('metricsStorage.synchronous')">{{ formatSynchronous(dbStatus.synchronous) }}</el-descriptions-item>
+                  <template #title>{{ $t("metricsStorage.sqliteConfig") }}</template>
+                  <el-descriptions-item :label="$t('metricsStorage.sqliteVersion')">{{
+                    dbStatus.sqlite_version || "—"
+                  }}</el-descriptions-item>
+                  <el-descriptions-item :label="$t('metricsStorage.journalMode')">{{
+                    dbStatus.journal_mode || "—"
+                  }}</el-descriptions-item>
+                  <el-descriptions-item :label="$t('metricsStorage.synchronous')">{{
+                    formatSynchronous(dbStatus.synchronous)
+                  }}</el-descriptions-item>
 
-                  <el-descriptions-item :label="$t('metricsStorage.pageSize')">{{ formatNumber(dbStatus.page_size) }}</el-descriptions-item>
-                  <el-descriptions-item :label="$t('metricsStorage.pageCount')">{{ formatNumber(dbStatus.page_count) }}</el-descriptions-item>
-                  <el-descriptions-item :label="$t('metricsStorage.freelistCount')">{{ formatNumber(dbStatus.freelist_count) }}</el-descriptions-item>
+                  <el-descriptions-item :label="$t('metricsStorage.pageSize')">{{
+                    formatNumber(dbStatus.page_size)
+                  }}</el-descriptions-item>
+                  <el-descriptions-item :label="$t('metricsStorage.pageCount')">{{
+                    formatNumber(dbStatus.page_count)
+                  }}</el-descriptions-item>
+                  <el-descriptions-item :label="$t('metricsStorage.freelistCount')">{{
+                    formatNumber(dbStatus.freelist_count)
+                  }}</el-descriptions-item>
 
-                  <el-descriptions-item :label="$t('metricsStorage.fragmentationRate')">{{ fragRateText }}</el-descriptions-item>
-                  <el-descriptions-item :label="$t('metricsStorage.cacheSize')">{{ formatCacheSize(dbStatus.cache_size) }}</el-descriptions-item>
-                  <el-descriptions-item :label="$t('metricsStorage.busyTimeout')">{{ formatNumber(dbStatus.busy_timeout_ms) }}</el-descriptions-item>
+                  <el-descriptions-item :label="$t('metricsStorage.fragmentationRate')">{{
+                    fragRateText
+                  }}</el-descriptions-item>
+                  <el-descriptions-item :label="$t('metricsStorage.cacheSize')">{{
+                    formatCacheSize(dbStatus.cache_size)
+                  }}</el-descriptions-item>
+                  <el-descriptions-item :label="$t('metricsStorage.busyTimeout')">{{
+                    formatNumber(dbStatus.busy_timeout_ms)
+                  }}</el-descriptions-item>
 
-                  <el-descriptions-item :label="$t('metricsStorage.walAutocheckpoint')">{{ formatNumber(dbStatus.wal_autocheckpoint) }}</el-descriptions-item>
+                  <el-descriptions-item :label="$t('metricsStorage.walAutocheckpoint')">{{
+                    formatNumber(dbStatus.wal_autocheckpoint)
+                  }}</el-descriptions-item>
                   <el-descriptions-item label="—">—</el-descriptions-item>
                   <el-descriptions-item label="—">—</el-descriptions-item>
                 </el-descriptions>
@@ -89,7 +129,12 @@
           </el-alert>
 
           <el-alert
-            v-else-if="dbStatus.initialized && !dbStatus.file_exists && dbStatus.dir_exists && dbStatus.dir_writable"
+            v-else-if="
+              dbStatus.initialized &&
+              !dbStatus.file_exists &&
+              dbStatus.dir_exists &&
+              dbStatus.dir_writable
+            "
             :title="$t('metricsStorage.dbReadyWaiting')"
             type="success"
             :closable="false"
@@ -97,8 +142,12 @@
           >
             <template #default>
               <div class="status-detail">
-                <p><strong>{{ $t('metricsStorage.dbPathLabel') }}：</strong>{{ dbStatus.path }}</p>
-                <p><strong>{{ $t('metricsStorage.dirStatus') }}</strong></p>
+                <p>
+                  <strong>{{ $t("metricsStorage.dbPathLabel") }}：</strong>{{ dbStatus.path }}
+                </p>
+                <p>
+                  <strong>{{ $t("metricsStorage.dirStatus") }}</strong>
+                </p>
                 <p v-if="dbStatus.message" class="info-hint">{{ dbStatus.message }}</p>
               </div>
             </template>
@@ -106,27 +155,42 @@
 
           <el-alert
             v-else-if="dbStatus.error"
-            :title="dbStatus.initialized ? $t('metricsStorage.dbConfigError') : $t('metricsStorage.dbInitFailed')"
+            :title="
+              dbStatus.initialized
+                ? $t('metricsStorage.dbConfigError')
+                : $t('metricsStorage.dbInitFailed')
+            "
             type="error"
             :closable="false"
             show-icon
           >
             <template #default>
               <div class="status-detail">
-                <p v-if="dbStatus.path"><strong>{{ $t('metricsStorage.dbPathLabel') }}：</strong>{{ dbStatus.path }}</p>
-                <p v-if="dbStatus.error"><strong>{{ $t('metricsStorage.errorInfo') }}</strong>{{ dbStatus.error }}</p>
+                <p v-if="dbStatus.path">
+                  <strong>{{ $t("metricsStorage.dbPathLabel") }}：</strong>{{ dbStatus.path }}
+                </p>
+                <p v-if="dbStatus.error">
+                  <strong>{{ $t("metricsStorage.errorInfo") }}</strong
+                  >{{ dbStatus.error }}
+                </p>
                 <p v-if="!dbStatus.dir_exists" class="error-hint">
-                  {{ $t('metricsStorage.dirNotExists') }}
+                  {{ $t("metricsStorage.dirNotExists") }}
                 </p>
                 <p v-else-if="!dbStatus.dir_writable" class="error-hint">
-                  {{ $t('metricsStorage.dirNotWritable') }}
+                  {{ $t("metricsStorage.dirNotWritable") }}
                 </p>
-                <p v-else class="error-hint">{{ $t('metricsStorage.checkPathAndPermission') }}</p>
+                <p v-else class="error-hint">{{ $t("metricsStorage.checkPathAndPermission") }}</p>
               </div>
             </template>
           </el-alert>
 
-          <el-alert v-else :title="$t('metricsStorage.checkingStatus')" type="info" :closable="false" show-icon />
+          <el-alert
+            v-else
+            :title="$t('metricsStorage.checkingStatus')"
+            type="info"
+            :closable="false"
+            show-icon
+          />
         </div>
 
         <el-button
@@ -134,21 +198,21 @@
           size="small"
           @click="handleCheckDBStatus"
           :loading="checkingStatus"
-          style="margin-top: 10px;"
+          style="margin-top: 10px"
         >
-          {{ $t('metricsStorage.refreshStatus') }}
+          {{ $t("metricsStorage.refreshStatus") }}
         </el-button>
       </el-card>
 
       <el-card v-if="localConfig.enabled" class="info-card" shadow="never">
         <template #header>
-          <span>{{ $t('metricsStorage.dataDescription') }}</span>
+          <span>{{ $t("metricsStorage.dataDescription") }}</span>
         </template>
         <ul class="info-list">
-          <li>{{ $t('metricsStorage.asyncWrite') }}</li>
-          <li>{{ $t('metricsStorage.batchWrite') }}</li>
-          <li>{{ $t('metricsStorage.retention') }}</li>
-          <li>{{ $t('metricsStorage.connectionPool') }}</li>
+          <li>{{ $t("metricsStorage.asyncWrite") }}</li>
+          <li>{{ $t("metricsStorage.batchWrite") }}</li>
+          <li>{{ $t("metricsStorage.retention") }}</li>
+          <li>{{ $t("metricsStorage.connectionPool") }}</li>
         </ul>
       </el-card>
     </el-form>
@@ -156,229 +220,233 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch, onMounted } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import { FolderAdd, FolderOpened } from '@element-plus/icons-vue'
-import { OpenDbFileDialog, OpenExistingDbFileDialog } from '../api'
-import { useDBStatus } from '../composables/useDBStatus'
-import { useI18n } from 'vue-i18n'
+import { computed, ref, watch, onMounted } from "vue";
+import { ElMessage, ElMessageBox } from "element-plus";
+import { FolderAdd, FolderOpened } from "@element-plus/icons-vue";
+import { OpenDbFileDialog, OpenExistingDbFileDialog } from "../api";
+import { useDBStatus } from "../composables/useDBStatus";
+import { useI18n } from "vue-i18n";
 
-const { t, locale } = useI18n()
+const { t, locale } = useI18n();
 
 const props = defineProps<{
-  config: any
-}>()
+  config: any;
+}>();
 
 const localConfig = ref({
   enabled: false,
-  db_path: '',
-})
+  db_path: "",
+});
 
-const { dbStatus, loading: checkingStatus, checkDBStatus } = useDBStatus()
+const { dbStatus, loading: checkingStatus, checkDBStatus } = useDBStatus();
 
 const formatNumber = (n: any) => {
-  if (n === null || n === undefined) return '—'
-  const num = Number(n)
-  if (!Number.isFinite(num)) return '—'
+  if (n === null || n === undefined) return "—";
+  const num = Number(n);
+  if (!Number.isFinite(num)) return "—";
   try {
-    const localeStr = locale.value === 'zh-CN' ? 'zh-CN' : 'en-US'
-    return new Intl.NumberFormat(localeStr).format(num)
+    const localeStr = locale.value === "zh-CN" ? "zh-CN" : "en-US";
+    return new Intl.NumberFormat(localeStr).format(num);
   } catch {
-    return String(num)
+    return String(num);
   }
-}
+};
 
 const formatBytes = (bytes: any) => {
-  if (bytes === null || bytes === undefined) return '—'
-  const num = Number(bytes)
-  if (!Number.isFinite(num) || num < 0) return '—'
+  if (bytes === null || bytes === undefined) return "—";
+  const num = Number(bytes);
+  if (!Number.isFinite(num) || num < 0) return "—";
 
-  const units = ['B', 'KB', 'MB', 'GB', 'TB']
-  let v = num
-  let i = 0
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let v = num;
+  let i = 0;
   while (v >= 1024 && i < units.length - 1) {
-    v /= 1024
-    i++
+    v /= 1024;
+    i++;
   }
-  return `${v.toFixed(i === 0 ? 0 : 2)} ${units[i]}`
-}
+  return `${v.toFixed(i === 0 ? 0 : 2)} ${units[i]}`;
+};
 
 const formatTs = (ts: any) => {
-  if (ts === null || ts === undefined) return '—'
-  const num = Number(ts)
-  if (!Number.isFinite(num) || num <= 0) return '—'
-  const localeStr = locale.value === 'zh-CN' ? 'zh-CN' : 'en-US'
-  return new Date(num * 1000).toLocaleString(localeStr, { hour12: false })
-}
+  if (ts === null || ts === undefined) return "—";
+  const num = Number(ts);
+  if (!Number.isFinite(num) || num <= 0) return "—";
+  const localeStr = locale.value === "zh-CN" ? "zh-CN" : "en-US";
+  return new Date(num * 1000).toLocaleString(localeStr, { hour12: false });
+};
 
 const formatSynchronous = (v: any) => {
-  if (v === null || v === undefined) return '—'
-  const s = String(v).trim()
-  if (!s) return '—'
+  if (v === null || v === undefined) return "—";
+  const s = String(v).trim();
+  if (!s) return "—";
 
   // PRAGMA synchronous 可能返回数字
-  const n = Number(s)
+  const n = Number(s);
   if (Number.isFinite(n)) {
     switch (n) {
       case 0:
-        return 'OFF(0)'
+        return "OFF(0)";
       case 1:
-        return 'NORMAL(1)'
+        return "NORMAL(1)";
       case 2:
-        return 'FULL(2)'
+        return "FULL(2)";
       case 3:
-        return 'EXTRA(3)'
+        return "EXTRA(3)";
       default:
-        return `${n}`
+        return `${n}`;
     }
   }
-  return s
-}
+  return s;
+};
 
 const formatCacheSize = (v: any) => {
-  if (v === null || v === undefined) return '—'
-  const n = Number(v)
-  if (!Number.isFinite(n)) return '—'
+  if (v === null || v === undefined) return "—";
+  const n = Number(v);
+  if (!Number.isFinite(n)) return "—";
 
   // SQLite: cache_size > 0 表示页数；< 0 表示 KB
   if (n < 0) {
-    return `${Math.abs(n)} KB`
+    return `${Math.abs(n)} KB`;
   }
-  return `${n} pages`
-}
+  return `${n} pages`;
+};
 
 const pageBytesTotal = computed(() => {
-  const ps = Number(dbStatus.value?.page_size)
-  const pc = Number(dbStatus.value?.page_count)
-  if (!Number.isFinite(ps) || !Number.isFinite(pc) || ps <= 0 || pc <= 0) return null
-  return ps * pc
-})
+  const ps = Number(dbStatus.value?.page_size);
+  const pc = Number(dbStatus.value?.page_count);
+  if (!Number.isFinite(ps) || !Number.isFinite(pc) || ps <= 0 || pc <= 0) return null;
+  return ps * pc;
+});
 
 const freeBytesTotal = computed(() => {
-  const ps = Number(dbStatus.value?.page_size)
-  const fc = Number(dbStatus.value?.freelist_count)
-  if (!Number.isFinite(ps) || !Number.isFinite(fc) || ps <= 0 || fc <= 0) return null
-  return ps * fc
-})
+  const ps = Number(dbStatus.value?.page_size);
+  const fc = Number(dbStatus.value?.freelist_count);
+  if (!Number.isFinite(ps) || !Number.isFinite(fc) || ps <= 0 || fc <= 0) return null;
+  return ps * fc;
+});
 
 const walShmBytesTotal = computed(() => {
-  const wal = Number(dbStatus.value?.wal_file_size_bytes) || 0
-  const shm = Number(dbStatus.value?.shm_file_size_bytes) || 0
-  const total = wal + shm
-  return total > 0 ? total : null
-})
+  const wal = Number(dbStatus.value?.wal_file_size_bytes) || 0;
+  const shm = Number(dbStatus.value?.shm_file_size_bytes) || 0;
+  const total = wal + shm;
+  return total > 0 ? total : null;
+});
 
 const fragRateText = computed(() => {
-  const pc = Number(dbStatus.value?.page_count)
-  const fc = Number(dbStatus.value?.freelist_count)
-  if (!Number.isFinite(pc) || !Number.isFinite(fc) || pc <= 0) return '—'
-  const rate = (fc / pc) * 100
-  return `${rate.toFixed(2)}%`
-})
+  const pc = Number(dbStatus.value?.page_count);
+  const fc = Number(dbStatus.value?.freelist_count);
+  if (!Number.isFinite(pc) || !Number.isFinite(fc) || pc <= 0) return "—";
+  const rate = (fc / pc) * 100;
+  return `${rate.toFixed(2)}%`;
+});
 
 const createDbFile = async () => {
   try {
     await ElMessageBox.confirm(
-      t('metricsStorage.createDbRiskMessage'),
-      t('metricsStorage.createDbRiskTitle'),
+      t("metricsStorage.createDbRiskMessage"),
+      t("metricsStorage.createDbRiskTitle"),
       {
-        type: 'warning',
-        confirmButtonText: t('common.confirm'),
-        cancelButtonText: t('common.cancel'),
-      }
-    )
+        type: "warning",
+        confirmButtonText: t("common.confirm"),
+        cancelButtonText: t("common.cancel"),
+      },
+    );
 
-    const filePath = await OpenDbFileDialog()
+    const filePath = await OpenDbFileDialog();
     if (filePath) {
-      localConfig.value.db_path = String(filePath)
+      localConfig.value.db_path = String(filePath);
       window.dispatchEvent(
-        new CustomEvent('save-config-request', {
-          detail: { source: 'metrics-storage-create-db' },
-        })
-      )
+        new CustomEvent("save-config-request", {
+          detail: { source: "metrics-storage-create-db" },
+        }),
+      );
     }
   } catch (error: any) {
-    if (error === 'cancel' || error === 'close') {
-      return
+    if (error === "cancel" || error === "close") {
+      return;
     }
-    ElMessage.error(t('metricsStorage.createDbFileFailed', { error: error?.message || String(error) }))
+    ElMessage.error(
+      t("metricsStorage.createDbFileFailed", { error: error?.message || String(error) }),
+    );
   }
-}
+};
 
 const loadDbFile = async () => {
   try {
-    const filePath = await OpenExistingDbFileDialog()
+    const filePath = await OpenExistingDbFileDialog();
     if (filePath) {
-      localConfig.value.db_path = String(filePath)
+      localConfig.value.db_path = String(filePath);
       window.dispatchEvent(
-        new CustomEvent('save-config-request', {
-          detail: { source: 'metrics-storage-load-db' },
-        })
-      )
+        new CustomEvent("save-config-request", {
+          detail: { source: "metrics-storage-load-db" },
+        }),
+      );
     }
   } catch (error: any) {
-    ElMessage.error(t('metricsStorage.loadDbFileFailed', { error: error?.message || String(error) }))
+    ElMessage.error(
+      t("metricsStorage.loadDbFileFailed", { error: error?.message || String(error) }),
+    );
   }
-}
+};
 
 watch(
   () => props.config,
   (newConfig) => {
-    if (!newConfig) return
+    if (!newConfig) return;
 
     if (newConfig.metrics_storage) {
-      localConfig.value.enabled = newConfig.metrics_storage.enabled || false
-      localConfig.value.db_path = newConfig.metrics_storage.db_path || ''
+      localConfig.value.enabled = newConfig.metrics_storage.enabled || false;
+      localConfig.value.db_path = newConfig.metrics_storage.db_path || "";
     } else {
-      localConfig.value.enabled = false
-      localConfig.value.db_path = ''
+      localConfig.value.enabled = false;
+      localConfig.value.db_path = "";
     }
   },
   { immediate: true, deep: true },
-)
+);
 
 const handleCheckDBStatus = async () => {
-  await checkDBStatus(true)
-}
+  await checkDBStatus(true);
+};
 
 const getConfig = () => {
   return {
     metrics_storage: {
       enabled: localConfig.value.enabled || false,
-      db_path: localConfig.value.db_path || '',
+      db_path: localConfig.value.db_path || "",
     },
-  }
-}
+  };
+};
 
 watch(
   () => localConfig.value.enabled,
   (enabled) => {
     if (enabled) {
       setTimeout(() => {
-        checkDBStatus(false)
-      }, 1000)
+        checkDBStatus(false);
+      }, 1000);
     } else {
-      dbStatus.value = null
+      dbStatus.value = null;
     }
   },
-)
+);
 
 watch(
   () => localConfig.value.db_path,
   () => {
     if (localConfig.value.enabled) {
       setTimeout(() => {
-        checkDBStatus(true)
-      }, 1000)
+        checkDBStatus(true);
+      }, 1000);
     }
   },
-)
+);
 
-onMounted(() => {})
+onMounted(() => {});
 
 defineExpose({
   getConfig,
-})
+});
 </script>
 
 <style scoped>

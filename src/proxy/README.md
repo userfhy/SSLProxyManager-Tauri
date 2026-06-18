@@ -79,9 +79,9 @@
 - 与“路由匹配”相关的改动尽量只动 `matching.rs` + `dispatch.rs`。
 - 与“协议改写”相关的改动尽量只动 `request.rs` / `response.rs`。
 - 性能问题先看：
-  1) 匹配阶段（`matching/dispatch`）
-  2) body 处理（`request/response`）
-  3) 上游连接与重试策略（`upstream/runtime/server`）
+  1. 匹配阶段（`matching/dispatch`）
+  2. body 处理（`request/response`）
+  3. 上游连接与重试策略（`upstream/runtime/server`）
 - 新增公共辅助时，优先放 `helpers.rs`，避免循环依赖。
 
 ---

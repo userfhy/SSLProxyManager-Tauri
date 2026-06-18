@@ -23,11 +23,11 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { onMounted } from "vue";
 
 onMounted(async () => {
-  await import('../chart-preview-main')
-})
+  await import("../chart-preview-main");
+});
 </script>
 
 <style scoped>

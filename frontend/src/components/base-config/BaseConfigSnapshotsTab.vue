@@ -1,7 +1,9 @@
 <template>
   <el-form label-width="180px">
     <el-form-item :label="$t('about.configSnapshots')">
-      <el-button @click="$emit('refresh')" :loading="model.loading">{{ $t('about.refreshSnapshots') }}</el-button>
+      <el-button @click="$emit('refresh')" :loading="model.loading">{{
+        $t("about.refreshSnapshots")
+      }}</el-button>
     </el-form-item>
 
     <el-form-item>
@@ -26,7 +28,7 @@
               @click="$emit('restore', scope.row.name)"
               :loading="model.restoringSnapshotName === scope.row.name"
             >
-              {{ $t('about.restoreSnapshot') }}
+              {{ $t("about.restoreSnapshot") }}
             </el-button>
           </template>
         </el-table-column>
@@ -36,18 +38,18 @@
 </template>
 
 <script setup lang="ts">
-import type { BaseSnapshotsForm } from './types'
+import type { BaseSnapshotsForm } from "./types";
 
 defineProps<{
-  model: BaseSnapshotsForm
-  formatTs: (ms: number) => string
-  formatSize: (size: number) => string
-}>()
+  model: BaseSnapshotsForm;
+  formatTs: (ms: number) => string;
+  formatSize: (size: number) => string;
+}>();
 
 defineEmits<{
-  (e: 'refresh'): void
-  (e: 'restore', name: string): void
-}>()
+  (e: "refresh"): void;
+  (e: "restore", name: string): void;
+}>();
 </script>
 
 <style scoped>
@@ -72,6 +74,8 @@ defineEmits<{
 .light-mode .snapshot-restore-btn:active:not(:disabled) {
   color: #ffffff !important;
   border-color: #9d620f !important;
-  box-shadow: 0 8px 20px rgba(209, 138, 22, 0.26), 0 0 0 2px rgba(209, 138, 22, 0.16) !important;
+  box-shadow:
+    0 8px 20px rgba(209, 138, 22, 0.26),
+    0 0 0 2px rgba(209, 138, 22, 0.16) !important;
 }
 </style>

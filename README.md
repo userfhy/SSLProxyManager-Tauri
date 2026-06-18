@@ -96,12 +96,12 @@ https://github.com/user-attachments/assets/b41b3d38-19c5-4124-a439-c4c011c16a5b
 
 ## Tech Stack
 
-| Layer | Technologies |
-|-------|-------------|
-| Backend | Rust, Tauri 2, Axum, Tokio, SQLx (SQLite) |
+| Layer    | Technologies                                 |
+| -------- | -------------------------------------------- |
+| Backend  | Rust, Tauri 2, Axum, Tokio, SQLx (SQLite)    |
 | Frontend | Vue 3, Vite, Element Plus, ECharts, Vue I18n |
-| TLS | Rustls (memory-safe TLS) |
-| Platform | Windows, Linux, macOS |
+| TLS      | Rustls (memory-safe TLS)                     |
+| Platform | Windows, Linux, macOS                        |
 
 ## Quick Start
 
@@ -213,19 +213,18 @@ cargo test proxy::matching::tests
 cargo test commands::config::tests
 ```
 
-
 ## Configuration
 
 ### Config File Locations
 
 Runtime config is TOML format.
 
-| Platform | Location |
-|----------|----------|
-| Debug mode | `./config.toml` in project root (if exists) |
-| Linux | `$XDG_CONFIG_HOME/SSLProxyManager/config.toml` or `~/.config/SSLProxyManager/config.toml` |
-| Windows | Next to executable, or `%APPDATA%\SSLProxyManager\config.toml` |
-| macOS | `~/Library/Application Support/SSLProxyManager/config.toml` |
+| Platform   | Location                                                                                  |
+| ---------- | ----------------------------------------------------------------------------------------- |
+| Debug mode | `./config.toml` in project root (if exists)                                               |
+| Linux      | `$XDG_CONFIG_HOME/SSLProxyManager/config.toml` or `~/.config/SSLProxyManager/config.toml` |
+| Windows    | Next to executable, or `%APPDATA%\SSLProxyManager\config.toml`                            |
+| macOS      | `~/Library/Application Support/SSLProxyManager/config.toml`                               |
 
 The app also supports OS-level autostart. The UI toggle uses the Tauri autostart plugin and persists `auto_start` in the config.
 
@@ -336,11 +335,11 @@ GitHub Actions → `Manual Build (Single Platform)` → `Run workflow`
 
 ### Inputs
 
-| Input | Options | Description |
-|-------|---------|-------------|
-| `platform` | `windows-x64`, `linux-amd64`, `macos-arm64`, `macos-x64` | Target platform |
-| `publish_release` | `true`, `false` | Upload to GitHub Release? |
-| `release_tag` | (optional) | Override version tag |
+| Input             | Options                                                  | Description               |
+| ----------------- | -------------------------------------------------------- | ------------------------- |
+| `platform`        | `windows-x64`, `linux-amd64`, `macos-arm64`, `macos-x64` | Target platform           |
+| `publish_release` | `true`, `false`                                          | Upload to GitHub Release? |
+| `release_tag`     | (optional)                                               | Override version tag      |
 
 ## FAQ
 

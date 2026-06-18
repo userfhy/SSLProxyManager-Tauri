@@ -1,74 +1,85 @@
 <template>
   <el-card class="config-card config-page" shadow="hover">
     <template #header>
-      <h3>{{ $t('accessControl.title') }}</h3>
+      <h3>{{ $t("accessControl.title") }}</h3>
     </template>
 
     <el-form label-width="180px">
       <el-form-item :label="$t('accessControl.accessControlSwitch')">
-      <div class="ac-switches">
-        <div class="ac-switch">
-          <el-switch v-model="localConfig.http_access_control_enabled" :active-text="$t('accessControl.httpHttps')"/>
+        <div class="ac-switches">
+          <div class="ac-switch">
+            <el-switch
+              v-model="localConfig.http_access_control_enabled"
+              :active-text="$t('accessControl.httpHttps')"
+            />
+          </div>
+          <div class="ac-switch">
+            <el-switch
+              v-model="localConfig.ws_access_control_enabled"
+              :active-text="$t('accessControl.websocket')"
+            />
+          </div>
+          <div class="ac-switch">
+            <el-switch
+              v-model="localConfig.stream_access_control_enabled"
+              :active-text="$t('accessControl.stream')"
+            />
+          </div>
         </div>
-        <div class="ac-switch">
-          <el-switch v-model="localConfig.ws_access_control_enabled" :active-text="$t('accessControl.websocket')"/>
-        </div>
-        <div class="ac-switch">
-          <el-switch v-model="localConfig.stream_access_control_enabled" :active-text="$t('accessControl.stream')"/>
-        </div>
-      </div>
-      <el-text type="info" size="small" class="mini-hint">
-        {{ $t('accessControl.switchHint') }}
-      </el-text>
-    </el-form-item>
+        <el-text type="info" size="small" class="mini-hint">
+          {{ $t("accessControl.switchHint") }}
+        </el-text>
+      </el-form-item>
 
-    <el-form-item>
+      <el-form-item>
         <el-checkbox v-model="localConfig.allow_all_lan">
-          {{ $t('accessControl.allowAllLAN') }}
+          {{ $t("accessControl.allowAllLAN") }}
         </el-checkbox>
         <el-text type="info" size="small" class="mini-hint">
-          {{ $t('accessControl.allowAllLANHint') }}
+          {{ $t("accessControl.allowAllLANHint") }}
         </el-text>
       </el-form-item>
 
       <el-form-item>
         <el-checkbox v-model="localConfig.allow_all_ip">
-          {{ $t('accessControl.allowAllIP') }}
+          {{ $t("accessControl.allowAllIP") }}
         </el-checkbox>
         <el-text type="info" size="small" class="mini-hint">
-          {{ $t('accessControl.allowAllIPHint') }}
+          {{ $t("accessControl.allowAllIPHint") }}
         </el-text>
       </el-form-item>
 
       <el-form-item :label="$t('accessControl.ipWhitelist')">
         <TransitionGroup name="list" tag="div" class="whitelist-list">
-          <div v-for="(item, index) in localConfig.whitelist" :key="item.id || index" class="whitelist-item">
-            <el-input
-              v-model="item.ip"
-              placeholder="例如: 192.168.1.100"
-              class="whitelist-input"
-            />
-            <el-button @click="removeWhitelistItem(index)" type="danger" size="small">{{ $t('accessControl.delete') }}</el-button>
+          <div
+            v-for="(item, index) in localConfig.whitelist"
+            :key="item.id || index"
+            class="whitelist-item"
+          >
+            <el-input v-model="item.ip" placeholder="例如: 192.168.1.100" class="whitelist-input" />
+            <el-button @click="removeWhitelistItem(index)" type="danger" size="small">{{
+              $t("accessControl.delete")
+            }}</el-button>
           </div>
         </TransitionGroup>
-        <el-button @click="addWhitelistItem" type="primary" style="margin-top: 10px;">
-          <el-icon><Plus /></el-icon> {{ $t('accessControl.addIP') }}
+        <el-button @click="addWhitelistItem" type="primary" style="margin-top: 10px">
+          <el-icon><Plus /></el-icon> {{ $t("accessControl.addIP") }}
         </el-button>
       </el-form-item>
 
-      <el-divider style="margin: 16px 0;" />
+      <el-divider style="margin: 16px 0" />
 
       <div class="blacklist-header">
-        <h4>{{ $t('accessControl.ipBlacklist') }}</h4>
+        <h4>{{ $t("accessControl.ipBlacklist") }}</h4>
         <div class="blacklist-actions">
           <el-button type="primary" @click="showAddDialog = true" :icon="Plus">
-            {{ $t('accessControl.addBlacklist') }}
+            {{ $t("accessControl.addBlacklist") }}
           </el-button>
           <el-button @click="refreshBlacklist" :loading="blacklistLoading" :icon="Refresh">
-            {{ $t('accessControl.refreshList') }}
+            {{ $t("accessControl.refreshList") }}
           </el-button>
           <el-button @click="refreshCache" :loading="refreshingCache" :icon="RefreshRight">
-            {{ $t('accessControl.refreshCache') }}
+            {{ $t("accessControl.refreshCache") }}
           </el-button>
         </div>
       </div>
@@ -79,12 +90,12 @@
         type="warning"
         :closable="false"
         show-icon
-        style="margin-bottom: 12px;"
+        style="margin-bottom: 12px"
       >
         <template #default>
           <div>
-            <p>{{ $t('accessControl.dbNotEnabledHint') }}</p>
-            <p>{{ $t('accessControl.goToStorage') }}</p>
+            <p>{{ $t("accessControl.dbNotEnabledHint") }}</p>
+            <p>{{ $t("accessControl.goToStorage") }}</p>
           </div>
         </template>
       </el-alert>
@@ -94,48 +105,53 @@
         v-loading="blacklistLoading"
         stripe
         border
-        style="width: 100%; margin-top: 12px;"
+        style="width: 100%; margin-top: 12px"
       >
         <el-table-column prop="ip" :label="$t('accessControl.ipAddress')" width="180" sortable />
-        <el-table-column prop="reason" :label="$t('accessControl.blacklistReason')" min-width="200" show-overflow-tooltip />
-        <el-table-column prop="expires_at" :label="$t('accessControl.expiresAt')" width="180" sortable>
+        <el-table-column
+          prop="reason"
+          :label="$t('accessControl.blacklistReason')"
+          min-width="200"
+          show-overflow-tooltip
+        />
+        <el-table-column
+          prop="expires_at"
+          :label="$t('accessControl.expiresAt')"
+          width="180"
+          sortable
+        >
           <template #default="{ row }">
-            <span v-if="row.expires_at === 0">{{ $t('accessControl.permanent') }}</span>
+            <span v-if="row.expires_at === 0">{{ $t("accessControl.permanent") }}</span>
             <span v-else>
               {{ formatTime(row.expires_at) }}
               <el-tag
                 v-if="isExpired(row.expires_at)"
                 type="danger"
                 size="small"
-                style="margin-left: 8px;"
+                style="margin-left: 8px"
               >
-                {{ $t('accessControl.expired') }}
+                {{ $t("accessControl.expired") }}
               </el-tag>
-              <el-tag
-                v-else
-                type="success"
-                size="small"
-                style="margin-left: 8px;"
-              >
-                {{ $t('accessControl.valid') }}
+              <el-tag v-else type="success" size="small" style="margin-left: 8px">
+                {{ $t("accessControl.valid") }}
               </el-tag>
             </span>
           </template>
         </el-table-column>
-        <el-table-column prop="created_at" :label="$t('accessControl.createdAt')" width="180" sortable>
+        <el-table-column
+          prop="created_at"
+          :label="$t('accessControl.createdAt')"
+          width="180"
+          sortable
+        >
           <template #default="{ row }">
             {{ formatTime(row.created_at) }}
           </template>
         </el-table-column>
         <el-table-column :label="$t('accessControl.actions')" width="120" fixed="right">
           <template #default="{ row }">
-            <el-button
-              type="danger"
-              size="small"
-              @click="handleRemove(row.ip)"
-              :icon="Delete"
-            >
-              {{ $t('accessControl.delete') }}
+            <el-button type="danger" size="small" @click="handleRemove(row.ip)" :icon="Delete">
+              {{ $t("accessControl.delete") }}
             </el-button>
           </template>
         </el-table-column>
@@ -155,7 +171,7 @@
               clearable
             />
             <el-text type="info" size="small" class="hint">
-              {{ $t('accessControl.ipHint') }}
+              {{ $t("accessControl.ipHint") }}
             </el-text>
           </el-form-item>
 
@@ -171,8 +187,8 @@
 
           <el-form-item :label="$t('accessControl.expiresAtLabel')">
             <el-radio-group v-model="addForm.durationType">
-              <el-radio label="permanent">{{ $t('accessControl.permanentLabel') }}</el-radio>
-              <el-radio label="temporary">{{ $t('requestLogs.timeRange') }}</el-radio>
+              <el-radio label="permanent">{{ $t("accessControl.permanentLabel") }}</el-radio>
+              <el-radio label="temporary">{{ $t("requestLogs.timeRange") }}</el-radio>
             </el-radio-group>
           </el-form-item>
 
@@ -190,12 +206,10 @@
                 :shortcuts="dateShortcuts"
                 placeholder="选择过期日期和时间"
                 :disabled-date="disabledDate"
-                style="width: 100%;"
+                style="width: 100%"
               />
             </el-config-provider>
-            <el-text type="info" size="small" class="hint">
-              只允许选择未来时间
-            </el-text>
+            <el-text type="info" size="small" class="hint"> 只允许选择未来时间 </el-text>
           </el-form-item>
         </el-form>
 
@@ -209,25 +223,31 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted } from 'vue'
-import { Plus, Refresh, RefreshRight, Delete } from '@element-plus/icons-vue'
-import { ElMessage, ElMessageBox, ElConfigProvider } from 'element-plus'
-import zhCn from 'element-plus/dist/locale/zh-cn.mjs'
+import { ref, watch, onMounted } from "vue";
+import { Plus, Refresh, RefreshRight, Delete } from "@element-plus/icons-vue";
+import { ElMessage, ElMessageBox, ElConfigProvider } from "element-plus";
+import zhCn from "element-plus/dist/locale/zh-cn.mjs";
 // @ts-ignore
-import { AddBlacklistEntry, RemoveBlacklistEntry, GetBlacklistEntries, RefreshBlacklistCache, GetMetricsDBStatus } from '../api'
-import { useI18n } from 'vue-i18n'
+import {
+  AddBlacklistEntry,
+  RemoveBlacklistEntry,
+  GetBlacklistEntries,
+  RefreshBlacklistCache,
+  GetMetricsDBStatus,
+} from "../api";
+import { useI18n } from "vue-i18n";
 
-const { t } = useI18n()
+const { t } = useI18n();
 
 interface BlacklistEntry {
-  id: number
-  ip: string
-  reason?: string | null
-  expires_at: number
-  created_at: number
+  id: number;
+  ip: string;
+  reason?: string | null;
+  expires_at: number;
+  created_at: number;
 }
 
-const props = defineProps<{ config: any }>()
+const props = defineProps<{ config: any }>();
 
 const localConfig = ref({
   http_access_control_enabled: true,
@@ -236,300 +256,310 @@ const localConfig = ref({
   allow_all_lan: true,
   allow_all_ip: false,
   whitelist: [] as { id?: string; ip: string }[],
-})
+});
 
 // 黑名单状态
-const blacklist = ref<BlacklistEntry[]>([])
-const blacklistLoading = ref(false)
-const refreshingCache = ref(false)
-const adding = ref(false)
-const showAddDialog = ref(false)
-const addFormRef = ref()
-const dbStatus = ref<any>(null)
+const blacklist = ref<BlacklistEntry[]>([]);
+const blacklistLoading = ref(false);
+const refreshingCache = ref(false);
+const adding = ref(false);
+const showAddDialog = ref(false);
+const addFormRef = ref();
+const dbStatus = ref<any>(null);
 
 const addForm = ref({
-  ip: '',
-  reason: '',
-  durationType: 'permanent' as 'permanent' | 'temporary',
+  ip: "",
+  reason: "",
+  durationType: "permanent" as "permanent" | "temporary",
   // el-date-picker value-format="x" 返回毫秒时间戳字符串
   expiresAt: null as string | null,
-})
+});
 
 const dateShortcuts = [
   {
-    text: '1小时',
+    text: "1小时",
     value: () => new Date(Date.now() + 1 * 60 * 60 * 1000),
   },
   {
-    text: '6小时',
+    text: "6小时",
     value: () => new Date(Date.now() + 6 * 60 * 60 * 1000),
   },
   {
-    text: '1天',
+    text: "1天",
     value: () => new Date(Date.now() + 24 * 60 * 60 * 1000),
   },
   {
-    text: '1个月',
+    text: "1个月",
     value: () => {
-      const d = new Date()
-      d.setMonth(d.getMonth() + 1)
-      return d
+      const d = new Date();
+      d.setMonth(d.getMonth() + 1);
+      return d;
     },
   },
   {
-    text: '6个月',
+    text: "6个月",
     value: () => {
-      const d = new Date()
-      d.setMonth(d.getMonth() + 6)
-      return d
+      const d = new Date();
+      d.setMonth(d.getMonth() + 6);
+      return d;
     },
   },
   {
-    text: '1年',
+    text: "1年",
     value: () => {
-      const d = new Date()
-      d.setFullYear(d.getFullYear() + 1)
-      return d
+      const d = new Date();
+      d.setFullYear(d.getFullYear() + 1);
+      return d;
     },
   },
-]
+];
 
 const addRules = {
   ip: [
-    { required: true, message: '请输入IP地址', trigger: 'blur' },
+    { required: true, message: "请输入IP地址", trigger: "blur" },
     {
       validator: (rule: any, value: string, callback: Function) => {
         if (!value) {
-          callback(new Error('请输入IP地址'))
-          return
+          callback(new Error("请输入IP地址"));
+          return;
         }
-        const ipv4Regex = /^(\d{1,3}\.){3}\d{1,3}$/
-        const ipv6Regex = /^([0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}$/
+        const ipv4Regex = /^(\d{1,3}\.){3}\d{1,3}$/;
+        const ipv6Regex = /^([0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}$/;
         if (!ipv4Regex.test(value) && !ipv6Regex.test(value)) {
-          callback(new Error('请输入有效的IP地址'))
-          return
+          callback(new Error("请输入有效的IP地址"));
+          return;
         }
-        callback()
+        callback();
       },
-      trigger: 'blur',
+      trigger: "blur",
     },
   ],
   expiresAt: [
     {
       validator: (rule: any, value: any, callback: Function) => {
-        if (addForm.value.durationType === 'permanent') {
-          callback()
-          return
+        if (addForm.value.durationType === "permanent") {
+          callback();
+          return;
         }
         if (!value) {
-          callback(new Error('请选择过期时间'))
-          return
+          callback(new Error("请选择过期时间"));
+          return;
         }
-        const ms = Number(value)
+        const ms = Number(value);
         if (!Number.isFinite(ms)) {
-          callback(new Error('过期时间格式无效'))
-          return
+          callback(new Error("过期时间格式无效"));
+          return;
         }
         if (ms <= Date.now()) {
-          callback(new Error('过期时间必须大于当前时间'))
-          return
+          callback(new Error("过期时间必须大于当前时间"));
+          return;
         }
-        callback()
+        callback();
       },
-      trigger: 'change',
+      trigger: "change",
     },
   ],
-}
+};
 
 const disabledDate = (time: Date) => {
   // 禁用今天之前的日期（今天可以选，但还会被 expiresAt 校验限制必须大于当前时间）
-  return time.getTime() < new Date().setHours(0, 0, 0, 0)
-}
+  return time.getTime() < new Date().setHours(0, 0, 0, 0);
+};
 
 watch(
   () => props.config,
   (newConfig) => {
     if (newConfig) {
-      localConfig.value.http_access_control_enabled = newConfig.http_access_control_enabled !== false
-      localConfig.value.ws_access_control_enabled = newConfig.ws_access_control_enabled !== false
-      localConfig.value.stream_access_control_enabled = newConfig.stream_access_control_enabled !== false
-      localConfig.value.allow_all_lan = newConfig.allow_all_lan ?? true
-      localConfig.value.allow_all_ip = newConfig.allow_all_ip ?? false
-      localConfig.value.whitelist = Array.isArray(newConfig.whitelist) ? [...newConfig.whitelist] : []
+      localConfig.value.http_access_control_enabled =
+        newConfig.http_access_control_enabled !== false;
+      localConfig.value.ws_access_control_enabled = newConfig.ws_access_control_enabled !== false;
+      localConfig.value.stream_access_control_enabled =
+        newConfig.stream_access_control_enabled !== false;
+      localConfig.value.allow_all_lan = newConfig.allow_all_lan ?? true;
+      localConfig.value.allow_all_ip = newConfig.allow_all_ip ?? false;
+      localConfig.value.whitelist = Array.isArray(newConfig.whitelist)
+        ? [...newConfig.whitelist]
+        : [];
     }
   },
-  { immediate: true, deep: true }
-)
+  { immediate: true, deep: true },
+);
 
 const addWhitelistItem = () => {
-  localConfig.value.whitelist.push({ id: `new-ip-${Date.now()}`, ip: '' })
-}
+  localConfig.value.whitelist.push({ id: `new-ip-${Date.now()}`, ip: "" });
+};
 
 const removeWhitelistItem = (index: number) => {
-  localConfig.value.whitelist.splice(index, 1)
-}
+  localConfig.value.whitelist.splice(index, 1);
+};
 
 const formatTime = (timestamp: number) => {
-  if (!timestamp) return '-'
-  const date = new Date(timestamp * 1000)
-  return date.toLocaleString('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  })
-}
+  if (!timestamp) return "-";
+  const date = new Date(timestamp * 1000);
+  return date.toLocaleString("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+};
 
 const isExpired = (expiresAt: number) => {
-  if (expiresAt === 0) return false
-  return Date.now() / 1000 > expiresAt
-}
+  if (expiresAt === 0) return false;
+  return Date.now() / 1000 > expiresAt;
+};
 
 const refreshBlacklist = async () => {
-  blacklistLoading.value = true
+  blacklistLoading.value = true;
   try {
     // @ts-ignore
-    const entries = await GetBlacklistEntries()
-    blacklist.value = entries || []
+    const entries = await GetBlacklistEntries();
+    blacklist.value = entries || [];
   } catch (error: any) {
-    console.error('获取黑名单失败:', error)
-    ElMessage.error(t('accessControl.getBlacklistFailed', { error: error.message || String(error) }))
+    console.error("获取黑名单失败:", error);
+    ElMessage.error(
+      t("accessControl.getBlacklistFailed", { error: error.message || String(error) }),
+    );
   } finally {
-    blacklistLoading.value = false
+    blacklistLoading.value = false;
   }
-}
+};
 
 const refreshCache = async () => {
-  refreshingCache.value = true
+  refreshingCache.value = true;
   try {
     // @ts-ignore
-    await RefreshBlacklistCache()
-    ElMessage.success(t('accessControl.cacheRefreshed'))
-    await refreshBlacklist()
+    await RefreshBlacklistCache();
+    ElMessage.success(t("accessControl.cacheRefreshed"));
+    await refreshBlacklist();
   } catch (error: any) {
-    console.error('刷新缓存失败:', error)
-    ElMessage.error(t('accessControl.refreshCacheFailed', { error: error.message || String(error) }))
+    console.error("刷新缓存失败:", error);
+    ElMessage.error(
+      t("accessControl.refreshCacheFailed", { error: error.message || String(error) }),
+    );
   } finally {
-    refreshingCache.value = false
+    refreshingCache.value = false;
   }
-}
+};
 
 const handleAdd = async () => {
   if (!addFormRef.value) {
-    ElMessage.warning(t('accessControl.formNotInitialized'))
-    return
+    ElMessage.warning(t("accessControl.formNotInitialized"));
+    return;
   }
 
   try {
     // @ts-ignore
-    dbStatus.value = await GetMetricsDBStatus()
+    dbStatus.value = await GetMetricsDBStatus();
   } catch {
-    dbStatus.value = null
+    dbStatus.value = null;
   }
 
   if (!dbStatus.value || !dbStatus.value.enabled) {
     ElMessage.error({
-      message: t('accessControl.dbNotEnabledMessage'),
+      message: t("accessControl.dbNotEnabledMessage"),
       duration: 5000,
       showClose: true,
-    })
-    return
+    });
+    return;
   }
 
   if (!dbStatus.value.initialized) {
     ElMessage.error({
-      message: t('accessControl.dbNotInitializedMessage'),
+      message: t("accessControl.dbNotInitializedMessage"),
       duration: 5000,
       showClose: true,
-    })
-    return
+    });
+    return;
   }
 
   try {
-    await addFormRef.value.validate()
+    await addFormRef.value.validate();
   } catch {
-    ElMessage.warning(t('accessControl.checkFormInput'))
-    return
+    ElMessage.warning(t("accessControl.checkFormInput"));
+    return;
   }
 
-  adding.value = true
+  adding.value = true;
   try {
-    let durationSeconds = 0
-    if (addForm.value.durationType === 'temporary') {
-      const ms = Number(addForm.value.expiresAt)
-      const now = Date.now()
-      durationSeconds = Math.ceil((ms - now) / 1000)
+    let durationSeconds = 0;
+    if (addForm.value.durationType === "temporary") {
+      const ms = Number(addForm.value.expiresAt);
+      const now = Date.now();
+      durationSeconds = Math.ceil((ms - now) / 1000);
       if (durationSeconds <= 0) {
-        ElMessage.warning(t('accessControl.expiresAtMustBeGreater'))
-        adding.value = false
-        return
+        ElMessage.warning(t("accessControl.expiresAtMustBeGreater"));
+        adding.value = false;
+        return;
       }
     }
 
     // @ts-ignore
-    await AddBlacklistEntry(addForm.value.ip, addForm.value.reason || '', durationSeconds)
-    ElMessage.success(t('accessControl.blacklistAdded'))
-    showAddDialog.value = false
+    await AddBlacklistEntry(addForm.value.ip, addForm.value.reason || "", durationSeconds);
+    ElMessage.success(t("accessControl.blacklistAdded"));
+    showAddDialog.value = false;
 
     addForm.value = {
-      ip: '',
-      reason: '',
-      durationType: 'permanent',
+      ip: "",
+      reason: "",
+      durationType: "permanent",
       expiresAt: null,
-    }
+    };
 
     if (addFormRef.value) {
-      addFormRef.value.resetFields()
+      addFormRef.value.resetFields();
     }
 
-    await refreshBlacklist()
+    await refreshBlacklist();
   } catch (error: any) {
-    console.error('添加黑名单失败:', error)
+    console.error("添加黑名单失败:", error);
     ElMessage.error({
-      message: t('accessControl.addBlacklistFailed', { error: error?.message || String(error) }),
+      message: t("accessControl.addBlacklistFailed", { error: error?.message || String(error) }),
       duration: 5000,
       showClose: true,
-    })
+    });
   } finally {
-    adding.value = false
+    adding.value = false;
   }
-}
+};
 
 const handleRemove = async (ip: string) => {
   try {
     await ElMessageBox.confirm(
-      t('accessControl.removeBlacklistConfirm', { ip }),
-      t('accessControl.removeBlacklistTitle'),
+      t("accessControl.removeBlacklistConfirm", { ip }),
+      t("accessControl.removeBlacklistTitle"),
       {
-        confirmButtonText: t('common.confirm'),
-        cancelButtonText: t('common.cancel'),
-        type: 'warning',
-      }
-    )
+        confirmButtonText: t("common.confirm"),
+        cancelButtonText: t("common.cancel"),
+        type: "warning",
+      },
+    );
 
     // @ts-ignore
-    await RemoveBlacklistEntry(ip)
-    ElMessage.success(t('accessControl.blacklistRemoved'))
-    await refreshBlacklist()
+    await RemoveBlacklistEntry(ip);
+    ElMessage.success(t("accessControl.blacklistRemoved"));
+    await refreshBlacklist();
   } catch (error: any) {
-    if (error !== 'cancel') {
-      console.error('删除黑名单失败:', error)
-      ElMessage.error(t('accessControl.removeBlacklistFailed', { error: error.message || String(error) }))
+    if (error !== "cancel") {
+      console.error("删除黑名单失败:", error);
+      ElMessage.error(
+        t("accessControl.removeBlacklistFailed", { error: error.message || String(error) }),
+      );
     }
   }
-}
+};
 
 onMounted(async () => {
   try {
     // @ts-ignore
-    dbStatus.value = await GetMetricsDBStatus()
+    dbStatus.value = await GetMetricsDBStatus();
   } catch {
-    dbStatus.value = null
+    dbStatus.value = null;
   }
-  await refreshBlacklist()
-})
+  await refreshBlacklist();
+});
 
 // 供父组件调用
 const getConfig = () => {
@@ -539,13 +569,13 @@ const getConfig = () => {
     stream_access_control_enabled: !!localConfig.value.stream_access_control_enabled,
     allow_all_lan: localConfig.value.allow_all_lan,
     allow_all_ip: localConfig.value.allow_all_ip,
-    whitelist: localConfig.value.whitelist.filter((item) => item.ip.trim() !== ''),
-  }
-}
+    whitelist: localConfig.value.whitelist.filter((item) => item.ip.trim() !== ""),
+  };
+};
 
 defineExpose({
   getConfig,
-})
+});
 </script>
 
 <style scoped>

@@ -3,7 +3,7 @@
   <el-card class="config-card config-page" shadow="hover">
     <template #header>
       <div class="header-row">
-        <h3>{{ $t('baseConfig.title') }}</h3>
+        <h3>{{ $t("baseConfig.title") }}</h3>
         <div class="header-actions">
           <el-button
             v-if="activeTab === 'general'"
@@ -12,7 +12,7 @@
             plain
             @click="resetToDefaults"
           >
-            {{ $t('baseConfig.restoreDefaults') }}
+            {{ $t("baseConfig.restoreDefaults") }}
           </el-button>
         </div>
       </div>
@@ -47,19 +47,19 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { computed, onMounted, reactive, ref, watch } from "vue";
+import { ElMessage, ElMessageBox } from "element-plus";
 import {
   GetConfig,
   ListConfigSnapshots,
   RestoreConfigSnapshot,
   SendTestAlert,
   type AlertingConfig,
-} from '../api'
-import { useI18n } from 'vue-i18n'
-import BaseConfigGeneralTab from './base-config/BaseConfigGeneralTab.vue'
-import BaseConfigWebhookTab from './base-config/BaseConfigWebhookTab.vue'
-import BaseConfigSnapshotsTab from './base-config/BaseConfigSnapshotsTab.vue'
+} from "../api";
+import { useI18n } from "vue-i18n";
+import BaseConfigGeneralTab from "./base-config/BaseConfigGeneralTab.vue";
+import BaseConfigWebhookTab from "./base-config/BaseConfigWebhookTab.vue";
+import BaseConfigSnapshotsTab from "./base-config/BaseConfigSnapshotsTab.vue";
 import {
   DEFAULT_COMPRESSION_BROTLI,
   DEFAULT_COMPRESSION_BROTLI_LEVEL,
@@ -82,10 +82,10 @@ import {
   type AlertingForm,
   type BaseGeneralForm,
   type BaseSnapshotsForm,
-} from './base-config/types'
+} from "./base-config/types";
 
-const { t } = useI18n()
-const activeTab = ref<'general' | 'webhook' | 'snapshots'>('general')
+const { t } = useI18n();
+const activeTab = ref<"general" | "webhook" | "snapshots">("general");
 
 const generalForm = reactive<BaseGeneralForm>({
   autoStart: false,
@@ -104,15 +104,15 @@ const generalForm = reactive<BaseGeneralForm>({
   compressionBrotli: DEFAULT_COMPRESSION_BROTLI,
   compressionGzipLevel: DEFAULT_COMPRESSION_GZIP_LEVEL,
   compressionBrotliLevel: DEFAULT_COMPRESSION_BROTLI_LEVEL,
-})
+});
 
 const alertForm = reactive<AlertingForm>({
   enabled: false,
   webhook: {
     enabled: false,
-    provider: 'wecom',
-    url: '',
-    secret: '',
+    provider: "wecom",
+    url: "",
+    secret: "",
     system_report_enabled: false,
     quiet_hours_enabled: false,
     quiet_hours_start: DEFAULT_QUIET_HOURS_START,
@@ -123,73 +123,88 @@ const alertForm = reactive<AlertingForm>({
   rules: {
     server_start_error: true,
   },
-})
+});
 
-const sendingTestAlert = ref(false)
+const sendingTestAlert = ref(false);
 const snapshotsForm = reactive<BaseSnapshotsForm>({
   loading: false,
-  restoringSnapshotName: '',
+  restoringSnapshotName: "",
   list: [],
-})
+});
 
-const systemReportIntervalOptions = SYSTEM_REPORT_INTERVAL_OPTIONS
+const systemReportIntervalOptions = SYSTEM_REPORT_INTERVAL_OPTIONS;
 const weekdayOptions = computed(() => [
-  { value: 1, label: t('about.weekdayMon') },
-  { value: 2, label: t('about.weekdayTue') },
-  { value: 3, label: t('about.weekdayWed') },
-  { value: 4, label: t('about.weekdayThu') },
-  { value: 5, label: t('about.weekdayFri') },
-  { value: 6, label: t('about.weekdaySat') },
-  { value: 7, label: t('about.weekdaySun') },
-])
+  { value: 1, label: t("about.weekdayMon") },
+  { value: 2, label: t("about.weekdayTue") },
+  { value: 3, label: t("about.weekdayWed") },
+  { value: 4, label: t("about.weekdayThu") },
+  { value: 5, label: t("about.weekdayFri") },
+  { value: 6, label: t("about.weekdaySat") },
+  { value: 7, label: t("about.weekdaySun") },
+]);
 
 const normalizeIntervalMinutes = (value: unknown) => {
-  const raw = typeof value === 'string' ? value.trim() : value
-  if (raw === '' || raw === null || raw === undefined) {
-    throw new Error(t('about.systemReportIntervalInvalid'))
+  const raw = typeof value === "string" ? value.trim() : value;
+  if (raw === "" || raw === null || raw === undefined) {
+    throw new Error(t("about.systemReportIntervalInvalid"));
   }
 
-  const parsed = typeof raw === 'number' ? raw : Number(raw)
+  const parsed = typeof raw === "number" ? raw : Number(raw);
   if (!Number.isInteger(parsed)) {
-    throw new Error(t('about.systemReportIntervalInvalid'))
+    throw new Error(t("about.systemReportIntervalInvalid"));
   }
   if (parsed < 1 || parsed > 10080) {
-    throw new Error(t('about.systemReportIntervalRange'))
+    throw new Error(t("about.systemReportIntervalRange"));
   }
 
-  return parsed
-}
+  return parsed;
+};
 
 const normalizeWeekdays = (value: unknown) => {
-  const days = Array.isArray(value) ? value : []
-  const normalized = [...new Set(days.map((day) => Number(day)).filter((day) => Number.isInteger(day) && day >= 1 && day <= 7))].sort((a, b) => a - b)
+  const days = Array.isArray(value) ? value : [];
+  const normalized = [
+    ...new Set(
+      days.map((day) => Number(day)).filter((day) => Number.isInteger(day) && day >= 1 && day <= 7),
+    ),
+  ].sort((a, b) => a - b);
   if (!normalized.length) {
-    throw new Error(t('about.systemReportWeekdaysRequired'))
+    throw new Error(t("about.systemReportWeekdaysRequired"));
   }
-  return normalized
-}
+  return normalized;
+};
 
-const validateTimeValue = (value: unknown, field: 'start' | 'end') => {
-  const text = String(value || '').trim()
+const validateTimeValue = (value: unknown, field: "start" | "end") => {
+  const text = String(value || "").trim();
   if (!/^\d{2}:\d{2}$/.test(text)) {
-    throw new Error(field === 'start' ? t('about.quietHoursStartInvalid') : t('about.quietHoursEndInvalid'))
+    throw new Error(
+      field === "start" ? t("about.quietHoursStartInvalid") : t("about.quietHoursEndInvalid"),
+    );
   }
 
-  const [hourText, minuteText] = text.split(':')
-  const hour = Number(hourText)
-  const minute = Number(minuteText)
-  if (!Number.isInteger(hour) || !Number.isInteger(minute) || hour < 0 || hour > 23 || minute < 0 || minute > 59) {
-    throw new Error(field === 'start' ? t('about.quietHoursStartInvalid') : t('about.quietHoursEndInvalid'))
+  const [hourText, minuteText] = text.split(":");
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  if (
+    !Number.isInteger(hour) ||
+    !Number.isInteger(minute) ||
+    hour < 0 ||
+    hour > 23 ||
+    minute < 0 ||
+    minute > 59
+  ) {
+    throw new Error(
+      field === "start" ? t("about.quietHoursStartInvalid") : t("about.quietHoursEndInvalid"),
+    );
   }
 
-  return text
-}
+  return text;
+};
 
 const normalizeAlertingConfig = (): AlertingConfig => {
-  const quietHoursStart = validateTimeValue(alertForm.webhook.quiet_hours_start, 'start')
-  const quietHoursEnd = validateTimeValue(alertForm.webhook.quiet_hours_end, 'end')
+  const quietHoursStart = validateTimeValue(alertForm.webhook.quiet_hours_start, "start");
+  const quietHoursEnd = validateTimeValue(alertForm.webhook.quiet_hours_end, "end");
   if (alertForm.webhook.quiet_hours_enabled && quietHoursStart === quietHoursEnd) {
-    throw new Error(t('about.quietHoursSameTime'))
+    throw new Error(t("about.quietHoursSameTime"));
   }
 
   return {
@@ -197,185 +212,204 @@ const normalizeAlertingConfig = (): AlertingConfig => {
     webhook: {
       ...alertForm.webhook,
       enabled: !!alertForm.webhook.enabled,
-      provider: (alertForm.webhook.provider || 'wecom').trim(),
-      url: (alertForm.webhook.url || '').trim(),
-      secret: (alertForm.webhook.secret || '').trim() || null,
+      provider: (alertForm.webhook.provider || "wecom").trim(),
+      url: (alertForm.webhook.url || "").trim(),
+      secret: (alertForm.webhook.secret || "").trim() || null,
       system_report_enabled: !!alertForm.webhook.system_report_enabled,
       quiet_hours_enabled: !!alertForm.webhook.quiet_hours_enabled,
       quiet_hours_start: quietHoursStart,
       quiet_hours_end: quietHoursEnd,
-      system_report_interval_minutes: normalizeIntervalMinutes(alertForm.webhook.system_report_interval_minutes),
+      system_report_interval_minutes: normalizeIntervalMinutes(
+        alertForm.webhook.system_report_interval_minutes,
+      ),
       system_report_weekdays: normalizeWeekdays(alertForm.webhook.system_report_weekdays),
     },
     rules: {
       server_start_error: alertForm.rules.server_start_error !== false,
     },
-  }
-}
+  };
+};
 
 const resetToDefaults = async () => {
   try {
-    await ElMessageBox.confirm(
-      t('baseConfig.restoreConfirm'),
-      t('baseConfig.restoreDefaults'),
-      {
-        confirmButtonText: t('common.restore'),
-        cancelButtonText: t('common.cancel'),
-        type: 'warning',
-      }
-    )
+    await ElMessageBox.confirm(t("baseConfig.restoreConfirm"), t("baseConfig.restoreDefaults"), {
+      confirmButtonText: t("common.restore"),
+      cancelButtonText: t("common.cancel"),
+      type: "warning",
+    });
 
-    generalForm.autoStart = false
-    generalForm.showRealtimeLogs = true
-    generalForm.realtimeLogsOnlyErrors = false
-    generalForm.streamProxy = true
-    generalForm.enableHttp2 = DEFAULT_ENABLE_HTTP2
-    generalForm.maxBodySizeMB = DEFAULT_MAX_BODY_SIZE_MB
-    generalForm.maxResponseBodySizeMB = DEFAULT_MAX_RESPONSE_BODY_SIZE_MB
-    generalForm.upstreamConnectTimeoutMs = DEFAULT_CONNECT_TIMEOUT_MS
-    generalForm.upstreamReadTimeoutMs = DEFAULT_READ_TIMEOUT_MS
-    generalForm.upstreamPoolMaxIdle = DEFAULT_POOL_MAX_IDLE
-    generalForm.upstreamPoolIdleTimeoutSec = DEFAULT_POOL_IDLE_TIMEOUT_SEC
-    generalForm.compressionEnabled = DEFAULT_COMPRESSION_ENABLED
-    generalForm.compressionGzip = DEFAULT_COMPRESSION_GZIP
-    generalForm.compressionBrotli = DEFAULT_COMPRESSION_BROTLI
-    generalForm.compressionGzipLevel = DEFAULT_COMPRESSION_GZIP_LEVEL
-    generalForm.compressionBrotliLevel = DEFAULT_COMPRESSION_BROTLI_LEVEL
+    generalForm.autoStart = false;
+    generalForm.showRealtimeLogs = true;
+    generalForm.realtimeLogsOnlyErrors = false;
+    generalForm.streamProxy = true;
+    generalForm.enableHttp2 = DEFAULT_ENABLE_HTTP2;
+    generalForm.maxBodySizeMB = DEFAULT_MAX_BODY_SIZE_MB;
+    generalForm.maxResponseBodySizeMB = DEFAULT_MAX_RESPONSE_BODY_SIZE_MB;
+    generalForm.upstreamConnectTimeoutMs = DEFAULT_CONNECT_TIMEOUT_MS;
+    generalForm.upstreamReadTimeoutMs = DEFAULT_READ_TIMEOUT_MS;
+    generalForm.upstreamPoolMaxIdle = DEFAULT_POOL_MAX_IDLE;
+    generalForm.upstreamPoolIdleTimeoutSec = DEFAULT_POOL_IDLE_TIMEOUT_SEC;
+    generalForm.compressionEnabled = DEFAULT_COMPRESSION_ENABLED;
+    generalForm.compressionGzip = DEFAULT_COMPRESSION_GZIP;
+    generalForm.compressionBrotli = DEFAULT_COMPRESSION_BROTLI;
+    generalForm.compressionGzipLevel = DEFAULT_COMPRESSION_GZIP_LEVEL;
+    generalForm.compressionBrotliLevel = DEFAULT_COMPRESSION_BROTLI_LEVEL;
 
-    window.dispatchEvent(new CustomEvent('toggle-realtime-logs', { detail: generalForm.showRealtimeLogs }))
-    ElMessage.success(t('baseConfig.restoreSuccess'))
+    window.dispatchEvent(
+      new CustomEvent("toggle-realtime-logs", { detail: generalForm.showRealtimeLogs }),
+    );
+    ElMessage.success(t("baseConfig.restoreSuccess"));
   } catch {
     // 用户取消
   }
-}
+};
 
 const formatTs = (ms: number) => {
-  if (!ms) return '-'
+  if (!ms) return "-";
   try {
-    return new Date(ms).toLocaleString()
+    return new Date(ms).toLocaleString();
   } catch {
-    return String(ms)
+    return String(ms);
   }
-}
+};
 
 const formatSize = (size: number) => {
-  if (size < 1024) return `${size} B`
-  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
-  return `${(size / (1024 * 1024)).toFixed(1)} MB`
-}
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+};
 
 const loadSnapshots = async () => {
-  snapshotsForm.loading = true
+  snapshotsForm.loading = true;
   try {
-    snapshotsForm.list = await ListConfigSnapshots()
+    snapshotsForm.list = await ListConfigSnapshots();
   } catch (e: any) {
-    ElMessage.error(e?.message || String(e))
+    ElMessage.error(e?.message || String(e));
   } finally {
-    snapshotsForm.loading = false
+    snapshotsForm.loading = false;
   }
-}
+};
 
 const handleRestoreSnapshot = async (name: string) => {
   await ElMessageBox.confirm(
-    t('about.restoreSnapshotConfirm', { name }),
-    t('about.restoreSnapshotTitle'),
+    t("about.restoreSnapshotConfirm", { name }),
+    t("about.restoreSnapshotTitle"),
     {
-      type: 'warning',
-      confirmButtonText: t('common.confirm'),
-      cancelButtonText: t('common.cancel'),
-    }
-  )
+      type: "warning",
+      confirmButtonText: t("common.confirm"),
+      cancelButtonText: t("common.cancel"),
+    },
+  );
 
-  snapshotsForm.restoringSnapshotName = name
+  snapshotsForm.restoringSnapshotName = name;
   try {
-    await RestoreConfigSnapshot(name)
-    ElMessage.success(t('about.restoreSnapshotSuccess'))
-    await loadSnapshots()
+    await RestoreConfigSnapshot(name);
+    ElMessage.success(t("about.restoreSnapshotSuccess"));
+    await loadSnapshots();
   } catch (e: any) {
-    ElMessage.error(t('about.restoreSnapshotFailed', { error: e?.message || String(e) }))
+    ElMessage.error(t("about.restoreSnapshotFailed", { error: e?.message || String(e) }));
   } finally {
-    snapshotsForm.restoringSnapshotName = ''
+    snapshotsForm.restoringSnapshotName = "";
   }
-}
+};
 
 const handleSendTestAlert = async () => {
   if (!alertForm.enabled || !alertForm.webhook?.enabled) {
-    ElMessage.warning(t('about.alertConfigIncomplete'))
-    return
+    ElMessage.warning(t("about.alertConfigIncomplete"));
+    return;
   }
   if (!alertForm.webhook.url?.trim()) {
-    ElMessage.warning(t('about.alertWebhookUrlRequired'))
-    return
+    ElMessage.warning(t("about.alertWebhookUrlRequired"));
+    return;
   }
 
-  sendingTestAlert.value = true
+  sendingTestAlert.value = true;
   try {
-    await SendTestAlert(normalizeAlertingConfig())
-    ElMessage.success(t('about.sendTestAlertSuccess'))
+    await SendTestAlert(normalizeAlertingConfig());
+    ElMessage.success(t("about.sendTestAlertSuccess"));
   } catch (e: any) {
-    ElMessage.error(t('about.sendTestAlertFailed', { error: e?.message || String(e) }))
+    ElMessage.error(t("about.sendTestAlertFailed", { error: e?.message || String(e) }));
   } finally {
-    sendingTestAlert.value = false
+    sendingTestAlert.value = false;
   }
-}
+};
 
 onMounted(async () => {
   try {
-    const configData = (await GetConfig()) as any
-    generalForm.autoStart = !!configData.auto_start
-    generalForm.showRealtimeLogs = configData.show_realtime_logs !== false
-    generalForm.realtimeLogsOnlyErrors = !!configData.realtime_logs_only_errors
-    generalForm.streamProxy = configData.stream_proxy !== false
-    generalForm.enableHttp2 = configData.enable_http2 !== false
-    generalForm.maxBodySizeMB = Math.round(((configData.max_body_size ?? DEFAULT_MAX_BODY_SIZE_MB * 1024 * 1024) / 1024 / 1024) * 100) / 100
-    generalForm.maxResponseBodySizeMB = Math.round(((configData.max_response_body_size ?? DEFAULT_MAX_RESPONSE_BODY_SIZE_MB * 1024 * 1024) / 1024 / 1024) * 100) / 100
-    generalForm.upstreamConnectTimeoutMs = configData.upstream_connect_timeout_ms ?? DEFAULT_CONNECT_TIMEOUT_MS
-    generalForm.upstreamReadTimeoutMs = configData.upstream_read_timeout_ms ?? DEFAULT_READ_TIMEOUT_MS
-    generalForm.upstreamPoolMaxIdle = configData.upstream_pool_max_idle ?? DEFAULT_POOL_MAX_IDLE
-    generalForm.upstreamPoolIdleTimeoutSec = configData.upstream_pool_idle_timeout_sec ?? DEFAULT_POOL_IDLE_TIMEOUT_SEC
-    generalForm.compressionEnabled = configData.compression_enabled ?? DEFAULT_COMPRESSION_ENABLED
-    generalForm.compressionGzip = configData.compression_gzip ?? DEFAULT_COMPRESSION_GZIP
-    generalForm.compressionBrotli = configData.compression_brotli ?? DEFAULT_COMPRESSION_BROTLI
-    generalForm.compressionGzipLevel = configData.compression_gzip_level ?? DEFAULT_COMPRESSION_GZIP_LEVEL
-    generalForm.compressionBrotliLevel = configData.compression_brotli_level ?? DEFAULT_COMPRESSION_BROTLI_LEVEL
+    const configData = (await GetConfig()) as any;
+    generalForm.autoStart = !!configData.auto_start;
+    generalForm.showRealtimeLogs = configData.show_realtime_logs !== false;
+    generalForm.realtimeLogsOnlyErrors = !!configData.realtime_logs_only_errors;
+    generalForm.streamProxy = configData.stream_proxy !== false;
+    generalForm.enableHttp2 = configData.enable_http2 !== false;
+    generalForm.maxBodySizeMB =
+      Math.round(
+        ((configData.max_body_size ?? DEFAULT_MAX_BODY_SIZE_MB * 1024 * 1024) / 1024 / 1024) * 100,
+      ) / 100;
+    generalForm.maxResponseBodySizeMB =
+      Math.round(
+        ((configData.max_response_body_size ?? DEFAULT_MAX_RESPONSE_BODY_SIZE_MB * 1024 * 1024) /
+          1024 /
+          1024) *
+          100,
+      ) / 100;
+    generalForm.upstreamConnectTimeoutMs =
+      configData.upstream_connect_timeout_ms ?? DEFAULT_CONNECT_TIMEOUT_MS;
+    generalForm.upstreamReadTimeoutMs =
+      configData.upstream_read_timeout_ms ?? DEFAULT_READ_TIMEOUT_MS;
+    generalForm.upstreamPoolMaxIdle = configData.upstream_pool_max_idle ?? DEFAULT_POOL_MAX_IDLE;
+    generalForm.upstreamPoolIdleTimeoutSec =
+      configData.upstream_pool_idle_timeout_sec ?? DEFAULT_POOL_IDLE_TIMEOUT_SEC;
+    generalForm.compressionEnabled = configData.compression_enabled ?? DEFAULT_COMPRESSION_ENABLED;
+    generalForm.compressionGzip = configData.compression_gzip ?? DEFAULT_COMPRESSION_GZIP;
+    generalForm.compressionBrotli = configData.compression_brotli ?? DEFAULT_COMPRESSION_BROTLI;
+    generalForm.compressionGzipLevel =
+      configData.compression_gzip_level ?? DEFAULT_COMPRESSION_GZIP_LEVEL;
+    generalForm.compressionBrotliLevel =
+      configData.compression_brotli_level ?? DEFAULT_COMPRESSION_BROTLI_LEVEL;
 
-    const alerting = configData?.alerting
+    const alerting = configData?.alerting;
     if (alerting) {
       const savedWeekdays = Array.isArray(alerting?.webhook?.system_report_weekdays)
         ? alerting.webhook.system_report_weekdays
-        : null
-      alertForm.enabled = !!alerting.enabled
+        : null;
+      alertForm.enabled = !!alerting.enabled;
       alertForm.webhook = {
         enabled: !!alerting?.webhook?.enabled,
-        provider: alerting?.webhook?.provider || 'wecom',
-        url: alerting?.webhook?.url || '',
-        secret: alerting?.webhook?.secret || '',
+        provider: alerting?.webhook?.provider || "wecom",
+        url: alerting?.webhook?.url || "",
+        secret: alerting?.webhook?.secret || "",
         system_report_enabled: !!alerting?.webhook?.system_report_enabled,
         quiet_hours_enabled: !!alerting?.webhook?.quiet_hours_enabled,
         quiet_hours_start: alerting?.webhook?.quiet_hours_start || DEFAULT_QUIET_HOURS_START,
         quiet_hours_end: alerting?.webhook?.quiet_hours_end || DEFAULT_QUIET_HOURS_END,
-        system_report_interval_minutes: alerting?.webhook?.system_report_interval_minutes ?? DEFAULT_SYSTEM_REPORT_INTERVAL_MINUTES,
+        system_report_interval_minutes:
+          alerting?.webhook?.system_report_interval_minutes ??
+          DEFAULT_SYSTEM_REPORT_INTERVAL_MINUTES,
         system_report_weekdays: savedWeekdays?.length
           ? [...savedWeekdays]
           : [...DEFAULT_SYSTEM_REPORT_WEEKDAYS],
-      }
+      };
       alertForm.rules = {
         server_start_error: alerting?.rules?.server_start_error !== false,
-      }
+      };
     }
   } catch {
     // ignore
   }
 
-  await loadSnapshots()
-})
+  await loadSnapshots();
+});
 
-watch(() => generalForm.showRealtimeLogs, (v) => {
-  if (!v) {
-    generalForm.realtimeLogsOnlyErrors = false
-  }
-  window.dispatchEvent(new CustomEvent('toggle-realtime-logs', { detail: v }))
-})
+watch(
+  () => generalForm.showRealtimeLogs,
+  (v) => {
+    if (!v) {
+      generalForm.realtimeLogsOnlyErrors = false;
+    }
+    window.dispatchEvent(new CustomEvent("toggle-realtime-logs", { detail: v }));
+  },
+);
 
 const getConfig = () => ({
   auto_start: !!generalForm.autoStart,
@@ -396,11 +430,11 @@ const getConfig = () => ({
   compression_gzip_level: Number(generalForm.compressionGzipLevel),
   compression_brotli_level: Number(generalForm.compressionBrotliLevel),
   alerting: normalizeAlertingConfig(),
-})
+});
 
 defineExpose({
   getConfig,
-})
+});
 </script>
 
 <style scoped>

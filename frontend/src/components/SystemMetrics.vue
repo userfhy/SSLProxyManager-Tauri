@@ -4,13 +4,13 @@
       <template #header>
         <div class="header">
           <div class="title-area">
-            <h3>{{ $t('systemMetrics.title') }}</h3>
+            <h3>{{ $t("systemMetrics.title") }}</h3>
             <el-text type="info" size="small">
-              {{ $t('systemMetrics.updateHint', { seconds: sampleIntervalSeconds }) }}
+              {{ $t("systemMetrics.updateHint", { seconds: sampleIntervalSeconds }) }}
             </el-text>
 
             <div class="title-inline-controls">
-              <el-form-item :label="$t('systemMetrics.sampleIntervalSec')" style="margin-bottom: 0;">
+              <el-form-item :label="$t('systemMetrics.sampleIntervalSec')" style="margin-bottom: 0">
                 <el-input-number
                   v-model="configSampleIntervalSecs"
                   :min="1"
@@ -18,11 +18,11 @@
                   :precision="0"
                   :controls="false"
                   size="small"
-                  style="width: 120px;"
+                  style="width: 120px"
                 />
               </el-form-item>
 
-              <el-form-item :label="$t('systemMetrics.persistence')" style="margin-bottom: 0;">
+              <el-form-item :label="$t('systemMetrics.persistence')" style="margin-bottom: 0">
                 <el-switch
                   v-model="configPersistenceEnabled"
                   size="small"
@@ -30,14 +30,19 @@
                 />
               </el-form-item>
               <el-text v-if="!globalPersistenceEnabled" type="warning" size="small">
-                {{ $t('systemMetrics.persistenceRequiresGlobal') }}
+                {{ $t("systemMetrics.persistenceRequiresGlobal") }}
               </el-text>
             </div>
           </div>
 
           <div class="header-actions">
-            <el-form-item :label="$t('systemMetrics.window')" style="margin-bottom: 0;">
-              <el-select v-model.number="selectedWindow" size="small" style="width: 140px;" :disabled="isHistoricalMode">
+            <el-form-item :label="$t('systemMetrics.window')" style="margin-bottom: 0">
+              <el-select
+                v-model.number="selectedWindow"
+                size="small"
+                style="width: 140px"
+                :disabled="isHistoricalMode"
+              >
                 <el-option :label="$t('systemMetrics.oneMinute')" :value="60" />
                 <el-option :label="$t('systemMetrics.fiveMinutes')" :value="300" />
                 <el-option :label="$t('systemMetrics.fifteenMinutes')" :value="900" />
@@ -50,8 +55,8 @@
               </el-select>
             </el-form-item>
 
-            <el-form-item :label="$t('systemMetrics.chartUnit')" style="margin-bottom: 0;">
-              <el-select v-model="rateUnit" size="small" style="width: 100px;">
+            <el-form-item :label="$t('systemMetrics.chartUnit')" style="margin-bottom: 0">
+              <el-select v-model="rateUnit" size="small" style="width: 100px">
                 <el-option
                   v-for="opt in rateUnitOptions"
                   :key="opt.value"
@@ -61,7 +66,7 @@
               </el-select>
             </el-form-item>
 
-            <el-form-item :label="$t('systemMetrics.historicalData')" style="margin-bottom: 0;">
+            <el-form-item :label="$t('systemMetrics.historicalData')" style="margin-bottom: 0">
               <el-config-provider :locale="datePickerLocale">
                 <el-date-picker
                   v-model="dateRange"
@@ -73,20 +78,25 @@
                   format="YYYY-MM-DD HH:mm:ss"
                   value-format="x"
                   :shortcuts="dateShortcuts"
-                  style="width: 380px;"
+                  style="width: 380px"
                 />
               </el-config-provider>
             </el-form-item>
 
-            <el-form-item style="margin-bottom: 0;">
-              <el-button type="primary" size="small" :loading="loadingHistorical" @click="loadHistoricalData">
-                {{ $t('systemMetrics.loadHistorical') }}
+            <el-form-item style="margin-bottom: 0">
+              <el-button
+                type="primary"
+                size="small"
+                :loading="loadingHistorical"
+                @click="loadHistoricalData"
+              >
+                {{ $t("systemMetrics.loadHistorical") }}
               </el-button>
               <el-button v-if="isHistoricalMode" size="small" @click="clearHistoricalData">
-                {{ $t('systemMetrics.showRealtime') }}
+                {{ $t("systemMetrics.showRealtime") }}
               </el-button>
               <el-button size="small" :loading="loadingRealtime" @click="loadRealtimeSnapshot">
-                {{ $t('systemMetrics.refreshNow') }}
+                {{ $t("systemMetrics.refreshNow") }}
               </el-button>
             </el-form-item>
           </div>
@@ -99,7 +109,7 @@
         :closable="false"
         show-icon
         :title="$t('systemMetrics.unsupported', { message: unsupportedMessage })"
-        style="margin-bottom: 12px;"
+        style="margin-bottom: 12px"
       />
 
       <el-alert
@@ -108,7 +118,7 @@
         :closable="false"
         show-icon
         :title="$t('systemMetrics.fetchFailed', { error: errorMessage })"
-        style="margin-bottom: 12px;"
+        style="margin-bottom: 12px"
       />
 
       <el-alert
@@ -117,115 +127,143 @@
         :closable="false"
         show-icon
         :title="$t('systemMetrics.historicalMode')"
-        style="margin-bottom: 12px;"
+        style="margin-bottom: 12px"
       />
 
       <div class="section-header">
-        <div class="section-title">{{ $t('systemMetrics.metricCards') }}</div>
+        <div class="section-title">{{ $t("systemMetrics.metricCards") }}</div>
         <el-button
           text
           size="small"
           :icon="statsCollapsed ? ArrowDown : ArrowUp"
           @click="statsCollapsed = !statsCollapsed"
         >
-          {{ statsCollapsed ? $t('systemMetrics.expandMetrics') : $t('systemMetrics.collapseMetrics') }}
+          {{
+            statsCollapsed ? $t("systemMetrics.expandMetrics") : $t("systemMetrics.collapseMetrics")
+          }}
         </el-button>
       </div>
 
       <div v-if="!statsCollapsed" class="stats-grid">
         <el-card class="stat-card" shadow="never">
-          <div class="stat-label">{{ $t('systemMetrics.cpuUsage') }}</div>
+          <div class="stat-label">{{ $t("systemMetrics.cpuUsage") }}</div>
           <div class="stat-value">{{ formatPercent(currentPoint?.cpu_usage_percent || 0) }}</div>
         </el-card>
         <el-card class="stat-card" shadow="never">
-          <div class="stat-label">{{ $t('systemMetrics.memUsage') }}</div>
+          <div class="stat-label">{{ $t("systemMetrics.memUsage") }}</div>
           <div class="stat-value">{{ formatPercent(currentPoint?.mem_used_percent || 0) }}</div>
         </el-card>
         <el-card class="stat-card" shadow="never">
-          <div class="stat-label">{{ $t('systemMetrics.swapUsage') }}</div>
+          <div class="stat-label">{{ $t("systemMetrics.swapUsage") }}</div>
           <div class="stat-value">{{ formatPercent(currentPoint?.swap_used_percent || 0) }}</div>
         </el-card>
         <el-card class="stat-card" shadow="never">
-          <div class="stat-label">{{ $t('systemMetrics.load1') }}</div>
+          <div class="stat-label">{{ $t("systemMetrics.load1") }}</div>
           <div class="stat-value">{{ formatNumber(currentPoint?.load1 || 0, 2) }}</div>
         </el-card>
         <el-card class="stat-card" shadow="never">
-          <div class="stat-label">{{ $t('systemMetrics.load5') }}</div>
+          <div class="stat-label">{{ $t("systemMetrics.load5") }}</div>
           <div class="stat-value">{{ formatNumber(currentPoint?.load5 || 0, 2) }}</div>
         </el-card>
         <el-card class="stat-card" shadow="never">
-          <div class="stat-label">{{ $t('systemMetrics.load15') }}</div>
+          <div class="stat-label">{{ $t("systemMetrics.load15") }}</div>
           <div class="stat-value">{{ formatNumber(currentPoint?.load15 || 0, 2) }}</div>
         </el-card>
 
         <el-card class="stat-card" shadow="never">
-          <div class="stat-label">{{ $t('systemMetrics.inboundRate') }}</div>
+          <div class="stat-label">{{ $t("systemMetrics.inboundRate") }}</div>
           <div class="stat-value">{{ formatRate(currentPoint?.net_rx_bps || 0) }}</div>
         </el-card>
         <el-card class="stat-card" shadow="never">
-          <div class="stat-label">{{ $t('systemMetrics.outboundRate') }}</div>
+          <div class="stat-label">{{ $t("systemMetrics.outboundRate") }}</div>
           <div class="stat-value">{{ formatRate(currentPoint?.net_tx_bps || 0) }}</div>
         </el-card>
         <el-card class="stat-card" shadow="never">
-          <div class="stat-label">{{ $t('systemMetrics.totalInbound') }}</div>
+          <div class="stat-label">{{ $t("systemMetrics.totalInbound") }}</div>
           <div class="stat-value">{{ formatBytes(currentPoint?.net_rx_bytes || 0) }}</div>
         </el-card>
         <el-card class="stat-card" shadow="never">
-          <div class="stat-label">{{ $t('systemMetrics.totalOutbound') }}</div>
+          <div class="stat-label">{{ $t("systemMetrics.totalOutbound") }}</div>
           <div class="stat-value">{{ formatBytes(currentPoint?.net_tx_bytes || 0) }}</div>
         </el-card>
         <el-card class="stat-card" shadow="never">
-          <div class="stat-label">{{ $t('systemMetrics.diskReadRate') }}</div>
+          <div class="stat-label">{{ $t("systemMetrics.diskReadRate") }}</div>
           <div class="stat-value">{{ formatRate(currentPoint?.disk_read_bps || 0) }}</div>
         </el-card>
         <el-card class="stat-card" shadow="never">
-          <div class="stat-label">{{ $t('systemMetrics.diskWriteRate') }}</div>
+          <div class="stat-label">{{ $t("systemMetrics.diskWriteRate") }}</div>
           <div class="stat-value">{{ formatRate(currentPoint?.disk_write_bps || 0) }}</div>
         </el-card>
 
         <el-card class="stat-card" shadow="never">
-          <div class="stat-label">{{ $t('systemMetrics.tcpEstablished') }}</div>
+          <div class="stat-label">{{ $t("systemMetrics.tcpEstablished") }}</div>
           <div class="stat-value">{{ currentPoint?.tcp_established || 0 }}</div>
         </el-card>
         <el-card class="stat-card" shadow="never">
-          <div class="stat-label">{{ $t('systemMetrics.tcpTimeWait') }}</div>
+          <div class="stat-label">{{ $t("systemMetrics.tcpTimeWait") }}</div>
           <div class="stat-value">{{ currentPoint?.tcp_time_wait || 0 }}</div>
         </el-card>
         <el-card class="stat-card" shadow="never">
-          <div class="stat-label">{{ $t('systemMetrics.tcpCloseWait') }}</div>
+          <div class="stat-label">{{ $t("systemMetrics.tcpCloseWait") }}</div>
           <div class="stat-value">{{ currentPoint?.tcp_close_wait || 0 }}</div>
         </el-card>
         <el-card class="stat-card" shadow="never">
-          <div class="stat-label">{{ $t('systemMetrics.processCount') }}</div>
+          <div class="stat-label">{{ $t("systemMetrics.processCount") }}</div>
           <div class="stat-value">{{ currentPoint?.process_count || 0 }}</div>
         </el-card>
         <el-card class="stat-card" shadow="never">
-          <div class="stat-label">{{ $t('systemMetrics.fdUsage') }}</div>
+          <div class="stat-label">{{ $t("systemMetrics.fdUsage") }}</div>
           <div class="stat-value">{{ formatPercent(currentPoint?.fd_usage_percent || 0) }}</div>
         </el-card>
 
         <el-card class="stat-card" shadow="never">
-          <div class="stat-label">{{ `${$t('systemMetrics.cpuUsage')} (${statAvgPeakLabel})` }}</div>
+          <div class="stat-label">
+            {{ `${$t("systemMetrics.cpuUsage")} (${statAvgPeakLabel})` }}
+          </div>
           <div class="stat-value">
-            {{ activeSummary ? `${formatPercent(activeSummary.cpu_avg_percent)} / ${formatPercent(activeSummary.cpu_peak_percent)}` : '-' }}
+            {{
+              activeSummary
+                ? `${formatPercent(activeSummary.cpu_avg_percent)} / ${formatPercent(activeSummary.cpu_peak_percent)}`
+                : "-"
+            }}
           </div>
         </el-card>
         <el-card class="stat-card" shadow="never">
-          <div class="stat-label">{{ `${$t('systemMetrics.memUsage')} (${statAvgPeakLabel})` }}</div>
+          <div class="stat-label">
+            {{ `${$t("systemMetrics.memUsage")} (${statAvgPeakLabel})` }}
+          </div>
           <div class="stat-value">
-            {{ activeSummary ? `${formatPercent(activeSummary.mem_avg_percent)} / ${formatPercent(activeSummary.mem_peak_percent)}` : '-' }}
+            {{
+              activeSummary
+                ? `${formatPercent(activeSummary.mem_avg_percent)} / ${formatPercent(activeSummary.mem_peak_percent)}`
+                : "-"
+            }}
           </div>
         </el-card>
         <el-card class="stat-card" shadow="never">
-          <div class="stat-label">{{ `${$t('systemMetrics.inbound')}/${$t('systemMetrics.outbound')} ${statPeakLabel}` }}</div>
+          <div class="stat-label">
+            {{ `${$t("systemMetrics.inbound")}/${$t("systemMetrics.outbound")} ${statPeakLabel}` }}
+          </div>
           <div class="stat-value">
-            {{ activeSummary ? `${formatRate(activeSummary.net_rx_peak_bps)} / ${formatRate(activeSummary.net_tx_peak_bps)}` : '-' }}
+            {{
+              activeSummary
+                ? `${formatRate(activeSummary.net_rx_peak_bps)} / ${formatRate(activeSummary.net_tx_peak_bps)}`
+                : "-"
+            }}
           </div>
         </el-card>
         <el-card class="stat-card" shadow="never">
-          <div class="stat-label">{{ `${$t('systemMetrics.diskReadRate')}/${$t('systemMetrics.diskWriteRate')} ${statPeakLabel}` }}</div>
+          <div class="stat-label">
+            {{
+              `${$t("systemMetrics.diskReadRate")}/${$t("systemMetrics.diskWriteRate")} ${statPeakLabel}`
+            }}
+          </div>
           <div class="stat-value">
-            {{ activeSummary ? `${formatRate(activeSummary.disk_read_peak_bps)} / ${formatRate(activeSummary.disk_write_peak_bps)}` : '-' }}
+            {{
+              activeSummary
+                ? `${formatRate(activeSummary.disk_read_peak_bps)} / ${formatRate(activeSummary.disk_write_peak_bps)}`
+                : "-"
+            }}
           </div>
         </el-card>
         <el-card class="stat-card" shadow="never">
@@ -245,10 +283,14 @@
           {{ formatUptime(currentPoint?.uptime_seconds || 0) }}
         </el-descriptions-item>
         <el-descriptions-item :label="$t('systemMetrics.fdUsedMax')">
-          {{ currentPoint ? `${currentPoint.fd_used || 0} / ${currentPoint.fd_max || 0}` : '-' }}
+          {{ currentPoint ? `${currentPoint.fd_used || 0} / ${currentPoint.fd_max || 0}` : "-" }}
         </el-descriptions-item>
         <el-descriptions-item :label="$t('systemMetrics.procsRunningBlocked')">
-          {{ currentPoint ? `${currentPoint.procs_running || 0} / ${currentPoint.procs_blocked || 0}` : '-' }}
+          {{
+            currentPoint
+              ? `${currentPoint.procs_running || 0} / ${currentPoint.procs_blocked || 0}`
+              : "-"
+          }}
         </el-descriptions-item>
         <el-descriptions-item :label="$t('systemMetrics.contextSwitches')">
           {{ currentPoint?.context_switches || 0 }}
@@ -257,10 +299,14 @@
           {{ currentPoint?.processes_forked_total || 0 }}
         </el-descriptions-item>
         <el-descriptions-item :label="$t('systemMetrics.memUsedTotal')">
-          {{ `${formatBytes(currentPoint?.mem_used_bytes || 0)} / ${formatBytes(currentPoint?.mem_total_bytes || 0)}` }}
+          {{
+            `${formatBytes(currentPoint?.mem_used_bytes || 0)} / ${formatBytes(currentPoint?.mem_total_bytes || 0)}`
+          }}
         </el-descriptions-item>
         <el-descriptions-item :label="$t('systemMetrics.swapUsedTotal')">
-          {{ `${formatBytes(currentPoint?.swap_used_bytes || 0)} / ${formatBytes(currentPoint?.swap_total_bytes || 0)}` }}
+          {{
+            `${formatBytes(currentPoint?.swap_used_bytes || 0)} / ${formatBytes(currentPoint?.swap_total_bytes || 0)}`
+          }}
         </el-descriptions-item>
         <el-descriptions-item :label="$t('systemMetrics.diskReadTotal')">
           {{ formatBytes(currentPoint?.disk_read_bytes || 0) }}
@@ -274,13 +320,23 @@
         <el-card class="chart-panel" shadow="never">
           <template #header>
             <div class="panel-header">
-              <div class="panel-title">{{ $t('systemMetrics.resourceTrend') }}</div>
-              <el-button text size="small" class="panel-preview-btn" @click="openChartPreview($t('systemMetrics.resourceTrend'), 'resource')">
-                {{ $t('common.fullscreenPreview') }}
+              <div class="panel-title">{{ $t("systemMetrics.resourceTrend") }}</div>
+              <el-button
+                text
+                size="small"
+                class="panel-preview-btn"
+                @click="openChartPreview($t('systemMetrics.resourceTrend'), 'resource')"
+              >
+                {{ $t("common.fullscreenPreview") }}
               </el-button>
             </div>
           </template>
-          <v-chart v-if="isActive && activePoints.length > 0" :option="resourceOption" class="chart" autoresize />
+          <v-chart
+            v-if="isActive && activePoints.length > 0"
+            :option="resourceOption"
+            class="chart"
+            autoresize
+          />
           <el-empty v-else :description="$t('systemMetrics.noData')" :image-size="64" />
         </el-card>
 
@@ -288,12 +344,22 @@
           <template #header>
             <div class="panel-header">
               <div class="panel-title">{{ networkTrendTitle }}</div>
-              <el-button text size="small" class="panel-preview-btn" @click="openChartPreview(networkTrendTitle, 'network')">
-                {{ $t('common.fullscreenPreview') }}
+              <el-button
+                text
+                size="small"
+                class="panel-preview-btn"
+                @click="openChartPreview(networkTrendTitle, 'network')"
+              >
+                {{ $t("common.fullscreenPreview") }}
               </el-button>
             </div>
           </template>
-          <v-chart v-if="isActive && activePoints.length > 0" :option="networkOption" class="chart" autoresize />
+          <v-chart
+            v-if="isActive && activePoints.length > 0"
+            :option="networkOption"
+            class="chart"
+            autoresize
+          />
           <el-empty v-else :description="$t('systemMetrics.noData')" :image-size="64" />
         </el-card>
 
@@ -301,45 +367,75 @@
           <template #header>
             <div class="panel-header">
               <div class="panel-title">{{ diskTrendTitle }}</div>
-              <el-button text size="small" class="panel-preview-btn" @click="openChartPreview(diskTrendTitle, 'disk')">
-                {{ $t('common.fullscreenPreview') }}
+              <el-button
+                text
+                size="small"
+                class="panel-preview-btn"
+                @click="openChartPreview(diskTrendTitle, 'disk')"
+              >
+                {{ $t("common.fullscreenPreview") }}
               </el-button>
             </div>
           </template>
-          <v-chart v-if="isActive && activePoints.length > 0" :option="diskOption" class="chart" autoresize />
+          <v-chart
+            v-if="isActive && activePoints.length > 0"
+            :option="diskOption"
+            class="chart"
+            autoresize
+          />
           <el-empty v-else :description="$t('systemMetrics.noData')" :image-size="64" />
         </el-card>
 
         <el-card class="chart-panel" shadow="never">
           <template #header>
             <div class="panel-header">
-              <div class="panel-title">{{ $t('systemMetrics.loadTrend') }}</div>
-              <el-button text size="small" class="panel-preview-btn" @click="openChartPreview($t('systemMetrics.loadTrend'), 'load')">
-                {{ $t('common.fullscreenPreview') }}
+              <div class="panel-title">{{ $t("systemMetrics.loadTrend") }}</div>
+              <el-button
+                text
+                size="small"
+                class="panel-preview-btn"
+                @click="openChartPreview($t('systemMetrics.loadTrend'), 'load')"
+              >
+                {{ $t("common.fullscreenPreview") }}
               </el-button>
             </div>
           </template>
-          <v-chart v-if="isActive && activePoints.length > 0" :option="loadOption" class="chart" autoresize />
+          <v-chart
+            v-if="isActive && activePoints.length > 0"
+            :option="loadOption"
+            class="chart"
+            autoresize
+          />
           <el-empty v-else :description="$t('systemMetrics.noData')" :image-size="64" />
         </el-card>
 
         <el-card class="chart-panel" shadow="never">
           <template #header>
             <div class="panel-header">
-              <div class="panel-title">{{ $t('systemMetrics.connectionTrend') }}</div>
-              <el-button text size="small" class="panel-preview-btn" @click="openChartPreview($t('systemMetrics.connectionTrend'), 'connection')">
-                {{ $t('common.fullscreenPreview') }}
+              <div class="panel-title">{{ $t("systemMetrics.connectionTrend") }}</div>
+              <el-button
+                text
+                size="small"
+                class="panel-preview-btn"
+                @click="openChartPreview($t('systemMetrics.connectionTrend'), 'connection')"
+              >
+                {{ $t("common.fullscreenPreview") }}
               </el-button>
             </div>
           </template>
-          <v-chart v-if="isActive && activePoints.length > 0" :option="connectionOption" class="chart" autoresize />
+          <v-chart
+            v-if="isActive && activePoints.length > 0"
+            :option="connectionOption"
+            class="chart"
+            autoresize
+          />
           <el-empty v-else :description="$t('systemMetrics.noData')" :image-size="64" />
         </el-card>
       </div>
 
       <el-card class="table-panel" shadow="never">
         <template #header>
-          <div class="panel-title">{{ $t('systemMetrics.interfaces') }}</div>
+          <div class="panel-title">{{ $t("systemMetrics.interfaces") }}</div>
         </template>
         <el-table
           :data="latestInterfaces"
@@ -366,18 +462,17 @@
           </el-table-column>
         </el-table>
       </el-card>
-
     </el-card>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { ElConfigProvider, ElMessage } from 'element-plus'
-import { ArrowDown, ArrowUp } from '@element-plus/icons-vue'
-import zhCn from 'element-plus/dist/locale/zh-cn.mjs'
-import enUs from 'element-plus/dist/locale/en.mjs'
-import { useI18n } from 'vue-i18n'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { ElConfigProvider, ElMessage } from "element-plus";
+import { ArrowDown, ArrowUp } from "@element-plus/icons-vue";
+import zhCn from "element-plus/dist/locale/zh-cn.mjs";
+import enUs from "element-plus/dist/locale/en.mjs";
+import { useI18n } from "vue-i18n";
 import {
   EventsOn,
   EventsOff,
@@ -385,157 +480,163 @@ import {
   OpenChartPreviewWindow,
   QueryHistoricalSystemMetrics,
   SetSystemMetricsSubscription,
-} from '../api'
-import { useDateShortcuts } from '../composables/useDateShortcuts'
-import { emitTo, listen } from '@tauri-apps/api/event'
-import type { EChartsOption } from 'echarts'
-import { LazySystemMetricsVChart as VChart } from '../composables/lazySystemMetricsVChart'
+} from "../api";
+import { useDateShortcuts } from "../composables/useDateShortcuts";
+import { emitTo, listen } from "@tauri-apps/api/event";
+import type { EChartsOption } from "echarts";
+import { LazySystemMetricsVChart as VChart } from "../composables/lazySystemMetricsVChart";
 
 type NetworkInterfaceStats = {
-  name: string
-  rx_bytes: number
-  tx_bytes: number
-}
+  name: string;
+  rx_bytes: number;
+  tx_bytes: number;
+};
 
 type SystemMetricsPoint = {
-  timestamp: number
-  cpu_usage_percent: number
-  load1: number
-  load5: number
-  load15: number
-  mem_total_bytes: number
-  mem_available_bytes: number
-  mem_used_bytes: number
-  mem_used_percent: number
-  swap_total_bytes: number
-  swap_free_bytes: number
-  swap_used_bytes: number
-  swap_used_percent: number
-  net_rx_bytes: number
-  net_tx_bytes: number
-  net_rx_bps: number
-  net_tx_bps: number
-  disk_read_bytes: number
-  disk_write_bytes: number
-  disk_read_bps: number
-  disk_write_bps: number
-  tcp_established: number
-  tcp_time_wait: number
-  tcp_close_wait: number
-  process_count: number
-  fd_used: number
-  fd_max: number
-  fd_usage_percent: number
-  procs_running: number
-  procs_blocked: number
-  context_switches: number
-  processes_forked_total: number
-  uptime_seconds: number
-}
+  timestamp: number;
+  cpu_usage_percent: number;
+  load1: number;
+  load5: number;
+  load15: number;
+  mem_total_bytes: number;
+  mem_available_bytes: number;
+  mem_used_bytes: number;
+  mem_used_percent: number;
+  swap_total_bytes: number;
+  swap_free_bytes: number;
+  swap_used_bytes: number;
+  swap_used_percent: number;
+  net_rx_bytes: number;
+  net_tx_bytes: number;
+  net_rx_bps: number;
+  net_tx_bps: number;
+  disk_read_bytes: number;
+  disk_write_bytes: number;
+  disk_read_bps: number;
+  disk_write_bps: number;
+  tcp_established: number;
+  tcp_time_wait: number;
+  tcp_close_wait: number;
+  process_count: number;
+  fd_used: number;
+  fd_max: number;
+  fd_usage_percent: number;
+  procs_running: number;
+  procs_blocked: number;
+  context_switches: number;
+  processes_forked_total: number;
+  uptime_seconds: number;
+};
 
 type SystemMetricsSummary = {
-  points_count: number
-  cpu_avg_percent: number
-  cpu_peak_percent: number
-  mem_avg_percent: number
-  mem_peak_percent: number
-  net_rx_peak_bps: number
-  net_tx_peak_bps: number
-  disk_read_peak_bps: number
-  disk_write_peak_bps: number
-}
+  points_count: number;
+  cpu_avg_percent: number;
+  cpu_peak_percent: number;
+  mem_avg_percent: number;
+  mem_peak_percent: number;
+  net_rx_peak_bps: number;
+  net_tx_peak_bps: number;
+  disk_read_peak_bps: number;
+  disk_write_peak_bps: number;
+};
 
 type SystemMetricsRealtimePayload = {
-  sample_interval_seconds: number
-  max_window_seconds: number
-  supported: boolean
-  message?: string
-  latest?: SystemMetricsPoint
-  points: SystemMetricsPoint[]
-  interfaces: NetworkInterfaceStats[]
-  summary?: SystemMetricsSummary
-}
+  sample_interval_seconds: number;
+  max_window_seconds: number;
+  supported: boolean;
+  message?: string;
+  latest?: SystemMetricsPoint;
+  points: SystemMetricsPoint[];
+  interfaces: NetworkInterfaceStats[];
+  summary?: SystemMetricsSummary;
+};
 
 type QuerySystemMetricsResponse = {
-  points: SystemMetricsPoint[]
-  supported: boolean
-  message?: string
-  summary?: SystemMetricsSummary
-}
+  points: SystemMetricsPoint[];
+  supported: boolean;
+  message?: string;
+  summary?: SystemMetricsSummary;
+};
 
 type SystemMetricsEventPayload = {
-  point?: SystemMetricsPoint
-  interfaces?: NetworkInterfaceStats[]
-}
+  point?: SystemMetricsPoint;
+  interfaces?: NetworkInterfaceStats[];
+};
 
-type RateUnit = 'B' | 'KB' | 'MB'
+type RateUnit = "B" | "KB" | "MB";
 
-const props = defineProps<{ isActive: boolean; config?: any }>()
+const props = defineProps<{ isActive: boolean; config?: any }>();
 
-const { t, locale } = useI18n()
-const { dateShortcuts } = useDateShortcuts()
-const datePickerLocale = computed(() => (locale.value === 'en-US' ? enUs : zhCn))
-const isActive = computed(() => props.isActive)
+const { t, locale } = useI18n();
+const { dateShortcuts } = useDateShortcuts();
+const datePickerLocale = computed(() => (locale.value === "en-US" ? enUs : zhCn));
+const isActive = computed(() => props.isActive);
 
-const selectedWindow = ref<number>(86400)
-const sampleIntervalSeconds = ref<number>(5)
-const maxWindowSeconds = ref<number>(7 * 24 * 3600)
-const configSampleIntervalSecs = ref<number>(10)
-const configPersistenceEnabled = ref<boolean>(false)
-const rateUnit = ref<RateUnit>('KB')
-const globalPersistenceEnabled = computed(() => !!props.config?.metrics_storage?.enabled)
+const selectedWindow = ref<number>(86400);
+const sampleIntervalSeconds = ref<number>(5);
+const maxWindowSeconds = ref<number>(7 * 24 * 3600);
+const configSampleIntervalSecs = ref<number>(10);
+const configPersistenceEnabled = ref<boolean>(false);
+const rateUnit = ref<RateUnit>("KB");
+const globalPersistenceEnabled = computed(() => !!props.config?.metrics_storage?.enabled);
 
-const loadingRealtime = ref(false)
-const loadingHistorical = ref(false)
-const unsupported = ref(false)
-const unsupportedMessage = ref('')
-const errorMessage = ref('')
-const statsCollapsed = ref(false)
+const loadingRealtime = ref(false);
+const loadingHistorical = ref(false);
+const unsupported = ref(false);
+const unsupportedMessage = ref("");
+const errorMessage = ref("");
+const statsCollapsed = ref(false);
 
-const dateRange = ref<[number, number] | null>(null)
-const realtimePoints = ref<SystemMetricsPoint[]>([])
-const historicalPoints = ref<SystemMetricsPoint[] | null>(null)
-const latestPoint = ref<SystemMetricsPoint | null>(null)
-const latestInterfaces = ref<NetworkInterfaceStats[]>([])
-const realtimeSummary = ref<SystemMetricsSummary | null>(null)
-const historicalSummary = ref<SystemMetricsSummary | null>(null)
-const previewTitle = ref('')
-const previewChartKey = ref<'resource' | 'network' | 'disk' | 'load' | 'connection' | ''>('')
-const windowVisible = ref<boolean>(typeof document === 'undefined' ? true : !document.hidden)
-const previewSyncActive = ref(false)
-const PREVIEW_SYNC_KEEPALIVE_MS = 120000
+const dateRange = ref<[number, number] | null>(null);
+const realtimePoints = ref<SystemMetricsPoint[]>([]);
+const historicalPoints = ref<SystemMetricsPoint[] | null>(null);
+const latestPoint = ref<SystemMetricsPoint | null>(null);
+const latestInterfaces = ref<NetworkInterfaceStats[]>([]);
+const realtimeSummary = ref<SystemMetricsSummary | null>(null);
+const historicalSummary = ref<SystemMetricsSummary | null>(null);
+const previewTitle = ref("");
+const previewChartKey = ref<"resource" | "network" | "disk" | "load" | "connection" | "">("");
+const windowVisible = ref<boolean>(typeof document === "undefined" ? true : !document.hidden);
+const previewSyncActive = ref(false);
+const PREVIEW_SYNC_KEEPALIVE_MS = 120000;
 
-let metricsUnlisten: (() => void) | null = null
-let themeObserver: MutationObserver | null = null
-let previewSyncIdleTimer: number | null = null
+let metricsUnlisten: (() => void) | null = null;
+let themeObserver: MutationObserver | null = null;
+let previewSyncIdleTimer: number | null = null;
 
 const openChartPreview = (title: string, key: typeof previewChartKey.value) => {
-  previewTitle.value = title
-  previewChartKey.value = key
-  void openPreviewInNewWindow()
-}
+  previewTitle.value = title;
+  previewChartKey.value = key;
+  void openPreviewInNewWindow();
+};
 
 const getPreviewOptionByKey = (key: typeof previewChartKey.value): EChartsOption => {
   switch (key) {
-    case 'resource': return resourceOption.value
-    case 'network': return networkOption.value
-    case 'disk': return diskOption.value
-    case 'load': return loadOption.value
-    case 'connection': return connectionOption.value
-    default: return {}
+    case "resource":
+      return resourceOption.value;
+    case "network":
+      return networkOption.value;
+    case "disk":
+      return diskOption.value;
+    case "load":
+      return loadOption.value;
+    case "connection":
+      return connectionOption.value;
+    default:
+      return {};
   }
-}
+};
 
 const applyPreviewZoom = (option: EChartsOption): EChartsOption => {
-  const base = option || {}
-  const xAxis = (base as any).xAxis
-  if (xAxis === undefined) return base
+  const base = option || {};
+  const xAxis = (base as any).xAxis;
+  if (xAxis === undefined) return base;
 
   return {
     ...(base as any),
     dataZoom: [
       {
-        type: 'inside',
+        type: "inside",
         xAxisIndex: 0,
         start: 0,
         end: 100,
@@ -543,7 +644,7 @@ const applyPreviewZoom = (option: EChartsOption): EChartsOption => {
         moveOnMouseMove: true,
       },
       {
-        type: 'slider',
+        type: "slider",
         xAxisIndex: 0,
         height: 18,
         bottom: 6,
@@ -551,217 +652,223 @@ const applyPreviewZoom = (option: EChartsOption): EChartsOption => {
         end: 100,
       },
     ],
-  }
-}
+  };
+};
 
 const formatAxisDateTime = (tsSec: number) => {
-  const d = new Date(tsSec * 1000)
-  const yyyy = d.getFullYear()
-  const mm = String(d.getMonth() + 1).padStart(2, '0')
-  const dd = String(d.getDate()).padStart(2, '0')
-  const hh = String(d.getHours()).padStart(2, '0')
-  const mi = String(d.getMinutes()).padStart(2, '0')
-  const ss = String(d.getSeconds()).padStart(2, '0')
-  return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}`
-}
+  const d = new Date(tsSec * 1000);
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mi = String(d.getMinutes()).padStart(2, "0");
+  const ss = String(d.getSeconds()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}`;
+};
 
 const applyPreviewDateLabels = (option: EChartsOption, labels: string[]): EChartsOption => {
-  if (!labels.length) return option
-  const base = (option || {}) as any
-  const xAxis = base.xAxis
-  if (!xAxis) return base
+  if (!labels.length) return option;
+  const base = (option || {}) as any;
+  const xAxis = base.xAxis;
+  if (!xAxis) return base;
 
   const patchAxis = (axis: any) => {
-    if (!axis || typeof axis !== 'object') return axis
-    if (axis.type && axis.type !== 'category') return axis
+    if (!axis || typeof axis !== "object") return axis;
+    if (axis.type && axis.type !== "category") return axis;
     if (Array.isArray(axis.data) && axis.data.length > 0 && axis.data.length !== labels.length) {
-      return axis
+      return axis;
     }
     return {
       ...axis,
       data: labels,
-    }
-  }
+    };
+  };
 
   if (Array.isArray(xAxis)) {
     return {
       ...base,
       xAxis: xAxis.map((axis: any, idx: number) => (idx === 0 ? patchAxis(axis) : axis)),
-    }
+    };
   }
 
   return {
     ...base,
     xAxis: patchAxis(xAxis),
-  }
-}
+  };
+};
 
 const getPreviewOptionPayloadByKey = (key: typeof previewChartKey.value): any | null => {
-  const previewDateLabels = chartPoints.value.map((p) => formatAxisDateTime(p.timestamp))
+  const previewDateLabels = chartPoints.value.map((p) => formatAxisDateTime(p.timestamp));
   const option = applyPreviewDateLabels(
     applyPreviewZoom(getPreviewOptionByKey(key)),
     previewDateLabels,
-  ) as any
-  if (!option || typeof option !== 'object') {
-    return null
+  ) as any;
+  if (!option || typeof option !== "object") {
+    return null;
   }
   // 通过 JSON 深拷贝去掉函数，保证可序列化到 localStorage
   try {
-    return JSON.parse(JSON.stringify(option))
+    return JSON.parse(JSON.stringify(option));
   } catch {
-    return null
+    return null;
   }
-}
+};
 
 const openPreviewInNewWindow = async () => {
-  const chartKey = previewChartKey.value
-  const optionPayload = getPreviewOptionPayloadByKey(chartKey)
+  const chartKey = previewChartKey.value;
+  const optionPayload = getPreviewOptionPayloadByKey(chartKey);
   if (!optionPayload) {
-    ElMessage.warning(t('common.previewUnavailable'))
-    return
+    ElMessage.warning(t("common.previewUnavailable"));
+    return;
   }
-  const title = previewTitle.value
-  const payloadKey = `chart-preview:${Date.now()}:${Math.random().toString(36).slice(2)}`
+  const title = previewTitle.value;
+  const payloadKey = `chart-preview:${Date.now()}:${Math.random().toString(36).slice(2)}`;
   localStorage.setItem(
     payloadKey,
     JSON.stringify({
       title,
       option: optionPayload,
-      source: 'systemMetrics',
+      source: "systemMetrics",
       chartKey,
       createdAt: Date.now(),
     }),
-  )
-  const previewUrl = new URL('/index.html', window.location.origin)
-  previewUrl.searchParams.set('chart_preview', '1')
-  previewUrl.searchParams.set('key', payloadKey)
+  );
+  const previewUrl = new URL("/index.html", window.location.origin);
+  previewUrl.searchParams.set("chart_preview", "1");
+  previewUrl.searchParams.set("key", payloadKey);
 
   try {
     if ((window as any).__TAURI_INTERNALS__) {
-      await OpenChartPreviewWindow(title, payloadKey, `systemMetrics-${chartKey}`)
-      return
+      await OpenChartPreviewWindow(title, payloadKey, `systemMetrics-${chartKey}`);
+      return;
     }
   } catch (e) {
-    console.error('open preview window failed:', e)
-    ElMessage.error(t('common.previewUnavailable'))
-    return
+    console.error("open preview window failed:", e);
+    ElMessage.error(t("common.previewUnavailable"));
+    return;
   }
 
-  const popupName = `chart-preview-systemMetrics-${chartKey}`
-  const popup = window.open(previewUrl.toString(), popupName, 'width=1400,height=900')
+  const popupName = `chart-preview-systemMetrics-${chartKey}`;
+  const popup = window.open(previewUrl.toString(), popupName, "width=1400,height=900");
   if (!popup) {
-    ElMessage.warning(t('common.previewUnavailable'))
-    return
+    ElMessage.warning(t("common.previewUnavailable"));
+    return;
   }
-  popup.focus()
-}
+  popup.focus();
+};
 
-let previewSyncUnlisten: (() => void) | null = null
+let previewSyncUnlisten: (() => void) | null = null;
 
 const onPreviewSyncRequest = async (event: any) => {
-  const payload = event?.payload as any
-  if (!payload || payload.source !== 'systemMetrics') return
+  const payload = event?.payload as any;
+  if (!payload || payload.source !== "systemMetrics") return;
 
-  previewSyncActive.value = true
+  previewSyncActive.value = true;
   if (previewSyncIdleTimer) {
-    clearTimeout(previewSyncIdleTimer)
+    clearTimeout(previewSyncIdleTimer);
   }
   previewSyncIdleTimer = window.setTimeout(() => {
-    previewSyncActive.value = false
-    previewSyncIdleTimer = null
-  }, PREVIEW_SYNC_KEEPALIVE_MS)
+    previewSyncActive.value = false;
+    previewSyncIdleTimer = null;
+  }, PREVIEW_SYNC_KEEPALIVE_MS);
 
-  const requestId = String(payload.requestId || '').trim()
-  const chartKey = String(payload.chartKey || '').trim() as typeof previewChartKey.value
-  const responseEvent = 'chart-preview-sync-response'
-  const target = String(payload.requesterLabel || '').trim()
-  if (!requestId) return
+  const requestId = String(payload.requestId || "").trim();
+  const chartKey = String(payload.chartKey || "").trim() as typeof previewChartKey.value;
+  const responseEvent = "chart-preview-sync-response";
+  const target = String(payload.requesterLabel || "").trim();
+  if (!requestId) return;
 
-  const option = getPreviewOptionPayloadByKey(chartKey)
+  const option = getPreviewOptionPayloadByKey(chartKey);
   if (!option) {
     if (target) {
-      await emitTo(target, responseEvent, { requestId, ok: false, error: 'preview option unavailable' })
+      await emitTo(target, responseEvent, {
+        requestId,
+        ok: false,
+        error: "preview option unavailable",
+      });
     }
-    return
+    return;
   }
   if (target) {
     await emitTo(target, responseEvent, {
       requestId,
       ok: true,
       option,
-      title: String(payload.title || previewTitle.value || ''),
+      title: String(payload.title || previewTitle.value || ""),
       updatedAt: Date.now(),
-    })
+    });
   }
-}
+};
 
 const chartColors = ref({
-  textMuted: '#94a3b8',
-  border: 'rgba(148, 163, 184, 0.25)',
-  primary: '#4f9cf9',
-  success: '#22c55e',
-  warning: '#f59e0b',
-  danger: '#ef4444',
-  info: '#0ea5e9',
-})
+  textMuted: "#94a3b8",
+  border: "rgba(148, 163, 184, 0.25)",
+  primary: "#4f9cf9",
+  success: "#22c55e",
+  warning: "#f59e0b",
+  danger: "#ef4444",
+  info: "#0ea5e9",
+});
 
 const updateChartColors = () => {
-  const style = getComputedStyle(document.documentElement)
+  const style = getComputedStyle(document.documentElement);
   chartColors.value = {
-    textMuted: style.getPropertyValue('--text-muted').trim() || '#94a3b8',
-    border: style.getPropertyValue('--border').trim() || 'rgba(148, 163, 184, 0.25)',
-    primary: style.getPropertyValue('--primary').trim() || '#4f9cf9',
-    success: style.getPropertyValue('--success').trim() || '#22c55e',
-    warning: style.getPropertyValue('--warning').trim() || '#f59e0b',
-    danger: style.getPropertyValue('--danger').trim() || '#ef4444',
-    info: '#0ea5e9',
-  }
-}
+    textMuted: style.getPropertyValue("--text-muted").trim() || "#94a3b8",
+    border: style.getPropertyValue("--border").trim() || "rgba(148, 163, 184, 0.25)",
+    primary: style.getPropertyValue("--primary").trim() || "#4f9cf9",
+    success: style.getPropertyValue("--success").trim() || "#22c55e",
+    warning: style.getPropertyValue("--warning").trim() || "#f59e0b",
+    danger: style.getPropertyValue("--danger").trim() || "#ef4444",
+    info: "#0ea5e9",
+  };
+};
 
 const formatNumber = (v: number, digits = 2) => {
-  if (!Number.isFinite(v)) return '0'
-  return Number(v).toFixed(digits)
-}
+  if (!Number.isFinite(v)) return "0";
+  return Number(v).toFixed(digits);
+};
 
-const formatPercent = (v: number) => `${formatNumber(v, 2)}%`
+const formatPercent = (v: number) => `${formatNumber(v, 2)}%`;
 
 const formatBytes = (bytes: number) => {
-  if (!Number.isFinite(bytes) || bytes < 0) return '0 B'
-  const units = ['B', 'KB', 'MB', 'GB', 'TB']
-  let value = bytes
-  let unit = 0
+  if (!Number.isFinite(bytes) || bytes < 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let value = bytes;
+  let unit = 0;
   while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024
-    unit += 1
+    value /= 1024;
+    unit += 1;
   }
-  return `${value.toFixed(unit === 0 ? 0 : 2)} ${units[unit]}`
-}
+  return `${value.toFixed(unit === 0 ? 0 : 2)} ${units[unit]}`;
+};
 
-const formatRate = (bps: number) => `${formatBytes(bps)}/s`
+const formatRate = (bps: number) => `${formatBytes(bps)}/s`;
 
-const buildSummaryFromPoints = (points: SystemMetricsPoint[] | null | undefined): SystemMetricsSummary | null => {
-  if (!Array.isArray(points) || points.length === 0) return null
-  let cpuSum = 0
-  let memSum = 0
-  let cpuPeak = 0
-  let memPeak = 0
-  let netRxPeak = 0
-  let netTxPeak = 0
-  let diskReadPeak = 0
-  let diskWritePeak = 0
+const buildSummaryFromPoints = (
+  points: SystemMetricsPoint[] | null | undefined,
+): SystemMetricsSummary | null => {
+  if (!Array.isArray(points) || points.length === 0) return null;
+  let cpuSum = 0;
+  let memSum = 0;
+  let cpuPeak = 0;
+  let memPeak = 0;
+  let netRxPeak = 0;
+  let netTxPeak = 0;
+  let diskReadPeak = 0;
+  let diskWritePeak = 0;
 
   for (const p of points) {
-    cpuSum += p.cpu_usage_percent || 0
-    memSum += p.mem_used_percent || 0
-    cpuPeak = Math.max(cpuPeak, p.cpu_usage_percent || 0)
-    memPeak = Math.max(memPeak, p.mem_used_percent || 0)
-    netRxPeak = Math.max(netRxPeak, p.net_rx_bps || 0)
-    netTxPeak = Math.max(netTxPeak, p.net_tx_bps || 0)
-    diskReadPeak = Math.max(diskReadPeak, p.disk_read_bps || 0)
-    diskWritePeak = Math.max(diskWritePeak, p.disk_write_bps || 0)
+    cpuSum += p.cpu_usage_percent || 0;
+    memSum += p.mem_used_percent || 0;
+    cpuPeak = Math.max(cpuPeak, p.cpu_usage_percent || 0);
+    memPeak = Math.max(memPeak, p.mem_used_percent || 0);
+    netRxPeak = Math.max(netRxPeak, p.net_rx_bps || 0);
+    netTxPeak = Math.max(netTxPeak, p.net_tx_bps || 0);
+    diskReadPeak = Math.max(diskReadPeak, p.disk_read_bps || 0);
+    diskWritePeak = Math.max(diskWritePeak, p.disk_write_bps || 0);
   }
 
-  const count = points.length
+  const count = points.length;
   return {
     points_count: count,
     cpu_avg_percent: cpuSum / count,
@@ -772,122 +879,125 @@ const buildSummaryFromPoints = (points: SystemMetricsPoint[] | null | undefined)
     net_tx_peak_bps: netTxPeak,
     disk_read_peak_bps: diskReadPeak,
     disk_write_peak_bps: diskWritePeak,
-  }
-}
+  };
+};
 
-const rateUnitOptions = computed(() => ([
-  { value: 'B' as RateUnit, label: t('systemMetrics.unitBps') },
-  { value: 'KB' as RateUnit, label: t('systemMetrics.unitKBps') },
-  { value: 'MB' as RateUnit, label: t('systemMetrics.unitMBps') },
-]))
+const rateUnitOptions = computed(() => [
+  { value: "B" as RateUnit, label: t("systemMetrics.unitBps") },
+  { value: "KB" as RateUnit, label: t("systemMetrics.unitKBps") },
+  { value: "MB" as RateUnit, label: t("systemMetrics.unitMBps") },
+]);
 
 const rateUnitLabel = computed(() => {
-  if (rateUnit.value === 'MB') return t('systemMetrics.unitMBps')
-  if (rateUnit.value === 'KB') return t('systemMetrics.unitKBps')
-  return t('systemMetrics.unitBps')
-})
+  if (rateUnit.value === "MB") return t("systemMetrics.unitMBps");
+  if (rateUnit.value === "KB") return t("systemMetrics.unitKBps");
+  return t("systemMetrics.unitBps");
+});
 
 const convertRateByUnit = (bytesPerSec: number) => {
-  if (rateUnit.value === 'MB') {
-    return Number((bytesPerSec / (1024 * 1024)).toFixed(2))
+  if (rateUnit.value === "MB") {
+    return Number((bytesPerSec / (1024 * 1024)).toFixed(2));
   }
-  if (rateUnit.value === 'KB') {
-    return Number((bytesPerSec / 1024).toFixed(2))
+  if (rateUnit.value === "KB") {
+    return Number((bytesPerSec / 1024).toFixed(2));
   }
-  return Number(bytesPerSec.toFixed(2))
-}
+  return Number(bytesPerSec.toFixed(2));
+};
 
 const formatDateTime = (tsSec: number | null) => {
-  if (!tsSec) return '-'
-  const localeCode = locale.value === 'zh-CN' ? 'zh-CN' : 'en-US'
-  return new Date(tsSec * 1000).toLocaleString(localeCode, { hour12: false })
-}
+  if (!tsSec) return "-";
+  const localeCode = locale.value === "zh-CN" ? "zh-CN" : "en-US";
+  return new Date(tsSec * 1000).toLocaleString(localeCode, { hour12: false });
+};
 
 const formatUptime = (uptimeSec: number) => {
-  if (!Number.isFinite(uptimeSec) || uptimeSec <= 0) return '-'
-  const total = Math.floor(uptimeSec)
-  const d = Math.floor(total / 86400)
-  const h = Math.floor((total % 86400) / 3600)
-  const m = Math.floor((total % 3600) / 60)
-  const s = total % 60
-  if (d > 0) return `${d}d ${h}h ${m}m ${s}s`
-  if (h > 0) return `${h}h ${m}m ${s}s`
-  return `${m}m ${s}s`
-}
+  if (!Number.isFinite(uptimeSec) || uptimeSec <= 0) return "-";
+  const total = Math.floor(uptimeSec);
+  const d = Math.floor(total / 86400);
+  const h = Math.floor((total % 86400) / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  if (d > 0) return `${d}d ${h}h ${m}m ${s}s`;
+  if (h > 0) return `${h}h ${m}m ${s}s`;
+  return `${m}m ${s}s`;
+};
 
 const formatAxisClock = (tsSec: number) => {
-  const d = new Date(tsSec * 1000)
-  const hh = String(d.getHours()).padStart(2, '0')
-  const mm = String(d.getMinutes()).padStart(2, '0')
-  const ss = String(d.getSeconds()).padStart(2, '0')
-  return `${hh}:${mm}:${ss}`
-}
+  const d = new Date(tsSec * 1000);
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  const ss = String(d.getSeconds()).padStart(2, "0");
+  return `${hh}:${mm}:${ss}`;
+};
 
 const downsample = (arr: SystemMetricsPoint[], maxPoints = 1200): SystemMetricsPoint[] => {
-  if (arr.length <= maxPoints) return arr
-  const step = Math.ceil(arr.length / maxPoints)
-  const out: SystemMetricsPoint[] = []
+  if (arr.length <= maxPoints) return arr;
+  const step = Math.ceil(arr.length / maxPoints);
+  const out: SystemMetricsPoint[] = [];
   for (let i = 0; i < arr.length; i += step) {
-    out.push(arr[i])
+    out.push(arr[i]);
   }
-  const last = arr[arr.length - 1]
+  const last = arr[arr.length - 1];
   if (!out.length || out[out.length - 1].timestamp !== last.timestamp) {
-    out.push(last)
+    out.push(last);
   }
-  return out
-}
+  return out;
+};
 
-const isHistoricalMode = computed(() => historicalPoints.value !== null)
+const isHistoricalMode = computed(() => historicalPoints.value !== null);
 
 const activePoints = computed<SystemMetricsPoint[]>(() => {
   if (historicalPoints.value) {
-    return downsample(historicalPoints.value)
+    return downsample(historicalPoints.value);
   }
 
-  const now = Math.floor(Date.now() / 1000)
-  const minTs = now - selectedWindow.value
-  const filtered = realtimePoints.value.filter((p) => p.timestamp >= minTs)
-  return downsample(filtered)
-})
+  const now = Math.floor(Date.now() / 1000);
+  const minTs = now - selectedWindow.value;
+  const filtered = realtimePoints.value.filter((p) => p.timestamp >= minTs);
+  return downsample(filtered);
+});
 
 const adaptiveChartMaxPoints = (spanSec: number) => {
-  if (spanSec <= 60 * 60) return 420
-  if (spanSec <= 6 * 60 * 60) return 360
-  if (spanSec <= 24 * 60 * 60) return 300
-  if (spanSec <= 3 * 24 * 60 * 60) return 240
-  if (spanSec <= 7 * 24 * 60 * 60) return 200
-  return 160
-}
+  if (spanSec <= 60 * 60) return 420;
+  if (spanSec <= 6 * 60 * 60) return 360;
+  if (spanSec <= 24 * 60 * 60) return 300;
+  if (spanSec <= 3 * 24 * 60 * 60) return 240;
+  if (spanSec <= 7 * 24 * 60 * 60) return 200;
+  return 160;
+};
 
-const aggregateChartPoints = (points: SystemMetricsPoint[], maxPoints: number): SystemMetricsPoint[] => {
+const aggregateChartPoints = (
+  points: SystemMetricsPoint[],
+  maxPoints: number,
+): SystemMetricsPoint[] => {
   if (points.length <= maxPoints || points.length <= 1) {
-    return points
+    return points;
   }
 
-  const firstTs = points[0].timestamp
-  const lastTs = points[points.length - 1].timestamp
-  const spanSec = Math.max(1, lastTs - firstTs)
-  const bucketSec = Math.max(1, Math.ceil(spanSec / maxPoints))
+  const firstTs = points[0].timestamp;
+  const lastTs = points[points.length - 1].timestamp;
+  const spanSec = Math.max(1, lastTs - firstTs);
+  const bucketSec = Math.max(1, Math.ceil(spanSec / maxPoints));
 
   type BucketAgg = {
-    count: number
-    sumCpu: number
-    sumMem: number
-    sumSwap: number
-    sumNetRxBps: number
-    sumNetTxBps: number
-    sumDiskReadBps: number
-    sumDiskWriteBps: number
-    sumTcpEstablished: number
-    sumTcpTimeWait: number
-    sumProcessCount: number
-    last: SystemMetricsPoint
-  }
+    count: number;
+    sumCpu: number;
+    sumMem: number;
+    sumSwap: number;
+    sumNetRxBps: number;
+    sumNetTxBps: number;
+    sumDiskReadBps: number;
+    sumDiskWriteBps: number;
+    sumTcpEstablished: number;
+    sumTcpTimeWait: number;
+    sumProcessCount: number;
+    last: SystemMetricsPoint;
+  };
 
-  const buckets = new Map<number, BucketAgg>()
+  const buckets = new Map<number, BucketAgg>();
   for (const p of points) {
-    const key = Math.floor(p.timestamp / bucketSec) * bucketSec
-    const existing = buckets.get(key)
+    const key = Math.floor(p.timestamp / bucketSec) * bucketSec;
+    const existing = buckets.get(key);
     if (!existing) {
       buckets.set(key, {
         count: 1,
@@ -902,77 +1012,77 @@ const aggregateChartPoints = (points: SystemMetricsPoint[], maxPoints: number): 
         sumTcpTimeWait: p.tcp_time_wait,
         sumProcessCount: p.process_count,
         last: p,
-      })
-      continue
+      });
+      continue;
     }
-    existing.count += 1
-    existing.sumCpu += p.cpu_usage_percent
-    existing.sumMem += p.mem_used_percent
-    existing.sumSwap += p.swap_used_percent
-    existing.sumNetRxBps += p.net_rx_bps
-    existing.sumNetTxBps += p.net_tx_bps
-    existing.sumDiskReadBps += p.disk_read_bps
-    existing.sumDiskWriteBps += p.disk_write_bps
-    existing.sumTcpEstablished += p.tcp_established
-    existing.sumTcpTimeWait += p.tcp_time_wait
-    existing.sumProcessCount += p.process_count
-    existing.last = p
+    existing.count += 1;
+    existing.sumCpu += p.cpu_usage_percent;
+    existing.sumMem += p.mem_used_percent;
+    existing.sumSwap += p.swap_used_percent;
+    existing.sumNetRxBps += p.net_rx_bps;
+    existing.sumNetTxBps += p.net_tx_bps;
+    existing.sumDiskReadBps += p.disk_read_bps;
+    existing.sumDiskWriteBps += p.disk_write_bps;
+    existing.sumTcpEstablished += p.tcp_established;
+    existing.sumTcpTimeWait += p.tcp_time_wait;
+    existing.sumProcessCount += p.process_count;
+    existing.last = p;
   }
 
   const out = Array.from(buckets.entries())
     .sort((a, b) => a[0] - b[0])
     .map(([bucketTs, agg]) => {
-      const base = { ...agg.last }
-      const c = agg.count || 1
-      base.timestamp = bucketTs
-      base.cpu_usage_percent = agg.sumCpu / c
-      base.mem_used_percent = agg.sumMem / c
-      base.swap_used_percent = agg.sumSwap / c
-      base.net_rx_bps = agg.sumNetRxBps / c
-      base.net_tx_bps = agg.sumNetTxBps / c
-      base.disk_read_bps = agg.sumDiskReadBps / c
-      base.disk_write_bps = agg.sumDiskWriteBps / c
-      base.tcp_established = Math.round(agg.sumTcpEstablished / c)
-      base.tcp_time_wait = Math.round(agg.sumTcpTimeWait / c)
-      base.process_count = Math.round(agg.sumProcessCount / c)
-      return base
-    })
+      const base = { ...agg.last };
+      const c = agg.count || 1;
+      base.timestamp = bucketTs;
+      base.cpu_usage_percent = agg.sumCpu / c;
+      base.mem_used_percent = agg.sumMem / c;
+      base.swap_used_percent = agg.sumSwap / c;
+      base.net_rx_bps = agg.sumNetRxBps / c;
+      base.net_tx_bps = agg.sumNetTxBps / c;
+      base.disk_read_bps = agg.sumDiskReadBps / c;
+      base.disk_write_bps = agg.sumDiskWriteBps / c;
+      base.tcp_established = Math.round(agg.sumTcpEstablished / c);
+      base.tcp_time_wait = Math.round(agg.sumTcpTimeWait / c);
+      base.process_count = Math.round(agg.sumProcessCount / c);
+      return base;
+    });
 
-  return out
-}
+  return out;
+};
 
 const chartPoints = computed<SystemMetricsPoint[]>(() => {
   if (activePoints.value.length <= 1) {
-    return activePoints.value
+    return activePoints.value;
   }
   const spanSec = Math.max(
     1,
     activePoints.value[activePoints.value.length - 1].timestamp - activePoints.value[0].timestamp,
-  )
-  return aggregateChartPoints(activePoints.value, adaptiveChartMaxPoints(spanSec))
-})
+  );
+  return aggregateChartPoints(activePoints.value, adaptiveChartMaxPoints(spanSec));
+});
 
 const currentPoint = computed<SystemMetricsPoint | null>(() => {
-  const arr = activePoints.value
+  const arr = activePoints.value;
   if (arr.length > 0) {
-    return arr[arr.length - 1]
+    return arr[arr.length - 1];
   }
-  return latestPoint.value
-})
+  return latestPoint.value;
+});
 
-const statAvgPeakLabel = computed(() => t('systemMetrics.avgPeak'))
-const statPeakLabel = computed(() => t('systemMetrics.peak'))
-const statSampleCountLabel = computed(() => t('systemMetrics.windowSamples'))
+const statAvgPeakLabel = computed(() => t("systemMetrics.avgPeak"));
+const statPeakLabel = computed(() => t("systemMetrics.peak"));
+const statSampleCountLabel = computed(() => t("systemMetrics.windowSamples"));
 
 const activeSummary = computed<SystemMetricsSummary | null>(() => {
   if (historicalPoints.value) {
-    return historicalSummary.value || buildSummaryFromPoints(historicalPoints.value)
+    return historicalSummary.value || buildSummaryFromPoints(historicalPoints.value);
   }
-  return buildSummaryFromPoints(activePoints.value) || realtimeSummary.value
-})
+  return buildSummaryFromPoints(activePoints.value) || realtimeSummary.value;
+});
 
 const chartDerived = computed(() => {
-  const points = chartPoints.value
+  const points = chartPoints.value;
   return {
     xAxis: points.map((p) => formatAxisClock(p.timestamp)),
     cpu: points.map((p) => Number(p.cpu_usage_percent.toFixed(2))),
@@ -988,20 +1098,22 @@ const chartDerived = computed(() => {
     tcpEstablished: points.map((p) => p.tcp_established || 0),
     tcpTimeWait: points.map((p) => p.tcp_time_wait || 0),
     processCount: points.map((p) => p.process_count || 0),
-  }
-})
+  };
+});
 
-const networkTrendTitle = computed(() => t('systemMetrics.networkTrend', { unit: rateUnitLabel.value }))
-const diskTrendTitle = computed(() => t('systemMetrics.diskTrend', { unit: rateUnitLabel.value }))
+const networkTrendTitle = computed(() =>
+  t("systemMetrics.networkTrend", { unit: rateUnitLabel.value }),
+);
+const diskTrendTitle = computed(() => t("systemMetrics.diskTrend", { unit: rateUnitLabel.value }));
 
 const baseChart = computed(() => ({
-  backgroundColor: 'transparent',
+  backgroundColor: "transparent",
   animation: false,
   grid: { left: 50, right: 12, top: 56, bottom: 42 },
-  tooltip: { trigger: 'axis' as const, confine: true },
+  tooltip: { trigger: "axis" as const, confine: true },
   legend: {
     top: 0,
-    left: 'center',
+    left: "center",
     itemWidth: 12,
     itemHeight: 8,
     itemGap: 12,
@@ -1011,36 +1123,36 @@ const baseChart = computed(() => ({
     },
   },
   xAxis: {
-    type: 'category' as const,
+    type: "category" as const,
     boundaryGap: false,
     data: chartDerived.value.xAxis,
     axisLabel: {
       color: chartColors.value.textMuted,
       hideOverlap: true,
-      interval: 'auto' as const,
+      interval: "auto" as const,
       margin: 10,
       fontSize: 11,
     },
     axisLine: { lineStyle: { color: chartColors.value.border } },
   },
   yAxis: {
-    type: 'value' as const,
+    type: "value" as const,
     axisLabel: { color: chartColors.value.textMuted },
     axisLine: { lineStyle: { color: chartColors.value.border } },
-    splitLine: { lineStyle: { color: chartColors.value.border, type: 'dashed' as const } },
+    splitLine: { lineStyle: { color: chartColors.value.border, type: "dashed" as const } },
   },
-}))
+}));
 
 const resourceOption = computed<EChartsOption>(() => ({
   ...baseChart.value,
   legend: {
     ...baseChart.value.legend,
-    data: [t('systemMetrics.cpuUsage'), t('systemMetrics.memUsage'), t('systemMetrics.swapUsage')],
+    data: [t("systemMetrics.cpuUsage"), t("systemMetrics.memUsage"), t("systemMetrics.swapUsage")],
   },
   series: [
     {
-      name: t('systemMetrics.cpuUsage'),
-      type: 'line',
+      name: t("systemMetrics.cpuUsage"),
+      type: "line",
       smooth: true,
       showSymbol: false,
       data: chartDerived.value.cpu,
@@ -1048,8 +1160,8 @@ const resourceOption = computed<EChartsOption>(() => ({
       itemStyle: { color: chartColors.value.primary },
     },
     {
-      name: t('systemMetrics.memUsage'),
-      type: 'line',
+      name: t("systemMetrics.memUsage"),
+      type: "line",
       smooth: true,
       showSymbol: false,
       data: chartDerived.value.mem,
@@ -1057,8 +1169,8 @@ const resourceOption = computed<EChartsOption>(() => ({
       itemStyle: { color: chartColors.value.success },
     },
     {
-      name: t('systemMetrics.swapUsage'),
-      type: 'line',
+      name: t("systemMetrics.swapUsage"),
+      type: "line",
       smooth: true,
       showSymbol: false,
       data: chartDerived.value.swap,
@@ -1066,17 +1178,18 @@ const resourceOption = computed<EChartsOption>(() => ({
       itemStyle: { color: chartColors.value.warning },
     },
   ],
-}))
+}));
 
 const networkOption = computed<EChartsOption>(() => ({
   ...baseChart.value,
   tooltip: {
     ...(baseChart.value.tooltip as any),
-    valueFormatter: (value: number) => `${formatNumber(Number(value) || 0, 2)} ${rateUnitLabel.value}`,
+    valueFormatter: (value: number) =>
+      `${formatNumber(Number(value) || 0, 2)} ${rateUnitLabel.value}`,
   },
   legend: {
     ...baseChart.value.legend,
-    data: [t('systemMetrics.inbound'), t('systemMetrics.outbound')],
+    data: [t("systemMetrics.inbound"), t("systemMetrics.outbound")],
   },
   yAxis: {
     ...(baseChart.value.yAxis as any),
@@ -1087,8 +1200,8 @@ const networkOption = computed<EChartsOption>(() => ({
   },
   series: [
     {
-      name: t('systemMetrics.inbound'),
-      type: 'line',
+      name: t("systemMetrics.inbound"),
+      type: "line",
       smooth: true,
       showSymbol: false,
       data: chartDerived.value.netRx,
@@ -1097,8 +1210,8 @@ const networkOption = computed<EChartsOption>(() => ({
       areaStyle: { opacity: 0.08, color: chartColors.value.success },
     },
     {
-      name: t('systemMetrics.outbound'),
-      type: 'line',
+      name: t("systemMetrics.outbound"),
+      type: "line",
       smooth: true,
       showSymbol: false,
       data: chartDerived.value.netTx,
@@ -1107,17 +1220,18 @@ const networkOption = computed<EChartsOption>(() => ({
       areaStyle: { opacity: 0.08, color: chartColors.value.primary },
     },
   ],
-}))
+}));
 
 const diskOption = computed<EChartsOption>(() => ({
   ...baseChart.value,
   tooltip: {
     ...(baseChart.value.tooltip as any),
-    valueFormatter: (value: number) => `${formatNumber(Number(value) || 0, 2)} ${rateUnitLabel.value}`,
+    valueFormatter: (value: number) =>
+      `${formatNumber(Number(value) || 0, 2)} ${rateUnitLabel.value}`,
   },
   legend: {
     ...baseChart.value.legend,
-    data: [t('systemMetrics.diskReadRate'), t('systemMetrics.diskWriteRate')],
+    data: [t("systemMetrics.diskReadRate"), t("systemMetrics.diskWriteRate")],
   },
   yAxis: {
     ...(baseChart.value.yAxis as any),
@@ -1128,8 +1242,8 @@ const diskOption = computed<EChartsOption>(() => ({
   },
   series: [
     {
-      name: t('systemMetrics.diskReadRate'),
-      type: 'line',
+      name: t("systemMetrics.diskReadRate"),
+      type: "line",
       smooth: true,
       showSymbol: false,
       data: chartDerived.value.diskRead,
@@ -1137,8 +1251,8 @@ const diskOption = computed<EChartsOption>(() => ({
       itemStyle: { color: chartColors.value.info },
     },
     {
-      name: t('systemMetrics.diskWriteRate'),
-      type: 'line',
+      name: t("systemMetrics.diskWriteRate"),
+      type: "line",
       smooth: true,
       showSymbol: false,
       data: chartDerived.value.diskWrite,
@@ -1146,18 +1260,18 @@ const diskOption = computed<EChartsOption>(() => ({
       itemStyle: { color: chartColors.value.danger },
     },
   ],
-}))
+}));
 
 const loadOption = computed<EChartsOption>(() => ({
   ...baseChart.value,
   legend: {
     ...baseChart.value.legend,
-    data: [t('systemMetrics.load1'), t('systemMetrics.load5'), t('systemMetrics.load15')],
+    data: [t("systemMetrics.load1"), t("systemMetrics.load5"), t("systemMetrics.load15")],
   },
   series: [
     {
-      name: t('systemMetrics.load1'),
-      type: 'line',
+      name: t("systemMetrics.load1"),
+      type: "line",
       smooth: true,
       showSymbol: false,
       data: chartDerived.value.load1,
@@ -1165,8 +1279,8 @@ const loadOption = computed<EChartsOption>(() => ({
       itemStyle: { color: chartColors.value.primary },
     },
     {
-      name: t('systemMetrics.load5'),
-      type: 'line',
+      name: t("systemMetrics.load5"),
+      type: "line",
       smooth: true,
       showSymbol: false,
       data: chartDerived.value.load5,
@@ -1174,8 +1288,8 @@ const loadOption = computed<EChartsOption>(() => ({
       itemStyle: { color: chartColors.value.success },
     },
     {
-      name: t('systemMetrics.load15'),
-      type: 'line',
+      name: t("systemMetrics.load15"),
+      type: "line",
       smooth: true,
       showSymbol: false,
       data: chartDerived.value.load15,
@@ -1183,18 +1297,22 @@ const loadOption = computed<EChartsOption>(() => ({
       itemStyle: { color: chartColors.value.warning },
     },
   ],
-}))
+}));
 
 const connectionOption = computed<EChartsOption>(() => ({
   ...baseChart.value,
   legend: {
     ...baseChart.value.legend,
-    data: [t('systemMetrics.tcpEstablished'), t('systemMetrics.tcpTimeWait'), t('systemMetrics.processCount')],
+    data: [
+      t("systemMetrics.tcpEstablished"),
+      t("systemMetrics.tcpTimeWait"),
+      t("systemMetrics.processCount"),
+    ],
   },
   series: [
     {
-      name: t('systemMetrics.tcpEstablished'),
-      type: 'line',
+      name: t("systemMetrics.tcpEstablished"),
+      type: "line",
       smooth: true,
       showSymbol: false,
       data: chartDerived.value.tcpEstablished,
@@ -1202,8 +1320,8 @@ const connectionOption = computed<EChartsOption>(() => ({
       itemStyle: { color: chartColors.value.success },
     },
     {
-      name: t('systemMetrics.tcpTimeWait'),
-      type: 'line',
+      name: t("systemMetrics.tcpTimeWait"),
+      type: "line",
       smooth: true,
       showSymbol: false,
       data: chartDerived.value.tcpTimeWait,
@@ -1211,8 +1329,8 @@ const connectionOption = computed<EChartsOption>(() => ({
       itemStyle: { color: chartColors.value.warning },
     },
     {
-      name: t('systemMetrics.processCount'),
-      type: 'line',
+      name: t("systemMetrics.processCount"),
+      type: "line",
       smooth: true,
       showSymbol: false,
       data: chartDerived.value.processCount,
@@ -1220,251 +1338,254 @@ const connectionOption = computed<EChartsOption>(() => ({
       itemStyle: { color: chartColors.value.primary },
     },
   ],
-}))
+}));
 
 const appendRealtimePoint = (point: SystemMetricsPoint) => {
-  realtimePoints.value.push(point)
-  const keepSince = point.timestamp - maxWindowSeconds.value
-  const firstValidIdx = realtimePoints.value.findIndex((p) => p.timestamp >= keepSince)
+  realtimePoints.value.push(point);
+  const keepSince = point.timestamp - maxWindowSeconds.value;
+  const firstValidIdx = realtimePoints.value.findIndex((p) => p.timestamp >= keepSince);
   if (firstValidIdx > 0) {
-    realtimePoints.value.splice(0, firstValidIdx)
+    realtimePoints.value.splice(0, firstValidIdx);
   }
-  latestPoint.value = point
-}
+  latestPoint.value = point;
+};
 
 const handleRealtimePayload = (res: SystemMetricsRealtimePayload) => {
-  sampleIntervalSeconds.value = Number(res.sample_interval_seconds) || 5
-  maxWindowSeconds.value = Number(res.max_window_seconds) || 7 * 24 * 3600
+  sampleIntervalSeconds.value = Number(res.sample_interval_seconds) || 5;
+  maxWindowSeconds.value = Number(res.max_window_seconds) || 7 * 24 * 3600;
 
   if (!res.supported) {
-    unsupported.value = true
-    unsupportedMessage.value = res.message || 'not supported'
-    return
+    unsupported.value = true;
+    unsupportedMessage.value = res.message || "not supported";
+    return;
   }
 
-  unsupported.value = false
-  unsupportedMessage.value = ''
-  errorMessage.value = ''
+  unsupported.value = false;
+  unsupportedMessage.value = "";
+  errorMessage.value = "";
 
-  realtimePoints.value = Array.isArray(res.points) ? res.points : []
-  latestPoint.value = res.latest || (realtimePoints.value.length ? realtimePoints.value[realtimePoints.value.length - 1] : null)
-  latestInterfaces.value = Array.isArray(res.interfaces) ? res.interfaces : []
-  realtimeSummary.value = res.summary || null
-}
+  realtimePoints.value = Array.isArray(res.points) ? res.points : [];
+  latestPoint.value =
+    res.latest ||
+    (realtimePoints.value.length ? realtimePoints.value[realtimePoints.value.length - 1] : null);
+  latestInterfaces.value = Array.isArray(res.interfaces) ? res.interfaces : [];
+  realtimeSummary.value = res.summary || null;
+};
 
 const loadRealtimeSnapshot = async () => {
-  loadingRealtime.value = true
+  loadingRealtime.value = true;
   try {
-    const res = await GetSystemMetrics(selectedWindow.value) as SystemMetricsRealtimePayload
-    handleRealtimePayload(res)
+    const res = (await GetSystemMetrics(selectedWindow.value)) as SystemMetricsRealtimePayload;
+    handleRealtimePayload(res);
   } catch (e: any) {
-    errorMessage.value = e?.message || String(e)
+    errorMessage.value = e?.message || String(e);
   } finally {
-    loadingRealtime.value = false
+    loadingRealtime.value = false;
   }
-}
+};
 
 const getSuggestedGranularity = (spanSec: number) => {
-  if (spanSec <= 6 * 3600) return sampleIntervalSeconds.value
-  if (spanSec <= 3 * 24 * 3600) return 60
-  if (spanSec <= 14 * 24 * 3600) return 300
-  return 900
-}
+  if (spanSec <= 6 * 3600) return sampleIntervalSeconds.value;
+  if (spanSec <= 3 * 24 * 3600) return 60;
+  if (spanSec <= 14 * 24 * 3600) return 300;
+  return 900;
+};
 
 const loadHistoricalData = async () => {
   if (!dateRange.value || dateRange.value.length !== 2) {
-    ElMessage.warning(t('systemMetrics.selectDateRange'))
-    return
+    ElMessage.warning(t("systemMetrics.selectDateRange"));
+    return;
   }
 
-  const [startMs, endMs] = dateRange.value
+  const [startMs, endMs] = dateRange.value;
   if (startMs >= endMs) {
-    ElMessage.warning(t('systemMetrics.startTimeMustBeLess'))
-    return
+    ElMessage.warning(t("systemMetrics.startTimeMustBeLess"));
+    return;
   }
 
-  const startSec = Math.floor(startMs / 1000)
-  const endSec = Math.floor(endMs / 1000)
-  const spanSec = endSec - startSec
+  const startSec = Math.floor(startMs / 1000);
+  const endSec = Math.floor(endMs / 1000);
+  const spanSec = endSec - startSec;
 
-  loadingHistorical.value = true
+  loadingHistorical.value = true;
   try {
-    const res = await QueryHistoricalSystemMetrics({
+    const res = (await QueryHistoricalSystemMetrics({
       start_time: startSec,
       end_time: endSec,
       granularity_secs: getSuggestedGranularity(spanSec),
-    }) as QuerySystemMetricsResponse
+    })) as QuerySystemMetricsResponse;
 
     if (!res.supported) {
-      unsupported.value = true
-      unsupportedMessage.value = res.message || 'not supported'
-      return
+      unsupported.value = true;
+      unsupportedMessage.value = res.message || "not supported";
+      return;
     }
 
     if (res.message) {
-      ElMessage.warning(res.message)
+      ElMessage.warning(res.message);
     }
 
-    historicalPoints.value = Array.isArray(res.points) ? res.points : []
-    historicalSummary.value = res.summary || buildSummaryFromPoints(historicalPoints.value)
-    errorMessage.value = ''
+    historicalPoints.value = Array.isArray(res.points) ? res.points : [];
+    historicalSummary.value = res.summary || buildSummaryFromPoints(historicalPoints.value);
+    errorMessage.value = "";
     if (historicalPoints.value.length > 0) {
-      ElMessage.success(t('systemMetrics.loadHistoricalSuccess', { count: historicalPoints.value.length }))
+      ElMessage.success(
+        t("systemMetrics.loadHistoricalSuccess", { count: historicalPoints.value.length }),
+      );
     } else {
-      ElMessage.warning(t('systemMetrics.noHistoricalData'))
+      ElMessage.warning(t("systemMetrics.noHistoricalData"));
     }
   } catch (e: any) {
-    errorMessage.value = e?.message || String(e)
-    ElMessage.error(t('systemMetrics.loadHistoricalFailed', { error: errorMessage.value }))
+    errorMessage.value = e?.message || String(e);
+    ElMessage.error(t("systemMetrics.loadHistoricalFailed", { error: errorMessage.value }));
   } finally {
-    loadingHistorical.value = false
+    loadingHistorical.value = false;
   }
-}
+};
 
 const clearHistoricalData = () => {
-  historicalPoints.value = null
-  historicalSummary.value = null
-  ElMessage.info(t('systemMetrics.historicalDataCleared'))
-}
+  historicalPoints.value = null;
+  historicalSummary.value = null;
+  ElMessage.info(t("systemMetrics.historicalDataCleared"));
+};
 
 const onSystemMetricsEvent = (payload: SystemMetricsEventPayload) => {
   if (!(props.isActive && windowVisible.value) && !previewSyncActive.value) {
-    return
+    return;
   }
-  const point = payload?.point
+  const point = payload?.point;
   if (point) {
-    appendRealtimePoint(point)
+    appendRealtimePoint(point);
   }
   if (Array.isArray(payload?.interfaces)) {
-    latestInterfaces.value = payload.interfaces
+    latestInterfaces.value = payload.interfaces;
   }
-}
+};
 
 const startSubscription = async () => {
   if (metricsUnlisten) {
-    void SetSystemMetricsSubscription(true).catch(() => {})
-    return
+    void SetSystemMetricsSubscription(true).catch(() => {});
+    return;
   }
 
   try {
-    const unlisten = await EventsOn('system-metrics', onSystemMetricsEvent)
-    metricsUnlisten = unlisten
-    void SetSystemMetricsSubscription(true).catch(() => {})
+    const unlisten = await EventsOn("system-metrics", onSystemMetricsEvent);
+    metricsUnlisten = unlisten;
+    void SetSystemMetricsSubscription(true).catch(() => {});
   } catch (e: any) {
-    errorMessage.value = e?.message || String(e)
+    errorMessage.value = e?.message || String(e);
   }
-}
+};
 
 const stopSubscription = () => {
-  void SetSystemMetricsSubscription(false).catch(() => {})
-  if (!metricsUnlisten) return
+  void SetSystemMetricsSubscription(false).catch(() => {});
+  if (!metricsUnlisten) return;
   try {
-    EventsOff(metricsUnlisten)
+    EventsOff(metricsUnlisten);
   } catch {
     // ignore
   }
-  metricsUnlisten = null
-}
+  metricsUnlisten = null;
+};
 
 watch(selectedWindow, () => {
   if (shouldSubscribeRealtime.value && !isHistoricalMode.value) {
-    loadRealtimeSnapshot()
+    loadRealtimeSnapshot();
   }
-})
+});
 
 const shouldSubscribeRealtime = computed(
   () => (props.isActive && windowVisible.value) || previewSyncActive.value,
-)
+);
 
 const syncWindowVisibility = () => {
-  windowVisible.value = !document.hidden
-}
+  windowVisible.value = !document.hidden;
+};
 
 watch(
   () => props.config,
   (cfg: any) => {
-    const rawInterval = Number(cfg?.system_metrics_sample_interval_secs)
-    const normalizedInterval = Number.isFinite(rawInterval) && rawInterval > 0
-      ? Math.max(1, Math.floor(rawInterval))
-      : 10
+    const rawInterval = Number(cfg?.system_metrics_sample_interval_secs);
+    const normalizedInterval =
+      Number.isFinite(rawInterval) && rawInterval > 0 ? Math.max(1, Math.floor(rawInterval)) : 10;
     if (Number.isFinite(rawInterval) && rawInterval > 0) {
-      configSampleIntervalSecs.value = normalizedInterval
+      configSampleIntervalSecs.value = normalizedInterval;
     } else {
-      configSampleIntervalSecs.value = 10
+      configSampleIntervalSecs.value = 10;
     }
     // 同步刷新 updateHint 中的采样秒数，避免必须重启才更新
-    sampleIntervalSeconds.value = normalizedInterval
-    if (typeof cfg?.system_metrics_persistence_enabled === 'boolean') {
-      configPersistenceEnabled.value = cfg.system_metrics_persistence_enabled
+    sampleIntervalSeconds.value = normalizedInterval;
+    if (typeof cfg?.system_metrics_persistence_enabled === "boolean") {
+      configPersistenceEnabled.value = cfg.system_metrics_persistence_enabled;
     } else {
-      configPersistenceEnabled.value = true
+      configPersistenceEnabled.value = true;
     }
   },
   { immediate: true, deep: true },
-)
+);
 
 const getConfig = () => {
-  const raw = Number(configSampleIntervalSecs.value)
-  const interval = Number.isFinite(raw) ? Math.max(1, Math.floor(raw)) : 10
+  const raw = Number(configSampleIntervalSecs.value);
+  const interval = Number.isFinite(raw) ? Math.max(1, Math.floor(raw)) : 10;
   return {
     system_metrics_sample_interval_secs: interval,
     system_metrics_persistence_enabled: !!configPersistenceEnabled.value,
-  }
-}
+  };
+};
 
 defineExpose({
   getConfig,
-})
+});
 
 watch(
   shouldSubscribeRealtime,
   async (active) => {
     if (active) {
-      await loadRealtimeSnapshot()
-      await startSubscription()
+      await loadRealtimeSnapshot();
+      await startSubscription();
     } else {
-      stopSubscription()
+      stopSubscription();
     }
   },
   { immediate: true },
-)
+);
 
 onMounted(() => {
-  syncWindowVisibility()
-  document.addEventListener('visibilitychange', syncWindowVisibility)
-  updateChartColors()
+  syncWindowVisibility();
+  document.addEventListener("visibilitychange", syncWindowVisibility);
+  updateChartColors();
   themeObserver = new MutationObserver(() => {
-    updateChartColors()
-  })
-  themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] })
+    updateChartColors();
+  });
+  themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
 
   if ((window as any).__TAURI_INTERNALS__) {
-    listen('chart-preview-sync-request', onPreviewSyncRequest)
+    listen("chart-preview-sync-request", onPreviewSyncRequest)
       .then((unlisten) => {
-        previewSyncUnlisten = unlisten
+        previewSyncUnlisten = unlisten;
       })
       .catch((err) => {
-        console.error('listen chart-preview-sync-request failed:', err)
-      })
+        console.error("listen chart-preview-sync-request failed:", err);
+      });
   }
-})
+});
 
 onBeforeUnmount(() => {
-  stopSubscription()
-  document.removeEventListener('visibilitychange', syncWindowVisibility)
+  stopSubscription();
+  document.removeEventListener("visibilitychange", syncWindowVisibility);
   if (previewSyncIdleTimer) {
-    clearTimeout(previewSyncIdleTimer)
-    previewSyncIdleTimer = null
+    clearTimeout(previewSyncIdleTimer);
+    previewSyncIdleTimer = null;
   }
   if (themeObserver) {
-    themeObserver.disconnect()
-    themeObserver = null
+    themeObserver.disconnect();
+    themeObserver = null;
   }
   if (previewSyncUnlisten) {
-    previewSyncUnlisten()
-    previewSyncUnlisten = null
+    previewSyncUnlisten();
+    previewSyncUnlisten = null;
   }
-})
+});
 </script>
 
 <style scoped>

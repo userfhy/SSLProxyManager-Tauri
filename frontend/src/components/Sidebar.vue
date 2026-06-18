@@ -1,71 +1,82 @@
 <template>
   <el-card class="sidebar-nav" :class="{ 'sidebar-collapsed': isCollapsed }" shadow="hover">
     <div class="sidebar-header">
-      <el-button @click="toggleSidebar" circle class="collapse-btn" :title="isCollapsed ? $t('sidebar.expand') : $t('sidebar.collapse')">
+      <el-button
+        @click="toggleSidebar"
+        circle
+        class="collapse-btn"
+        :title="isCollapsed ? $t('sidebar.expand') : $t('sidebar.collapse')"
+      >
         <el-icon><Fold v-if="!isCollapsed" /><Expand v-else /></el-icon>
       </el-button>
     </div>
-    <el-menu :default-active="activeTab" class="nav-menu" :collapse="isCollapsed" :collapse-transition="true" @select="handleMenuSelect">
+    <el-menu
+      :default-active="activeTab"
+      class="nav-menu"
+      :collapse="isCollapsed"
+      :collapse-transition="true"
+      @select="handleMenuSelect"
+    >
       <el-menu-item-group :title="isCollapsed ? '' : $t('sidebar.configManagement')">
         <el-menu-item index="config">
           <el-icon><Connection /></el-icon>
-          <template #title>{{ $t('sidebar.proxyConfig') }}</template>
+          <template #title>{{ $t("sidebar.proxyConfig") }}</template>
         </el-menu-item>
         <el-menu-item index="ws">
           <el-icon><Promotion /></el-icon>
-          <template #title>{{ $t('sidebar.wsProxyConfig') }}</template>
+          <template #title>{{ $t("sidebar.wsProxyConfig") }}</template>
         </el-menu-item>
         <el-menu-item index="stream">
           <el-icon><Share /></el-icon>
-          <template #title>{{ $t('sidebar.streamConfig') }}</template>
+          <template #title>{{ $t("sidebar.streamConfig") }}</template>
         </el-menu-item>
         <el-menu-item index="access">
           <el-icon><Lock /></el-icon>
-          <template #title>{{ $t('sidebar.accessControl') }}</template>
+          <template #title>{{ $t("sidebar.accessControl") }}</template>
         </el-menu-item>
         <el-menu-item index="storage">
           <el-icon><Document /></el-icon>
-          <template #title>{{ $t('sidebar.dataPersistence') }}</template>
+          <template #title>{{ $t("sidebar.dataPersistence") }}</template>
         </el-menu-item>
         <el-menu-item index="base">
           <el-icon><Setting /></el-icon>
-          <template #title>{{ $t('sidebar.baseConfig') }}</template>
+          <template #title>{{ $t("sidebar.baseConfig") }}</template>
         </el-menu-item>
       </el-menu-item-group>
 
       <el-menu-item-group :title="isCollapsed ? '' : $t('sidebar.monitoring')">
         <el-menu-item index="dashboard">
           <el-icon><DataAnalysis /></el-icon>
-          <template #title>{{ $t('sidebar.dashboard') }}</template>
+          <template #title>{{ $t("sidebar.dashboard") }}</template>
         </el-menu-item>
         <el-menu-item index="systemMetrics">
           <el-icon><DataLine /></el-icon>
-          <template #title>{{ $t('sidebar.systemMetrics') }}</template>
+          <template #title>{{ $t("sidebar.systemMetrics") }}</template>
         </el-menu-item>
       </el-menu-item-group>
 
       <el-menu-item-group :title="isCollapsed ? '' : $t('sidebar.logs')">
         <el-menu-item index="requestLogs">
           <el-icon><Search /></el-icon>
-          <template #title>{{ $t('sidebar.requestLogs') }}</template>
+          <template #title>{{ $t("sidebar.requestLogs") }}</template>
         </el-menu-item>
         <el-menu-item index="logs">
           <el-icon><Document /></el-icon>
-          <template #title>{{ $t('sidebar.accessLogs') }}</template>
+          <template #title>{{ $t("sidebar.accessLogs") }}</template>
         </el-menu-item>
       </el-menu-item-group>
 
       <el-menu-item-group :title="isCollapsed ? '' : $t('sidebar.tools')">
         <el-menu-item index="testTools">
           <el-icon><Tools /></el-icon>
-          <template #title>{{ $t('sidebar.testTools') }}</template>
+          <template #title>{{ $t("sidebar.testTools") }}</template>
         </el-menu-item>
       </el-menu-item-group>
 
       <el-menu-item-group :title="isCollapsed ? '' : $t('sidebar.system')">
         <el-menu-item index="about">
           <el-icon><InfoFilled /></el-icon>
-          <template #title>{{ $t('sidebar.about') }}</template>
+          <template #title>{{ $t("sidebar.about") }}</template>
         </el-menu-item>
       </el-menu-item-group>
     </el-menu>
@@ -73,24 +84,38 @@
 </template>
 
 <script setup lang="ts">
-import { Setting, DataAnalysis, DataLine, Document, Lock, Search, Fold, Expand, InfoFilled, Tools, Connection, Promotion, Share } from '@element-plus/icons-vue'
-import { useI18n } from 'vue-i18n'
+import {
+  Setting,
+  DataAnalysis,
+  DataLine,
+  Document,
+  Lock,
+  Search,
+  Fold,
+  Expand,
+  InfoFilled,
+  Tools,
+  Connection,
+  Promotion,
+  Share,
+} from "@element-plus/icons-vue";
+import { useI18n } from "vue-i18n";
 
-const { t } = useI18n()
+const { t } = useI18n();
 
-defineProps<{ 
+defineProps<{
   isCollapsed: boolean;
   activeTab: string;
 }>();
 
-const emit = defineEmits(['toggle-sidebar', 'select-menu']);
+const emit = defineEmits(["toggle-sidebar", "select-menu"]);
 
 const toggleSidebar = () => {
-  emit('toggle-sidebar');
+  emit("toggle-sidebar");
 };
 
 const handleMenuSelect = (key: string) => {
-  emit('select-menu', key);
+  emit("select-menu", key);
 };
 </script>
 
@@ -191,7 +216,7 @@ const handleMenuSelect = (key: string) => {
 }
 
 .nav-menu :deep(.el-menu-item)::before {
-  content: '';
+  content: "";
   position: absolute;
   left: 0;
   top: 0;

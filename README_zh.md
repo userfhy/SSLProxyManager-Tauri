@@ -96,12 +96,12 @@ https://github.com/user-attachments/assets/b41b3d38-19c5-4124-a439-c4c011c16a5b
 
 ## 技术栈
 
-| 层级 | 技术 |
-|------|------|
-| 后端 | Rust、Tauri 2、Axum、Tokio、SQLx（SQLite） |
+| 层级 | 技术                                         |
+| ---- | -------------------------------------------- |
+| 后端 | Rust、Tauri 2、Axum、Tokio、SQLx（SQLite）   |
 | 前端 | Vue 3、Vite、Element Plus、ECharts、Vue I18n |
-| TLS | Rustls（内存安全 TLS） |
-| 平台 | Windows、Linux、macOS |
+| TLS  | Rustls（内存安全 TLS）                       |
+| 平台 | Windows、Linux、macOS                        |
 
 ## 快速开始
 
@@ -213,19 +213,18 @@ cargo test proxy::matching::tests
 cargo test commands::config::tests
 ```
 
-
 ## 配置说明
 
 ### 配置文件位置
 
 运行时配置使用 TOML 格式。
 
-| 平台 | 位置 |
-|------|------|
-| Debug 模式 | 项目根目录 `./config.toml`（若存在） |
-| Linux | `$XDG_CONFIG_HOME/SSLProxyManager/config.toml` 或 `~/.config/SSLProxyManager/config.toml` |
-| Windows | 可执行文件同目录 `config.toml`，或 `%APPDATA%\SSLProxyManager\config.toml` |
-| macOS | `~/Library/Application Support/SSLProxyManager/config.toml` |
+| 平台       | 位置                                                                                      |
+| ---------- | ----------------------------------------------------------------------------------------- |
+| Debug 模式 | 项目根目录 `./config.toml`（若存在）                                                      |
+| Linux      | `$XDG_CONFIG_HOME/SSLProxyManager/config.toml` 或 `~/.config/SSLProxyManager/config.toml` |
+| Windows    | 可执行文件同目录 `config.toml`，或 `%APPDATA%\SSLProxyManager\config.toml`                |
+| macOS      | `~/Library/Application Support/SSLProxyManager/config.toml`                               |
 
 应用也支持系统级开机自启。界面中的开关通过 Tauri autostart 插件生效，并会将 `auto_start` 持久化到配置文件。
 
@@ -336,11 +335,11 @@ GitHub Actions → `Manual Build (Single Platform)` → `Run workflow`
 
 ### 输入参数
 
-| 参数 | 选项 | 说明 |
-|------|------|------|
-| `platform` | `windows-x64`, `linux-amd64`, `macos-arm64`, `macos-x64` | 目标平台 |
-| `publish_release` | `true`, `false` | 是否发布到 GitHub Release |
-| `release_tag` | （可选） | 覆盖版本标签 |
+| 参数              | 选项                                                     | 说明                      |
+| ----------------- | -------------------------------------------------------- | ------------------------- |
+| `platform`        | `windows-x64`, `linux-amd64`, `macos-arm64`, `macos-x64` | 目标平台                  |
+| `publish_release` | `true`, `false`                                          | 是否发布到 GitHub Release |
+| `release_tag`     | （可选）                                                 | 覆盖版本标签              |
 
 ## 常见问题
 

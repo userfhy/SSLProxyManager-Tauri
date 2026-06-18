@@ -15,7 +15,7 @@
       </div>
       <el-scrollbar height="500px">
         <div class="terms-text">
-          <pre>{{ $t('terms.content') }}</pre>
+          <pre>{{ $t("terms.content") }}</pre>
         </div>
       </el-scrollbar>
     </div>
@@ -23,24 +23,24 @@
     <template #footer>
       <div class="dialog-footer">
         <el-checkbox v-if="requireAccept !== false" v-model="agreed" size="large">
-          {{ $t('terms.readAndAgree') }}
+          {{ $t("terms.readAndAgree") }}
         </el-checkbox>
         <div class="footer-buttons">
-          <el-button 
+          <el-button
             v-if="requireAccept !== false"
-            @click="handleReject" 
-            type="danger" 
+            @click="handleReject"
+            type="danger"
             size="large"
           >
-            {{ $t('terms.disagreeAndQuit') }}
+            {{ $t("terms.disagreeAndQuit") }}
           </el-button>
-          <el-button 
-            @click="handleAccept" 
-            type="primary" 
+          <el-button
+            @click="handleAccept"
+            type="primary"
             size="large"
             :disabled="requireAccept !== false && !agreed"
           >
-            {{ requireAccept !== false ? $t('terms.agreeAndContinue') : $t('terms.close') }}
+            {{ requireAccept !== false ? $t("terms.agreeAndContinue") : $t("terms.close") }}
           </el-button>
         </div>
       </div>
@@ -49,83 +49,79 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import { SetTermsAccepted, QuitApp } from '../api'
-import { useI18n } from 'vue-i18n'
-import LanguageSelector from './LanguageSelector.vue'
+import { ref } from "vue";
+import { ElMessage, ElMessageBox } from "element-plus";
+import { SetTermsAccepted, QuitApp } from "../api";
+import { useI18n } from "vue-i18n";
+import LanguageSelector from "./LanguageSelector.vue";
 
-const { t } = useI18n()
+const { t } = useI18n();
 
 const props = defineProps<{
-  requireAccept?: boolean  // 是否要求必须接受（首次启动时为true，查看时为false）
-}>()
+  requireAccept?: boolean; // 是否要求必须接受（首次启动时为true，查看时为false）
+}>();
 
 const emit = defineEmits<{
-  close: []
-}>()
+  close: [];
+}>();
 
-const visible = ref(true)
-const agreed = ref(false)
+const visible = ref(true);
+const agreed = ref(false);
 
 const handleBeforeClose = (done: () => void) => {
   // 如果要求必须接受（首次启动），则不允许通过点击遮罩或 ESC 关闭
   if (props.requireAccept !== false && !agreed.value) {
-    ElMessage.warning(t('terms.pleaseReadAndAgree'))
-    return
+    ElMessage.warning(t("terms.pleaseReadAndAgree"));
+    return;
   }
   // 如果只是查看（不要求接受），允许直接关闭
-  done()
-}
+  done();
+};
 
 const handleAccept = async () => {
   // 如果要求必须接受，需要勾选同意
   if (props.requireAccept !== false) {
     if (!agreed.value) {
-      ElMessage.warning(t('terms.pleaseCheckAgree'))
-      return
+      ElMessage.warning(t("terms.pleaseCheckAgree"));
+      return;
     }
 
     try {
       // 保存状态并重启应用（relaunch 会重启应用，后续代码不会执行）
-      await SetTermsAccepted(true)
+      await SetTermsAccepted(true);
       // 注意：relaunch() 会重启应用，所以下面的代码不会执行
       // 但为了代码完整性，保留这些行
-      visible.value = false
-      emit('close')
+      visible.value = false;
+      emit("close");
     } catch (error: any) {
-      ElMessage.error(t('terms.saveFailed', { error: error?.message || error }))
+      ElMessage.error(t("terms.saveFailed", { error: error?.message || error }));
     }
   } else {
     // 如果只是查看，直接关闭
-    visible.value = false
-    emit('close')
+    visible.value = false;
+    emit("close");
   }
-}
+};
 
 const handleReject = async () => {
   // 只有在要求必须接受时才显示退出确认
   if (props.requireAccept !== false) {
     try {
-      await ElMessageBox.confirm(
-        t('terms.mustAgreeToUse'),
-        t('terms.confirmQuit'),
-        {
-          confirmButtonText: t('terms.quit'),
-          cancelButtonText: t('terms.return'),
-          type: 'warning',
-        }
-      )
-      await QuitApp()
+      await ElMessageBox.confirm(t("terms.mustAgreeToUse"), t("terms.confirmQuit"), {
+        confirmButtonText: t("terms.quit"),
+        cancelButtonText: t("terms.return"),
+        type: "warning",
+      });
+      await QuitApp();
     } catch {
       // 用户取消，不做任何操作
     }
   } else {
     // 如果只是查看，直接关闭
-    visible.value = false
-    emit('close')
+    visible.value = false;
+    emit("close");
   }
-}
+};
 </script>
 
 <style scoped>
