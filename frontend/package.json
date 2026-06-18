@@ -1,22 +1,22 @@
 {
   "name": "frontend",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
+    "dev": "vp dev",
+    "build": "vp build",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.2",
-    "@tauri-apps/api": "^2.11.0",
+    "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-autostart": "^2.5.1",
     "@tauri-apps/plugin-opener": "^2.5.4",
     "@tauri-apps/plugin-process": "^2.3.1",
     "@tauri-apps/plugin-shell": "^2.3.5",
     "echarts": "^6.1.0",
-    "element-plus": "^2.14.1",
+    "element-plus": "^2.14.2",
     "unplugin-auto-import": "^21.0.0",
     "unplugin-vue-components": "^32.1.0",
-    "vue": "^3.5.35",
+    "vue": "^3.5.38",
     "vue-echarts": "^8.0.1",
     "vue-i18n": "^11.4.5"
   },
@@ -24,6 +24,18 @@
     "@tauri-apps/cli": "^2.11.2",
     "@vitejs/plugin-vue": "^6.0.7",
     "typescript": "^6.0.3",
-    "vite": "^8.0.16"
+    "vite": "npm:@voidzero-dev/vite-plus-core@latest",
+    "vite-plus": "latest"
+  },
+  "overrides": {
+    "vite": "npm:@voidzero-dev/vite-plus-core@latest",
+    "vitest": "4.1.9"
+  },
+  "devEngines": {
+    "packageManager": {
+      "name": "npm",
+      "version": "11.17.0",
+      "onFail": "download"
+    }
   }
 }

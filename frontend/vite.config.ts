@@ -1,14 +1,20 @@
-import { defineConfig } from 'vite'
-import vue from '@vitejs/plugin-vue'
-import AutoImport from 'unplugin-auto-import/vite'
-import Components from 'unplugin-vue-components/vite'
-import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
+import { defineConfig, lazyPlugins } from "vite-plus";
+import vue from "@vitejs/plugin-vue";
+import AutoImport from "unplugin-auto-import/vite";
+import Components from "unplugin-vue-components/vite";
+import { ElementPlusResolver } from "unplugin-vue-components/resolvers";
 
 const isNodeModulePath = (id: string, pkg: string) =>
-  id.includes(`/node_modules/${pkg}/`) || id.includes(`\\node_modules\\${pkg}\\`)
+  id.includes(`/node_modules/${pkg}/`) || id.includes(`\\node_modules\\${pkg}\\`);
 
 export default defineConfig({
-  plugins: [
+  fmt: {},
+  lint: {
+    jsPlugins: [{ name: "vite-plus", specifier: "vite-plus/oxlint-plugin" }],
+    rules: { "vite-plus/prefer-vite-plus-imports": "error" },
+    options: { typeAware: true, typeCheck: true },
+  },
+  plugins: lazyPlugins(() => [
     vue(),
     AutoImport({
       resolvers: [ElementPlusResolver()],
@@ -16,7 +22,7 @@ export default defineConfig({
     Components({
       resolvers: [ElementPlusResolver()],
     }),
-  ],
+  ]),
   server: {
     port: 5173,
     strictPort: true,
@@ -25,52 +31,52 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks(id) {
-          if (!id.includes('node_modules')) return
+          if (!id.includes("node_modules")) return;
 
-          if (isNodeModulePath(id, 'vue-echarts')) {
-            return 'vendor-vue-echarts'
+          if (isNodeModulePath(id, "vue-echarts")) {
+            return "vendor-vue-echarts";
           }
 
-          if (id.includes('@element-plus/icons-vue')) {
-            return 'vendor-element-plus-icons'
+          if (id.includes("@element-plus/icons-vue")) {
+            return "vendor-element-plus-icons";
           }
 
-          if (isNodeModulePath(id, 'zrender')) {
-            return 'vendor-zrender'
+          if (isNodeModulePath(id, "zrender")) {
+            return "vendor-zrender";
           }
 
-          if (isNodeModulePath(id, 'echarts')) {
-            if (id.includes('/echarts/charts') || id.includes('/echarts/lib/chart/')) {
-              return 'vendor-echarts-charts'
+          if (isNodeModulePath(id, "echarts")) {
+            if (id.includes("/echarts/charts") || id.includes("/echarts/lib/chart/")) {
+              return "vendor-echarts-charts";
             }
-            if (id.includes('/echarts/components') || id.includes('/echarts/lib/component/')) {
-              return 'vendor-echarts-components'
+            if (id.includes("/echarts/components") || id.includes("/echarts/lib/component/")) {
+              return "vendor-echarts-components";
             }
-            if (id.includes('/echarts/renderers') || id.includes('/echarts/lib/renderer/')) {
-              return 'vendor-echarts-renderers'
+            if (id.includes("/echarts/renderers") || id.includes("/echarts/lib/renderer/")) {
+              return "vendor-echarts-renderers";
             }
-            return 'vendor-echarts-core'
+            return "vendor-echarts-core";
           }
 
-          if (id.includes('element-plus')) {
-            return 'vendor-element-plus'
+          if (id.includes("element-plus")) {
+            return "vendor-element-plus";
           }
 
-          if (id.includes('vue-i18n')) {
-            return 'vendor-i18n'
+          if (id.includes("vue-i18n")) {
+            return "vendor-i18n";
           }
 
-          if (id.includes('@tauri-apps')) {
-            return 'vendor-tauri'
+          if (id.includes("@tauri-apps")) {
+            return "vendor-tauri";
           }
 
-          if (id.includes('vue') || id.includes('pinia')) {
-            return 'vendor-vue'
+          if (id.includes("vue") || id.includes("pinia")) {
+            return "vendor-vue";
           }
 
-          return 'vendor-misc'
+          return "vendor-misc";
         },
       },
     },
   },
-})
+});

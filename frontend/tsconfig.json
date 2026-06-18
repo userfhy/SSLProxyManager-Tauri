@@ -16,9 +16,7 @@
 
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
-
-    "baseUrl": ".",
-    "types": ["vite/client"]
+    "types": ["vite-plus/client"]
   },
   "include": [
     "src/**/*.ts",
