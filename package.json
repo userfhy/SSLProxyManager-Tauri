@@ -14,7 +14,7 @@
     "prepare": "vp config"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2.11.2",
+    "@tauri-apps/cli": "^2.11.3",
     "vite-plus": "latest"
   },
   "overrides": {
